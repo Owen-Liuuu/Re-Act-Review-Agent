@@ -1,0 +1,115 @@
+review_data_id,study_id,group,timepoint,field_type,raw_field_name,value,unit,source_location
+R001,ahmad_2022,-,single,sample_size,N,100,count,Table 1
+R002,ahmad_2022,-,single,country,Country,Egypt,,Table 1
+R003,ahmad_2022,-,single,measurement_tool,Measurement tool,Echocardiography (Echo),,Table 1
+R004,ahmad_2022,-,single,overall_quality,Overall quality,Good,,Table 1
+R005,ahmad_2022,t1dm,single,age,Age,12.90 ± 1.30,years,Table 1
+R006,ahmad_2022,t1dm,single,bmi,BMI Kg/m2,20.57 ± 1.7,kg/m2,Table 1
+R007,ahmad_2022,t1dm,single,eat_thickness,EFT/ EAT,6.60 ± 0.71,mm,Table 1
+R008,ahmad_2022,control,single,age,Age,12.96 ± 1.12,years,Table 1
+R009,ahmad_2022,control,single,bmi,BMI Kg/m2,20.33 ± 0.69,kg/m2,Table 1
+R010,ahmad_2022,control,single,eat_thickness,EFT/ EAT,3.83 ± 0.35,mm,Table 1
+R011,ahmad_2022,t1dm,single,eat_thickness,EAT thickness (forest),6.60 ± 0.71,mm,Fig 2 / Fig 4
+R012,ahmad_2022,t1dm,single,subgroup_n,Total (forest),50,count,Fig 2 / Fig 4
+R013,ahmad_2022,control,single,eat_thickness,EAT thickness (forest),3.83 ± 0.35,mm,Fig 2 / Fig 4
+R014,ahmad_2022,control,single,subgroup_n,Total (forest),50,count,Fig 2 / Fig 4
+R015,svanteson_2019,-,single,sample_size,N,148,count,Table 1
+R016,svanteson_2019,-,single,country,Country,Norway,,Table 1
+R017,svanteson_2019,-,single,measurement_tool,Measurement tool,Coronary computed tomography angiography (CT),,Table 1
+R018,svanteson_2019,-,single,overall_quality,Overall quality,Good,,Table 1
+R019,svanteson_2019,t1dm,single,age,Age,61.3 ± 7.1,years,Table 1
+R020,svanteson_2019,t1dm,single,bmi,BMI Kg/m2,25.8 ± 3.9,kg/m2,Table 1
+R021,svanteson_2019,t1dm,single,eat_volume,EFT/ EAT,52.3 (36.1–65.5),cm3,Table 1
+R022,svanteson_2019,control,single,age,Age,62.3 ± 6.8,years,Table 1
+R023,svanteson_2019,control,single,bmi,BMI Kg/m2,25.5 ± 4.2,kg/m2,Table 1
+R024,svanteson_2019,control,single,eat_volume,EFT/ EAT,"55 (38.3–79.6) cm3, Median (IQR)",cm3,Table 1
+R025,svanteson_2019,t1dm,single,eat_volume,EAT volume (forest),51.30 ± 22.16,cm3,Fig 3
+R026,svanteson_2019,t1dm,single,subgroup_n,Total (forest),88,count,Fig 3
+R027,de_gonzalo_calvo_2018,-,single,sample_size,N,73,count,Table 1
+R028,de_gonzalo_calvo_2018,-,single,country,Country,Spain,,Table 1
+R029,de_gonzalo_calvo_2018,-,single,measurement_tool,Measurement tool,Computed tomography (CT),,Table 1
+R030,de_gonzalo_calvo_2018,-,single,overall_quality,Overall quality,Fair,,Table 1
+R031,de_gonzalo_calvo_2018,all,single,age,Age,47.1 ± 8.6,years,Table 1
+R032,de_gonzalo_calvo_2018,all,single,bmi,BMI Kg/m2,27.0 ± 4.6,kg/m2,Table 1
+R033,de_gonzalo_calvo_2018,all,single,eat_volume,EFT/ EAT,80.2 ± 49.0 cm3,cm3,Table 1
+R034,de_gonzalo_calvo_2018,t1dm,single,eat_volume,EAT volume (forest),80.20 ± 49.00,cm3,Fig 3
+R035,de_gonzalo_calvo_2018,t1dm,single,subgroup_n,Total (forest),73,count,Fig 3
+R036,keles_2016,-,single,sample_size,N,80,count,Table 1
+R037,keles_2016,-,single,country,Country,Turkey,,Table 1
+R038,keles_2016,-,single,measurement_tool,Measurement tool,Transthoracic echocardiography (Echo),,Table 1
+R039,keles_2016,-,single,overall_quality,Overall quality,Good,,Table 1
+R040,keles_2016,t1dm,single,age,Age,34 (29–39),years,Table 1
+R041,keles_2016,t1dm,single,bmi,BMI Kg/m2,24.1 (22.3–26.7),kg/m2,Table 1
+R042,keles_2016,t1dm,single,eat_thickness,EFT/ EAT,0.7 (0.6–0.9),mm,Table 1
+R043,keles_2016,control,single,age,Age,32 (28–37.5),years,Table 1
+R044,keles_2016,control,single,bmi,BMI Kg/m2,26.7 (21.8–30.2),kg/m2,Table 1
+R045,keles_2016,control,single,eat_thickness,EFT/ EAT,0.6 (0.5–0.7),mm,Table 1
+R046,keles_2016,t1dm,single,eat_thickness,EAT thickness (forest),7.33 ± 2.30,mm,Fig 2 / Fig 4
+R047,keles_2016,t1dm,single,subgroup_n,Total (forest),45,count,Fig 2 / Fig 4
+R048,keles_2016,control,single,eat_thickness,EAT thickness (forest),6.00 ± 1.55,mm,Fig 2 / Fig 4
+R049,keles_2016,control,single,subgroup_n,Total (forest),35,count,Fig 2 / Fig 4
+R050,aslan_2015,-,single,sample_size,N,112,count,Table 1
+R051,aslan_2015,-,single,country,Country,Turkey,,Table 1
+R052,aslan_2015,-,single,measurement_tool,Measurement tool,Echocardiography (Echo),,Table 1
+R053,aslan_2015,-,single,overall_quality,Overall quality,Good,,Table 1
+R054,aslan_2015,t1dm,single,age,Age,30.6 ± 10.3,years,Table 1
+R055,aslan_2015,t1dm,single,bmi,BMI Kg/m2,23.31 ± 2.73,kg/m2,Table 1
+R056,aslan_2015,t1dm,single,eat_thickness,EFT/ EAT,3.56 ± 0.48,mm,Table 1
+R057,aslan_2015,control,single,age,Age,32.4 ± 8.5,years,Table 1
+R058,aslan_2015,control,single,bmi,BMI Kg/m2,24.19 ± 2.70,kg/m2,Table 1
+R059,aslan_2015,control,single,eat_thickness,EFT/ EAT,3.03 ± 0.48,mm,Table 1
+R060,aslan_2015,t1dm,single,eat_thickness,EAT thickness (forest),3.56 ± 0.48,mm,Fig 2 / Fig 4
+R061,aslan_2015,t1dm,single,subgroup_n,Total (forest),76,count,Fig 2 / Fig 4
+R062,aslan_2015,control,single,eat_thickness,EAT thickness (forest),3.03 ± 0.48,mm,Fig 2 / Fig 4
+R063,aslan_2015,control,single,subgroup_n,Total (forest),36,count,Fig 2 / Fig 4
+R064,iacobellis_2014,-,single,sample_size,N,30,count,Table 1
+R065,iacobellis_2014,-,single,country,Country,USA,,Table 1
+R066,iacobellis_2014,-,single,measurement_tool,Measurement tool,Transthoracic echocardiography (Echo),,Table 1
+R067,iacobellis_2014,-,single,overall_quality,Overall quality,Good,,Table 1
+R068,iacobellis_2014,t1dm,single,age,Age,52.8 ± 12,years,Table 1
+R069,iacobellis_2014,t1dm,single,bmi,BMI Kg/m2,27.8 ± 5.2,kg/m2,Table 1
+R070,iacobellis_2014,t1dm,single,eat_thickness,EFT/ EAT,7.2 ± 2.1,mm,Table 1
+R071,iacobellis_2014,control,single,age,Age,53 ± 9,years,Table 1
+R072,iacobellis_2014,control,single,bmi,BMI Kg/m2,27.4 ± 4.1,kg/m2,Table 1
+R073,iacobellis_2014,control,single,eat_thickness,EFT/ EAT,4.9 ± 2.5,mm,Table 1
+R074,iacobellis_2014,t1dm,single,eat_thickness,EAT thickness (forest),7.20 ± 2.10,mm,Fig 2 / Fig 4
+R075,iacobellis_2014,t1dm,single,subgroup_n,Total (forest),15,count,Fig 2 / Fig 4
+R076,iacobellis_2014,control,single,eat_thickness,EAT thickness (forest),4.90 ± 2.50,mm,Fig 2 / Fig 4
+R077,iacobellis_2014,control,single,subgroup_n,Total (forest),15,count,Fig 2 / Fig 4
+R078,yazici_2011,-,single,sample_size,N,79,count,Table 1
+R079,yazici_2011,-,single,country,Country,Turkey,,Table 1
+R080,yazici_2011,-,single,measurement_tool,Measurement tool,Transthoracic echocardiography (Echo),,Table 1
+R081,yazici_2011,-,single,overall_quality,Overall quality,Good,,Table 1
+R082,yazici_2011,t1dm,single,age,Age,30.8 ± 7.7,years,Table 1
+R083,yazici_2011,t1dm,single,bmi,BMI Kg/m2,24.7 ± 3.8,kg/m2,Table 1
+R084,yazici_2011,t1dm,single,eat_thickness,EFT/ EAT,3.30 ± 1.06,mm,Table 1
+R085,yazici_2011,control,single,age,Age,29.9 ± 4.9,years,Table 1
+R086,yazici_2011,control,single,bmi,BMI Kg/m2,24.6 ± 3.0,kg/m2,Table 1
+R087,yazici_2011,control,single,eat_thickness,EFT/ EAT,2.30 ± 0.34 mm,mm,Table 1
+R088,yazici_2011,t1dm,single,eat_thickness,EAT thickness (forest),3.30 ± 1.06,mm,Fig 2 / Fig 4
+R089,yazici_2011,t1dm,single,subgroup_n,Total (forest),36,count,Fig 2 / Fig 4
+R090,yazici_2011,control,single,eat_thickness,EAT thickness (forest),2.30 ± 0.34,mm,Fig 2 / Fig 4
+R091,yazici_2011,control,single,subgroup_n,Total (forest),43,count,Fig 2 / Fig 4
+R092,colom_2018,-,single,sample_size,N,72,count,Table 1
+R093,colom_2018,-,single,country,Country,Spain,,Table 1
+R094,colom_2018,-,single,measurement_tool,Measurement tool,Computed tomography (CT),,Table 1
+R095,colom_2018,-,single,overall_quality,Overall quality,Fair,,Table 1
+R096,colom_2018,all,single,age,Age,47.1 ± 8.7,years,Table 1
+R097,colom_2018,all,single,bmi,BMI Kg/m2,27.0 ± 4.7/27.9,kg/m2,Table 1
+R098,colom_2018,all,single,eat_volume,EFT/ EAT,40.47 ± 22.18 cm3/m2,cm3,Table 1
+R099,colom_2018,t1dm,single,eat_volume,EAT volume (forest),40.47 ± 22.18,cm3,Fig 3
+R100,colom_2018,t1dm,single,subgroup_n,Total (forest),72,count,Fig 3
+R101,elbaky_2023,-,single,sample_size,N,97,count,Table 1
+R102,elbaky_2023,-,single,country,Country,Egypt,,Table 1
+R103,elbaky_2023,-,single,measurement_tool,Measurement tool,Echocardiography (Echo),,Table 1
+R104,elbaky_2023,-,single,overall_quality,Overall quality,Good,,Table 1
+R105,elbaky_2023,t1dm,single,age,Age,12.82 ± 3.24,years,Table 1
+R106,elbaky_2023,t1dm,single,bmi,BMI Kg/m2,21.15 ± 4.10,kg/m2,Table 1
+R107,elbaky_2023,t1dm,single,eat_thickness,EFT/ EAT,7.01 ± 1.85,mm,Table 1
+R108,elbaky_2023,control,single,age,Age,11.65 ± 3.54,years,Table 1
+R109,elbaky_2023,control,single,bmi,BMI Kg/m2,18.72 ± 4.10,kg/m2,Table 1
+R110,elbaky_2023,control,single,eat_thickness,EFT/ EAT,2.16 ± 0.58,mm,Table 1
+R111,elbaky_2023,t1dm,single,eat_thickness,EAT thickness (forest),7.02 ± 1.86,mm,Fig 2 / Fig 4
+R112,elbaky_2023,t1dm,single,subgroup_n,Total (forest),63,count,Fig 2 / Fig 4
+R113,elbaky_2023,control,single,eat_thickness,EAT thickness (forest),2.17 ± 0.59,mm,Fig 2 / Fig 4
+R114,elbaky_2023,control,single,subgroup_n,Total (forest),34,count,Fig 2 / Fig 4
