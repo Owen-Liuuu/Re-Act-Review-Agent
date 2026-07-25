@@ -1,0 +1,59 @@
+# Example configuration for ReAct-Review.
+# Copy this to config.yaml and adjust. Keep API keys OUT of version control
+# (config.yaml is git-ignored); prefer environment variables in real runs.
+
+app_name: react-review
+environment: development          # development | staging | production
+mock_mode: true                   # true = mock implementations (no network/LLM)
+
+enabled_steps:
+  - search_validation
+  - paper_verification
+  - data_extraction
+  - table_comparison
+
+# Primary LLM backend. provider: mock | openai | anthropic | gemini | qwen
+llm:
+  provider: mock
+  model: gpt-4o
+  temperature: 0.1
+  max_tokens: 4096
+  api_key: ""                     # leave empty for mock; set via env in real runs
+  base_url: ""
+  max_concurrency: 3              # per-backend in-flight cap (asyncio.Semaphore)
+  max_retries: 5                  # HTTP 429 / transient-network retry attempts
+  retry_base_delay: 2.0           # exponential backoff base (seconds)
+
+# Optional second LLM for dual-model cross-validation (Step 3).
+# Remove this block or set provider: mock to run single-model.
+llm2:
+  provider: mock
+  model: gpt-4o
+  temperature: 0.1
+  max_tokens: 4096
+  api_key: ""
+  max_concurrency: 3
+
+pubmed:
+  api_key: ""                     # NCBI E-utilities key (optional; raises rate limit)
+  base_url: "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+  rate_limit: 3.0
+  email: ""                       # recommended by NCBI; also used for Unpaywall
+
+unpaywall:
+  email: ""                       # required by Unpaywall TOS for real runs
+  enabled: true
+
+crossref:
+  base_url: "https://api.crossref.org"
+  mailto: ""                      # email to join CrossRef's polite pool (faster)
+  timeout: 30.0
+
+thresholds:
+  title_similarity: 0.85
+  author_match_ratio: 0.8
+
+paths:
+  data_dir: ./data
+  output_dir: ./output
+  log_file: ./logs/react_review.log

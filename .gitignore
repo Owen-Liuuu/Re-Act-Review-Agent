@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Test / tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Runtime artefacts
+logs/
+output/
+*.log
+
+# Local config with secrets
+config.yaml
+config.local.yaml
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated reports (keep report code, not outputs)
+*.docx
+!docs/**/*.docx
+
+# Large benchmark PDFs are tracked deliberately under eval/benchmark/raw/
+# (whitelisted below); ignore stray PDFs elsewhere.
+*.pdf
+!eval/benchmark/raw/*.pdf

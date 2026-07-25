@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "react-review"
+version = "0.1.0"
+description = "ReAct-Review: an autonomous agentic pipeline for clinical evidence synthesis and audit"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "structlog>=23.0",
+    "httpx>=0.25.0",
+    "pymupdf>=1.24",
+    "python-docx>=1.1",
+    "matplotlib>=3.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-httpx>=0.30.0",
+]
+llm = [
+    "openai>=1.0",
+    "anthropic>=0.20",
+]
+
+[project.scripts]
+react-review = "react_review.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
