@@ -45,8 +45,27 @@ class NumericValue:
     upper: float | None = None
 
 
-def _euro_comma(s: str) -> str:
-    """Turn a decimal comma between digits into a decimal point ("52,3" -> "52.3")."""
+# A proper thousands-grouped integer: a non-zero lead group then one or more
+# ",###" groups (e.g. "1,234", "12,345,678"). Excludes a leading-zero lead so
+# a European decimal like "0,001" is NOT mistaken for thousands.
+_THOUSANDS_RE = re.compile(r"[1-9]\d{0,2}(?:,\d{3})+")
+
+
+def _fix_commas(s: str) -> str:
+    """Disambiguate comma usage: thousands separator vs European decimal comma.
+
+        "1,234"      -> "1234"     (thousands)
+        "12,345,678" -> "12345678" (thousands)
+        "52,3"       -> "52.3"     (European decimal)
+        "0,001"      -> "0.001"    (European decimal — leading zero, not thousands)
+        "12,90"      -> "12.90"    (European decimal)
+
+    A ``d,ddd`` group with a non-zero lead is treated as thousands (and the comma
+    removed); any other comma between digits is treated as a decimal point. The
+    "exactly 3 digits with a non-zero lead" case (e.g. "12,345") is inherently
+    ambiguous and is resolved as thousands, which matches how counts are written.
+    """
+    s = _THOUSANDS_RE.sub(lambda m: m.group(0).replace(",", ""), s)
     return re.sub(r"(?<=\d),(?=\d)", ".", s)
 
 
@@ -58,7 +77,7 @@ def parse_numeric(value: object) -> NumericValue:
         return NumericValue(raw=str(value), primary=float(value))
 
     raw = str(value)
-    s = _euro_comma(raw.strip())
+    s = _fix_commas(raw.strip())
     if not s:
         return NumericValue(raw=raw, primary=None)
 

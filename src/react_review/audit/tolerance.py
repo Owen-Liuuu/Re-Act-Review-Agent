@@ -27,18 +27,18 @@ class ToleranceTable:
     ) -> None:
         self._default = float(default_rel_tolerance)
         self._per_field: dict[str, float] = {
-            k: float(v) for k, v in (per_field_type or {}).items()
+            k.strip().lower(): float(v) for k, v in (per_field_type or {}).items()
         }
         self._default_sd = float(default_sd_rel_tolerance)
         self._per_field_sd: dict[str, float] = {
-            k: float(v) for k, v in (per_field_type_sd or {}).items()
+            k.strip().lower(): float(v) for k, v in (per_field_type_sd or {}).items()
         }
 
     @classmethod
     def from_yaml(cls, path: Path | str) -> "ToleranceTable":
         """Load a tolerance table from a YAML config file."""
         path = Path(path)
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding="utf-8-sig") as f:
             data: dict[str, Any] = yaml.safe_load(f) or {}
         return cls(
             default_rel_tolerance=data.get("default_rel_tolerance", 0.01),

@@ -62,6 +62,28 @@ async def test_verdict_pass_when_all_match():
 
 
 @pytest.mark.asyncio
+async def test_all_not_comparable_is_incomplete_not_pass():
+    # Both values unparseable -> not_comparable. Nothing was verified, so the
+    # verdict must NOT be PASS (regression guard for the B1 bug).
+    report = await _orch().run(
+        [_rv("s1", "t1dm", "age", "not reported")],
+        [_sv("s1", "t1dm", "age", "also missing")],
+    )
+    assert report.n_match == 0 and report.n_not_comparable == 1
+    assert report.verdict == ReportVerdict.INCOMPLETE
+
+
+@pytest.mark.asyncio
+async def test_partial_when_some_pairs_not_comparable():
+    report = await _orch().run(
+        [_rv("s1", "t1dm", "age", "34"), _rv("s1", "t1dm", "bmi", "N/R")],
+        [_sv("s1", "t1dm", "age", "34"), _sv("s1", "t1dm", "bmi", "missing")],
+    )
+    assert report.n_match == 1 and report.n_not_comparable == 1
+    assert report.verdict == ReportVerdict.PARTIAL
+
+
+@pytest.mark.asyncio
 async def test_unmatched_items_are_flagged_not_dropped():
     report = await _orch().run(
         [_rv("s1", "t1dm", "age", "34")],       # no source

@@ -114,6 +114,12 @@ class AuditOrchestrator:
             verdict = ReportVerdict.FAIL
         elif n_unit > 0:
             verdict = ReportVerdict.PARTIAL
+        elif n_match == 0:
+            # Every pair was not_comparable — nothing was actually verified.
+            verdict = ReportVerdict.INCOMPLETE
+        elif n_nc > 0:
+            # Some pairs verified, others could not be compared → partial coverage.
+            verdict = ReportVerdict.PARTIAL
         else:
             verdict = ReportVerdict.PASS
 

@@ -30,6 +30,21 @@ def test_primary_number_returns_none_when_no_number(raw):
     assert primary_number(raw) is None
 
 
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("1,234", 1234.0),          # thousands separator, not a decimal
+        ("12,345,678", 12345678.0), # grouped thousands
+        ("0,001", 0.001),           # European decimal (leading zero, not thousands)
+        ("52,3", 52.3),             # European decimal
+        ("12,90", 12.90),           # European decimal, 2 places
+        ("0,58933", 0.58933),       # European decimal, many places
+    ],
+)
+def test_comma_disambiguation(raw, expected):
+    assert primary_number(raw) == pytest.approx(expected)
+
+
 # --- structured parse: mean + SD / range ---
 
 def test_parse_sd_form():

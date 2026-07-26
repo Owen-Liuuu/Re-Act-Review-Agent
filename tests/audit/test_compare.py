@@ -101,6 +101,17 @@ def test_tolerance_table_default_and_override():
     assert t.rel_tolerance("SAMPLE_SIZE") == 0.0  # case-insensitive
 
 
+def test_tolerance_table_keys_lowercased_on_load():
+    # A non-lowercase config key must still be found (R1 regression guard).
+    t = ToleranceTable(
+        default_rel_tolerance=0.01,
+        per_field_type={"Sample_Size": 0.0},
+        per_field_type_sd={"BMI": 0.05},
+    )
+    assert t.rel_tolerance("sample_size") == 0.0
+    assert t.sd_rel_tolerance("bmi") == 0.05
+
+
 def test_tolerance_table_from_yaml():
     cfg = Path(__file__).resolve().parents[2] / "configs" / "tolerances.yaml"
     t = ToleranceTable.from_yaml(cfg)

@@ -14,6 +14,8 @@ resolve/validate split (P2) land.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from react_review.audit import ToleranceTable
 from react_review.core.config import AppConfig
 from react_review.steps.search_validation.multi_db_count import IdentificationCounter
@@ -36,13 +38,29 @@ class _StubCounter(IdentificationCounter):
         return self._count
 
 
+def _default_tolerance() -> ToleranceTable:
+    """Load the shipped configs/tolerances.yaml if present, else code defaults.
+
+    Loading the repo config by default avoids drift when someone edits the YAML
+    but calls ``build_catalogue`` without an explicit tolerance. Degrades to the
+    built-in 1% / 3% defaults if the file is unavailable (e.g. installed wheel).
+    """
+    cfg = Path(__file__).resolve().parents[3] / "configs" / "tolerances.yaml"
+    try:
+        if cfg.exists():
+            return ToleranceTable.from_yaml(cfg)
+    except Exception:
+        pass
+    return ToleranceTable()
+
+
 def build_catalogue(
     config: AppConfig,
     *,
     tolerance: ToleranceTable | None = None,
 ) -> ToolRegistry:
     """Construct and register the tool catalogue for ``config``."""
-    tol = tolerance or ToleranceTable()
+    tol = tolerance or _default_tolerance()
     reg = ToolRegistry()
 
     if config.mock_mode:

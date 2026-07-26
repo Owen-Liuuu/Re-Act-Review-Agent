@@ -96,3 +96,16 @@ def test_real_mode_catalogue_builds():
     reg = build_catalogue(AppConfig(mock_mode=False))
     assert len(reg) == 8
     assert "fetch_fulltext" in reg
+
+
+@pytest.mark.asyncio
+async def test_default_catalogue_uses_shipped_tolerance():
+    # No explicit tolerance -> should load configs/tolerances.yaml (1% / 3%),
+    # not fall back to arbitrary defaults (R3 regression guard).
+    reg = build_catalogue(AppConfig(mock_mode=True))
+    out = await reg.get("compare_values").run(
+        CompareInput(field_type="x", review_value="6.65", source_value="6.60")
+    )
+    assert out.tolerance_pct == 1.0
+    assert out.sd_tolerance_pct == 3.0
+    assert out.label == AuditLabel.MATCH
