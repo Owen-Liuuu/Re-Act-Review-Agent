@@ -39,6 +39,7 @@ class SourceEvidenceItem(BaseModel):
 
     study_id: str
     group: str = "-"
+    timepoint: str = "single"
     field_type: str
     source_value: Value = None
     source_unit: str = ""

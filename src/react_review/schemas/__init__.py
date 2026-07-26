@@ -13,6 +13,7 @@ from react_review.schemas.evidence import (
     SourceEvidenceItem,
 )
 from react_review.schemas.audit import MatchResult, ToleranceRule
+from react_review.schemas.report import AuditReport
 
 __all__ = [
     "ReviewDataItem",
@@ -20,4 +21,5 @@ __all__ = [
     "IncludedStudy",
     "MatchResult",
     "ToleranceRule",
+    "AuditReport",
 ]
