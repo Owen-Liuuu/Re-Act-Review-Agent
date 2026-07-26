@@ -14,6 +14,8 @@ from react_review.schemas.evidence import (
 )
 from react_review.schemas.audit import MatchResult, ToleranceRule
 from react_review.schemas.report import AuditReport
+from react_review.schemas.agent import AgentRun, StepRecord
+from react_review.schemas.package import EvidencePackage
 
 __all__ = [
     "ReviewDataItem",
@@ -22,4 +24,7 @@ __all__ = [
     "MatchResult",
     "ToleranceRule",
     "AuditReport",
+    "AgentRun",
+    "StepRecord",
+    "EvidencePackage",
 ]
