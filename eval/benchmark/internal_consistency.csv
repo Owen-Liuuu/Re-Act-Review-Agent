@@ -1,0 +1,5 @@
+ic_id,study_id,quantity,group,location_a,value_a,location_b,value_b,discrepancy_type,likely_cause,error_owner,severity,cross_ref_audit_id,needs_human_review
+IC01,keles_2016,eat_thickness,t1dm,Table 1,0.7 (0.6–0.9),Fig 2 / Fig 4,7.33 ± 2.30,unit_conversion,source EFT is in cm (0.7 cm); left as 0.7 in a mm-implied Table 1 column; 0.7 cm ≈ 7.0 mm matches the forest value,review_author,high,A022,yes
+IC02,keles_2016,eat_thickness,control,Table 1,0.6 (0.5–0.7),Fig 2 / Fig 4,6.00 ± 1.55,unit_conversion,same cm-vs-mm slip as IC01 for the control arm,review_author,high,A025,yes
+IC03,(aslan/iacobellis/yazici/colom/elbaky),citation_marker,-,Table 1 in-text markers,[17]; [18]; [19]; [20]; [22],Reference list (p9),22; 23; 24; 27; 25,wrong_reference_number,in-table citation bracket numbers do not match the numbered reference list,review_author,medium,-,yes
+IC04,elbaky_2023,eat_thickness,t1dm,Table 1,7.01 ± 1.85,Fig 2 / Fig 4,7.02 ± 1.86,rounding,rounding only (<0.2%); negative control — should NOT be flagged,none,low,A054,no

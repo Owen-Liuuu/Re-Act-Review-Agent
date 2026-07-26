@@ -1,29 +1,26 @@
-# Known internal inconsistencies (review vs its own figures)
+# Internal-consistency axis (review vs itself)
 
-These are inconsistencies found WITHIN the Sooragonda 2025 review itself —
-Table 1 versus the forest plots (Fig 2/3/4). They are distinct from
-review-vs-source discrepancies (which need the source papers). They make good
-"naturally-occurring" targets for a consistency-checking Auditor and for
-testing the Parser's cross-location alignment.
+Inconsistencies found WITHIN the Sooragonda 2025 review — Table 1 versus the
+forest plots (Fig 2/3/4) and the reference list — as opposed to review-vs-source
+discrepancies (the main axis, in `audit_template.csv`). This axis needs only the
+review PDF and catches a different error class: the review contradicting itself.
 
-**All items below are pending human verification against the PDF.**
+The structured answer key for this axis is **`internal_consistency.csv`**
+(rows IC01–IC04). This file is the human-readable narrative behind it. Every
+row is flagged `needs_human_review` and attributed to `review_author` where the
+review made the error.
 
-## D1 — Keles 2016 EAT thickness: ~10x mismatch (HIGH signal)
+## IC01 / IC02 — Keles 2016 EAT thickness: ~10x, author unit-conversion error (HIGH)
 
 - Table 1 `EFT/ EAT`: T1DM **0.7 (0.6–0.9)**, Control **0.6 (0.5–0.7)**.
 - Fig 2 / Fig 4 (forest): T1DM **7.33 ± 2.30**, Control **6.00 ± 1.55** (mm).
-- ~10x apart. Most likely a unit slip (cm in the table vs mm in the figure) or a
-  transcription error in Table 1. Either way, the review is internally
-  inconsistent for this study's headline value.
+- Root cause: the source paper reports EFT in **cm** (0.7 cm). The review copied
+  `0.7` into Table 1's `EFT/ EAT` column, which for every other study is in
+  **mm**, without converting (0.7 cm ≈ 7.0 mm — consistent with the forest's
+  7.33). This is an **author unit-conversion error**.
+- Cross-referenced on the main axis as `A022` / `A025` (`unit_mismatch`).
 
-## D2 — Svanteson 2019 volume N mismatch
-
-- Table 1 `N` = **148**.
-- Fig 3 (volume forest) `Total` = **88**.
-- The volume analysis appears to use a subset (88) while the table reports 148;
-  the relationship is not explained.
-
-## D3 — Table-1 citation markers do not match the reference list
+## IC03 — Table-1 citation markers do not match the reference list (MEDIUM)
 
 The in-table bracket numbers disagree with the numbered reference list (p9):
 
@@ -35,15 +32,19 @@ The in-table bracket numbers disagree with the numbered reference list (p9):
 | Colom 2018 | [19] | 24 | 10.1186/s12933-018-0794-9 |
 | ElBaky 2023 | [20] | 25 | 10.5114/polp.2023.133530 |
 
-(This is a `citation correctness` signal — Proposal §6.)
+(A `citation correctness` signal — Proposal §6.)
 
-## D4 — CT studies have no T1DM/control split in Table 1
+## IC04 — ElBaky 2023 thickness: rounding only (LOW, negative control)
 
-- de Gonzalo-Calvo 2018 and Colom 2018 (both CT) report a single combined row in
-  Table 1 (no T1DM vs control columns), yet the review compares T1DM vs control
-  elsewhere. Their per-group contribution is ambiguous.
+- Table 1 T1DM **7.01 ± 1.85** vs forest **7.02 ± 1.86** (<0.2%). Within the 3%
+  tolerance — should **not** be flagged. Kept as a negative control.
 
-## D5 — Minor rounding (LOW signal, likely acceptable)
+## Resolved (NOT inconsistencies)
 
-- ElBaky 2023 thickness: Table 1 T1DM **7.01 ± 1.85** vs forest **7.02 ± 1.86**.
-  Within rounding; expected to be a MATCH, useful as a negative control.
+- **Svanteson 2019 volume N (previously flagged):** Table 1 `N` = 148 vs Fig 3
+  volume `Total` = 88. Resolved — the source reports T1DM n=88 + control n=60 =
+  148 (see `audit_template.csv` A008). The forest `Total` is just the T1DM arm.
+  Subgroup vs total, not an error.
+- **Svanteson 2019 volume value:** Table 1 T1DM 52.3 (median, IQR) vs forest
+  51.30 (mean). Different statistics (median vs mean), expected to differ
+  slightly — not an error.
