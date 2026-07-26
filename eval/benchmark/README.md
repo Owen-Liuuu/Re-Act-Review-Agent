@@ -22,7 +22,7 @@ extraction) and Auditor (review-vs-source cross-validation).
 | `raw/EAT_T1DM_SRMA.pdf` | — | final | the review PDF |
 | `included_studies.csv` | — | **verify** | the 9 source papers: citation, country, N, modality, quality, **DOI**, review ref number |
 | `review_ground_truth.csv` | review | **verify** | long-format table of every value the review reports (`study × group × field_type × value`), with `source_location` (Table 1 / Fig 2 / Fig 3 / Fig 4) |
-| `audit_template.csv` | source | **to fill** | one row per auditable value: `review_value` pre-filled, `source_value` / `source_quote` / `expected_label` BLANK — filled by reading the source papers |
+| `audit_template.csv` | source | **filled** | one row per auditable value (57): `review_value` + `source_value` + `source_quote` + `source_location_in_paper` + `source_unit` + `expected_label`, hand-annotated from the source papers |
 | `known_internal_discrepancies.md` | — | **verify** | inconsistencies WITHIN the review (table vs figures); free audit targets |
 
 ## Column meaning (`review_ground_truth.csv`)
@@ -31,9 +31,9 @@ Aligned to the planned 4-table matching model (ReviewDataTable side):
 
 - `review_data_id` — stable id (`R001`, …).
 - `study_id` — e.g. `ahmad_2022` (join key to `included_studies.csv`).
-- `group` — `t1dm` | `control` | `-` (study-level, no group) . `all` never
-  used; CT studies without a split use `-` only for study-level rows and their
-  single reported cohort is labelled per Table 1.
+- `group` — `t1dm` | `control` | `-` (study-level rows: N / country / tool /
+  quality) | `all` (CT studies that report a single combined cohort with no
+  T1DM/control split, i.e. de Gonzalo-Calvo 2018 and Colom 2018).
 - `timepoint` — `single` (all included studies are cross-sectional).
 - `field_type` — `sample_size` | `country` | `measurement_tool` |
   `overall_quality` | `age` | `bmi` | `eat_thickness` | `eat_volume` |
@@ -46,6 +46,19 @@ Aligned to the planned 4-table matching model (ReviewDataTable side):
 - `source_location` — where in the PDF the value is printed. Values appearing
   in BOTH Table 1 and a forest plot get one row each, so table-vs-figure
   disagreements are captured as distinct rows.
+
+## Labels and encoding
+
+- `expected_label` taxonomy (MVP, may be revised): `match` | `mismatch` |
+  `unit_mismatch` (value agrees but the reported unit differs). Current key
+  distribution: 49 match / 4 mismatch / 4 unit_mismatch.
+- All three CSVs are plain UTF-8 (no BOM). If re-edited in Excel they may be
+  re-saved as GBK or with a BOM — the loader should read with `utf-8-sig` and
+  files should be re-normalised before freeze.
+- Open numeric-comparison policy (drives the tolerance rules, still to be
+  fixed): whether rounding (7.01 vs 7.0180) counts as a mismatch, and whether
+  numeric fields compare the mean only or `mean ± SD`. The current hand labels
+  are strict (rounding and SD differences are marked `mismatch`).
 
 ## How this is used
 
