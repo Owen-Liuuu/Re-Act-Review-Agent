@@ -79,3 +79,20 @@ class ReportVerdict(str, Enum):
     PARTIAL = "PARTIAL"
     FAIL = "FAIL"
     INCOMPLETE = "INCOMPLETE"
+
+
+class AuditLabel(str, Enum):
+    """Per-value audit verdict (review value vs source value).
+
+    This is the label set the benchmark's ``expected_label`` uses.
+
+    - MATCH:          primary values agree within the field's tolerance.
+    - MISMATCH:       primary values differ beyond tolerance.
+    - UNIT_MISMATCH:  the reported units differ (independent of value closeness).
+    - NOT_COMPARABLE: one/both sides have no parseable value.
+    """
+
+    MATCH = "match"
+    MISMATCH = "mismatch"
+    UNIT_MISMATCH = "unit_mismatch"
+    NOT_COMPARABLE = "not_comparable"

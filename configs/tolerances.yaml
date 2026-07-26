@@ -1,0 +1,16 @@
+# Comparison tolerances for the audit (Tier-3 compare).
+#
+# MVP: a single global 1% relative-error band on the primary numeric value.
+# The per_field_type map lets specific concepts override the default later
+# (e.g. sample_size could require exact agreement) without touching code.
+#
+# Semantics: for a numeric field, values MATCH when
+#     abs(a - b) / max(|a|, |b|, eps) <= rel_tolerance
+# A unit difference is a separate axis (unit_mismatch) and is not governed here.
+
+default_rel_tolerance: 0.01   # 1%
+
+per_field_type: {}
+  # examples (disabled for MVP — single global band):
+  # sample_size: 0.0
+  # p_value: 0.001
