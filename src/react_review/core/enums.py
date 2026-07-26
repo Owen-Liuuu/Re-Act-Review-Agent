@@ -81,6 +81,20 @@ class ReportVerdict(str, Enum):
     INCOMPLETE = "INCOMPLETE"
 
 
+class ReflectionDecision(str, Enum):
+    """What to do after a stage (Proposal E6).
+
+    - ACCEPT:   the result is trustworthy; move on.
+    - RETRY:    re-attempt (e.g. a different backend / a different source repo),
+                while attempts remain.
+    - ESCALATE: hand to a human review flag — too uncertain, or retries spent.
+    """
+
+    ACCEPT = "accept"
+    RETRY = "retry"
+    ESCALATE = "escalate"
+
+
 class AuditLabel(str, Enum):
     """Per-value audit verdict (review value vs source value).
 

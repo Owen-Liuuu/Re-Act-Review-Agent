@@ -7,5 +7,17 @@ agents produce them live.
 """
 from react_review.orchestrator.matcher import build_pairs, match_key
 from react_review.orchestrator.pipeline import AuditOrchestrator
+from react_review.orchestrator.reflection import (
+    ReflectionDecider,
+    ReflectionOutcome,
+    ReflectionSignals,
+)
 
-__all__ = ["AuditOrchestrator", "build_pairs", "match_key"]
+__all__ = [
+    "AuditOrchestrator",
+    "build_pairs",
+    "match_key",
+    "ReflectionDecider",
+    "ReflectionOutcome",
+    "ReflectionSignals",
+]
