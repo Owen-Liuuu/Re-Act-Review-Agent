@@ -1,16 +1,13 @@
 """Build the typed tool catalogue (a ToolRegistry) from configuration.
 
 Mirrors the old pipeline factory's mock/real split, but produces a registry of
-typed tools instead of a monolithic orchestrator. Currently registers 8 tools
-across the four stages:
+typed tools instead of a monolithic orchestrator. Registers the Proposal's nine
+tools across the four stages:
 
     Search : search_pubmed, count_pubmed, count_europepmc, count_openalex
     Verify : verify_reference
-    Extract: fetch_fulltext, extract_fields
+    Extract: fetch_fulltext, extract_fields, normalize_field
     Compare: compare_values
-
-The catalogue grows toward the Proposal's nine as normalize_field (P1.B) and a
-resolve/validate split (P2) land.
 """
 from __future__ import annotations
 
@@ -18,13 +15,26 @@ from pathlib import Path
 
 from react_review.audit import ToleranceTable
 from react_review.core.config import AppConfig
+from react_review.normalize.vocabulary import Vocabulary
 from react_review.steps.search_validation.multi_db_count import IdentificationCounter
 from react_review.tools.base import Tool
 from react_review.tools.compare import CompareValuesTool
 from react_review.tools.extract import ExtractFieldsTool, FetchFullTextTool
+from react_review.tools.normalize import NormalizeFieldTool
 from react_review.tools.registry import ToolRegistry
 from react_review.tools.search import CountResultsTool, SearchPubMedTool
 from react_review.tools.verify import VerifyReferenceTool
+
+_SEED_VOCAB = Path(__file__).resolve().parents[3] / "configs" / "vocabulary.seed.json"
+
+
+def _load_seed_vocabulary() -> Vocabulary:
+    try:
+        if _SEED_VOCAB.exists():
+            return Vocabulary.from_json(_SEED_VOCAB)
+    except Exception:
+        pass
+    return Vocabulary()
 
 
 class _StubCounter(IdentificationCounter):
@@ -70,11 +80,13 @@ def build_catalogue(
             MockReferenceVerifier,
         )
         from react_review.steps.data_extraction.mock_impl import MockExtractorA
+        from react_review.llm.mock_backend import MockLLMBackend
 
         search_provider = MockSearchProvider()
         verifier = MockReferenceVerifier()
         retriever = MockPaperRetriever()
         extractor = MockExtractorA()
+        norm_backend = MockLLMBackend()
         counters: list[IdentificationCounter] = [
             _StubCounter("PubMed"),
             _StubCounter("Europe PMC"),
@@ -112,6 +124,7 @@ def build_catalogue(
         extractor = LLMExtractor(
             backend=backend, extractor_name=f"{backend.model_id}-extractor"
         )
+        norm_backend = backend
 
     tools: list[Tool] = [
         SearchPubMedTool(search_provider),
@@ -119,6 +132,7 @@ def build_catalogue(
         VerifyReferenceTool(verifier),
         FetchFullTextTool(retriever),
         ExtractFieldsTool(extractor),
+        NormalizeFieldTool(_load_seed_vocabulary(), norm_backend),
         CompareValuesTool(tol),
     ]
     for t in tools:

@@ -52,3 +52,24 @@ class ExtractInput(BaseModel):
     document: PaperDocument
     evidence_schema: list[EvidenceFieldSchema] = Field(default_factory=list)
     research_context: str = ""
+
+
+class NormalizeInput(BaseModel):
+    """Input to the normalize_field tool (Tier-2 semantic mapping)."""
+
+    raw_field_name: str
+    unit: str = ""
+    research_context: str = ""
+
+
+class NormalizeResult(BaseModel):
+    """Output of the normalize_field tool.
+
+    ``source`` is where the answer came from: ``cache`` / ``vocabulary`` / ``llm``.
+    ``is_new`` is True when the LLM added a new field_type to the vocabulary.
+    """
+
+    field_type: str
+    source: str = "vocabulary"
+    is_new: bool = False
+

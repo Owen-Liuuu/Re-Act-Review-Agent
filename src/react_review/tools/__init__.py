@@ -11,12 +11,15 @@ from react_review.tools.compare import CompareValuesTool
 from react_review.tools.search import CountResultsTool, SearchPubMedTool
 from react_review.tools.verify import VerifyReferenceTool
 from react_review.tools.extract import ExtractFieldsTool, FetchFullTextTool
+from react_review.tools.normalize import NormalizeFieldTool
 from react_review.tools.models import (
     CompareInput,
     CountInput,
     CountResult,
     ExtractInput,
     FetchResult,
+    NormalizeInput,
+    NormalizeResult,
 )
 
 __all__ = [
@@ -30,9 +33,12 @@ __all__ = [
     "VerifyReferenceTool",
     "FetchFullTextTool",
     "ExtractFieldsTool",
+    "NormalizeFieldTool",
     "CompareInput",
     "CountInput",
     "CountResult",
     "ExtractInput",
     "FetchResult",
+    "NormalizeInput",
+    "NormalizeResult",
 ]
