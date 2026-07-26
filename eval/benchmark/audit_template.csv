@@ -55,4 +55,4 @@ A053,elbaky_2023,t1dm,bmi,21.15 ± 4.10,kg/m2,21.15 ± 4.10,Table 1,BMI 行，Di
 A054,elbaky_2023,t1dm,eat_thickness,7.01 ± 1.85,mm,7.0180 ± 1.85737,Table 2,Epicardial fat thickness [mm] 行，T1DM (1) 列；PDF p.4，印刷 p.281,match,0.114,mm
 A055,elbaky_2023,control,age,11.65 ± 3.54,years,11.65 ± 3.54,Table 1,Age [years] 行，Controls 列；PDF p.3，印刷 p.280,match,0.000,years
 A056,elbaky_2023,control,bmi,18.72 ± 4.10,kg/m2,18.72 ± 4.10,Table 1,BMI 行，Controls 列；PDF p.3，印刷 p.280,match,0.000,kg/m2
-A057,elbaky_2023,control,eat_thickness,2.16 ± 0.58,mm,2.1692 ± 0.58933,Table 2,Epicardial fat thickness [mm] 行，Controls (2) 列；PDF p.4，印刷 p.281,mismatch,0.424,mm
+A057,elbaky_2023,control,eat_thickness,2.16 ± 0.58,mm,2.1692 ± 0.58933,Table 2,Epicardial fat thickness [mm] 行，Controls (2) 列；PDF p.4，印刷 p.281,match,0.424,mm

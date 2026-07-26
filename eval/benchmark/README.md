@@ -52,30 +52,29 @@ Aligned to the planned 4-table matching model (ReviewDataTable side):
 
 ## Tolerance policy, labels, encoding
 
-- **Numeric tolerance = 0.3% (MVP — performance-testing setting, will be revisited).**
-  Two numbers agree if the relative error of the **primary value** (mean /
-  median / point estimate — the first number in a `mean ± SD` or `median (IQR)`
-  cell) is ≤ 0.3%. SD / spread is secondary and does not by itself cause a
-  mismatch in MVP. Each row carries its computed `rel_error_pct`.
+- **Numeric tolerance = 1% (MVP — may be revisited).** Two numbers agree if the
+  relative error of the **primary value** (mean / median / point estimate — the
+  first number in a `mean ± SD` or `median (IQR)` cell) is ≤ 1%. SD / spread is
+  secondary and does not by itself cause a mismatch in MVP. Each row carries its
+  computed `rel_error_pct`.
 - **Unit is a separate axis.** If the reported unit differs (e.g. `mm` vs `cm`,
   `kg/m2` vs `kg/m3`) the row is `unit_mismatch` regardless of how close the
   numbers are.
 - `expected_label` taxonomy (MVP, may be revised): `match` | `mismatch` |
-  `unit_mismatch`. **Distribution at 0.3% tolerance: 52 match / 1 mismatch / 4
-  unit_mismatch** (5 positive detections total). The single `mismatch` is A057
-  ElBaky EAT (2.16 vs 2.1692 = 0.42%) — a rounding-driven positive that would be
-  a `match` again under a looser tolerance. The 4 `unit_mismatch` are the real
-  unit errors: Keles cm↔mm (A022/A025, a review error) and Svanteson `kg/m3`
-  (A010/A013, a source-paper typo). Only 2 of 57 rows have any numeric
-  difference at all (A054 0.11%, A057 0.42%); the review's transcription is
-  otherwise exact.
+  `unit_mismatch`. **Distribution at 1% tolerance: 53 match / 0 mismatch / 4
+  unit_mismatch.** The only two rows with any numeric difference (A054 0.11%,
+  A057 0.42%) are both within 1% → match, so the natural axis has no numeric
+  mismatch; its positives are the 4 `unit_mismatch` — Keles cm↔mm (A022/A025, a
+  review error) and Svanteson `kg/m3` (A010/A013, a source-paper typo). Numeric
+  mismatch positives come from `seeded_discrepancies.csv`.
 - **Seeded discrepancies** (`seeded_discrepancies.csv`) provide the recall/precision
-  positives the natural review lacks: 10 rows = 6 `mismatch` (gross shift, subtle
-  >0.3%, group-swap, decimal error, digit transpose, fabrication) + 2
-  `unit_mismatch` (mm→cm) + 2 `match` negative controls (a 0.15% rounding that
-  must stay match, and an exact match). `should_flag` marks the 8 positives.
-  Each seed is derived from a real benchmark value; `review_value` is the
-  corrupted value, `source_value` is the truth.
+  positives the natural review lacks: 10 rows = 6 `mismatch` (gross shift; subtle
+  just above 1% = S02 at 1.23%; group-swap; decimal error; digit transpose;
+  fabrication) + 2 `unit_mismatch` (mm→cm) + 2 `match` negative controls (S03 a
+  0.75% rounding just below 1% that must stay match, and S09 an exact match).
+  S02/S03 straddle the 1% boundary to test tolerance calibration. `should_flag`
+  marks the 8 positives. Each seed derives from a real benchmark value;
+  `review_value` is the corrupted value, `source_value` is the truth.
 - All CSVs are plain UTF-8 (no BOM). Re-editing in Excel may re-save as GBK or
   add a BOM — the loader should read with `utf-8-sig`; re-normalise before freeze.
 
