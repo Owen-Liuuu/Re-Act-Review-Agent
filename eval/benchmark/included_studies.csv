@@ -1,10 +1,10 @@
-study_id,review_citation,country,reported_N,measurement_tool,modality,overall_quality,doi,review_ref_number
-ahmad_2022,Ahmad et al. (2022),Egypt,100,Echocardiography (Echo),echo,Good,10.1007/s00246-021-02811-x,18
-svanteson_2019,Svanteson et al. (2019),Norway,148,Coronary computed tomography angiography (CT),ct,Good,10.1186/s12933-019-0861-x,19
-de_gonzalo_calvo_2018,de Gonzalo-Calvo et al. (2018),Spain,73,Computed tomography (CT),ct,Fair,10.1038/s41598-018-19230-3,20
-keles_2016,Keles et al. (2016),Turkey,80,Transthoracic echocardiography (Echo),echo,Good,10.1016/j.jdiacomp.2015.09.013,21
-aslan_2015,Aslan et al. (2015),Turkey,112,Echocardiography (Echo),echo,Good,10.1111/echo.12960,22
-iacobellis_2014,Iacobellis et al. (2014),USA,30,Transthoracic echocardiography (Echo),echo,Good,10.1016/j.numecd.2013.11.001,27
-yazici_2011,Yazici et al. (2011),Turkey,79,Transthoracic echocardiography (Echo),echo,Good,10.1007/s12020-011-9478-x,23
-colom_2018,Colom et al. (2018),Spain,72,Computed tomography (CT),ct,Fair,10.1186/s12933-018-0794-9,24
-elbaky_2023,ElBaky et al. (2023),Egypt,97,Echocardiography (Echo),echo,Good,10.5114/polp.2023.133530,25
+study_id,review_citation,country,reported_N,measurement_tool,modality,overall_quality,doi,review_ref_number,source_pdf
+ahmad_2022,Ahmad et al. (2022),Egypt,100,Echocardiography (Echo),echo,Good,10.1007/s00246-021-02811-x,18,pdf/Ahmad et al. [2022].pdf
+svanteson_2019,Svanteson et al. (2019),Norway,148,Coronary computed tomography angiography (CT),ct,Good,10.1186/s12933-019-0861-x,19,pdf/Svanteson et al. [2019].pdf
+de_gonzalo_calvo_2018,de Gonzalo-Calvo et al. (2018),Spain,73,Computed tomography (CT),ct,Fair,10.1038/s41598-018-19230-3,20,pdf/de Gonzalo-Calvo et al..pdf
+keles_2016,Keles et al. (2016),Turkey,80,Transthoracic echocardiography (Echo),echo,Good,10.1016/j.jdiacomp.2015.09.013,21,pdf/Keles et al. [2016].pdf
+aslan_2015,Aslan et al. (2015),Turkey,112,Echocardiography (Echo),echo,Good,10.1111/echo.12960,22,pdf/Echocardiography - 2015 - Aslan - The Relationship between Epicardial Fat Thickness and Endothelial Dysfunction in Type I.pdf
+iacobellis_2014,Iacobellis et al. (2014),USA,30,Transthoracic echocardiography (Echo),echo,Good,10.1016/j.numecd.2013.11.001,27,pdf/Iacobellis et al. [2014].pdf
+yazici_2011,Yazici et al. (2011),Turkey,79,Transthoracic echocardiography (Echo),echo,Good,10.1007/s12020-011-9478-x,23,pdf/Yazıcı et al. [2011].pdf
+colom_2018,Colom et al. (2018),Spain,72,Computed tomography (CT),ct,Fair,10.1186/s12933-018-0794-9,24,pdf/Colom et al. [2018].pdf
+elbaky_2023,ElBaky et al. (2023),Egypt,97,Echocardiography (Echo),echo,Good,10.5114/polp.2023.133530,25,pdf/ElBaky et al. [2023] .pdf

@@ -20,7 +20,9 @@ extraction) and Auditor (review-vs-source cross-validation).
 | file | side | status | contents |
 |---|---|---|---|
 | `raw/EAT_T1DM_SRMA.pdf` | — | final | the review PDF |
-| `included_studies.csv` | — | **verify** | the 9 source papers: citation, country, N, modality, quality, **DOI**, review ref number |
+| `pdf/*.pdf` | source | present (git-ignored) | the 9 source-paper PDFs — **copyrighted, kept local only**; not committed |
+| `included_studies.csv` | — | **verify** | the 9 source papers: citation, country, N, modality, quality, **DOI**, review ref number, and `source_pdf` (path under `pdf/`) |
+| `seeded_discrepancies.csv` | recall | ready | 10 deliberately-corrupted rows (8 positive + 2 negative controls) to measure Auditor recall and precision |
 | `review_ground_truth.csv` | review | **verify** | long-format table of every value the review reports (`study × group × field_type × value`), with `source_location` (Table 1 / Fig 2 / Fig 3 / Fig 4) |
 | `audit_template.csv` | source (main axis) | **filled** | one row per auditable value (57): `review_value` + `source_value` + `source_quote` + `source_location_in_paper` + `source_unit` + `expected_label`, hand-annotated from the source papers. Labels re-derived under the 3% tolerance policy below |
 | `internal_consistency.csv` | review-internal (secondary axis) | **verify** | structured answer key (IC01–IC04) for the review contradicting itself (Table 1 vs forest plots vs reference list); each row `error_owner` + `needs_human_review` |
@@ -67,10 +69,13 @@ Aligned to the planned 4-table matching model (ReviewDataTable side):
   (A010/A013, a source-paper typo). Only 2 of 57 rows have any numeric
   difference at all (A054 0.11%, A057 0.42%); the review's transcription is
   otherwise exact.
-- **Seeded discrepancies still recommended for recall.** The one rounding-driven
-  mismatch is a weak positive; for a robust Auditor mismatch-recall metric add a
-  small set of deliberately corrupted review values (Proposal §6). The internal
-  axis (IC01/IC02 Keles) also provides real positives.
+- **Seeded discrepancies** (`seeded_discrepancies.csv`) provide the recall/precision
+  positives the natural review lacks: 10 rows = 6 `mismatch` (gross shift, subtle
+  >0.3%, group-swap, decimal error, digit transpose, fabrication) + 2
+  `unit_mismatch` (mm→cm) + 2 `match` negative controls (a 0.15% rounding that
+  must stay match, and an exact match). `should_flag` marks the 8 positives.
+  Each seed is derived from a real benchmark value; `review_value` is the
+  corrupted value, `source_value` is the truth.
 - All CSVs are plain UTF-8 (no BOM). Re-editing in Excel may re-save as GBK or
   add a BOM — the loader should read with `utf-8-sig`; re-normalise before freeze.
 
@@ -82,10 +87,10 @@ side correctly) plus the audit judgement key (does it compare correctly):
 | # | capability under test | ground truth | catches |
 |---|---|---|---|
 | 1 | **Review-side extraction** — Parser reads the review PDF (原文) | `review_ground_truth.csv` | Parser misreading the review's Table 1 / figures |
-| 2 | **Source-side extraction** — Collector reads each source paper (源论文) | `source_value` column in `audit_template.csv` (against the 9 source PDFs, added later) | Collector misreading a source paper |
+| 2 | **Source-side extraction** — Collector reads each source paper (源论文) | `source_value` column in `audit_template.csv`, run against the 9 PDFs in `pdf/` (mapped via `included_studies.csv` → `source_pdf`) | Collector misreading a source paper |
 | 3 | **Audit judgement** — Auditor compares review value vs source value | `expected_label` column in `audit_template.csv` | wrong match / mismatch / unit_mismatch verdict |
 | 4 | **Internal consistency** — Auditor checks the review against itself | `internal_consistency.csv` | review self-contradiction (Table vs figure, citation nos) |
-| 5 | **Auditor recall** | seeded discrepancies (to add) | failure to flag deliberately injected errors |
+| 5 | **Auditor recall + precision** | `seeded_discrepancies.csv` | failure to flag injected errors (recall) / over-flagging correct values (precision) |
 
 Targets **1** and **2** are the two extraction benchmarks: #1 grades extraction
 from the review itself, #2 grades extraction from the cited source papers. They

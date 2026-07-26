@@ -1,0 +1,11 @@
+seed_id,study_id,group,field_type,review_value,unit,source_value,source_unit,expected_label,rel_error_pct,seed_type,should_flag,notes
+S01,ahmad_2022,t1dm,sample_size,85,count,100,count,mismatch,15.000,numeric_gross,yes,N understated by 15%
+S02,aslan_2015,t1dm,bmi,23.5,kg/m2,23.31,kg/m2,mismatch,0.809,numeric_subtle,yes,just above the 0.3% band
+S03,ahmad_2022,t1dm,eat_thickness,6.61,mm,6.60,mm,match,0.151,numeric_below_tol,no,"0.15% — NEGATIVE control, must stay match"
+S04,iacobellis_2014,t1dm,eat_thickness,7.2,cm,7.2,mm,unit_mismatch,,unit_swap,yes,"same number, mm reported as cm"
+S05,ahmad_2022,t1dm,eat_thickness,3.83,mm,6.60,mm,mismatch,41.970,group_swap,yes,control value placed in the T1DM cell
+S06,yazici_2011,t1dm,eat_thickness,33.0,mm,3.30,mm,mismatch,90.000,decimal_error,yes,decimal point dropped (10x)
+S07,svanteson_2019,t1dm,eat_volume,25.3,cm3,52.3,cm3,mismatch,51.625,digit_transpose,yes,52.3 -> 25.3
+S08,colom_2018,all,eat_volume,58.0,cm3/m2,40.47,cm3/m2,mismatch,30.224,fabrication,yes,value not supported by the source
+S09,keles_2016,t1dm,age,34,years,34,years,match,0.000,exact_match,no,"NEGATIVE control, exact"
+S10,aslan_2015,control,eat_thickness,3.03,cm,3.03,mm,unit_mismatch,,unit_swap,yes,"same number, mm reported as cm"
