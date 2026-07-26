@@ -36,6 +36,7 @@ def _label_for(row: dict[str, str], tol: ToleranceTable) -> str:
         review_unit=row.get("unit", ""),
         source_unit=row.get("source_unit", ""),
         rel_tolerance=tol.rel_tolerance(field_type),
+        sd_rel_tolerance=tol.sd_rel_tolerance(field_type),
         audit_id=row.get("audit_id") or row.get("seed_id", ""),
         study_id=row.get("study_id", ""),
         group=row.get("group", "-"),

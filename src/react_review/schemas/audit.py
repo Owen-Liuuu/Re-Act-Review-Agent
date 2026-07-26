@@ -30,9 +30,11 @@ class MatchResult(BaseModel):
 
     Attributes:
         label: match / mismatch / unit_mismatch / not_comparable.
-        rel_error_pct: relative error of the primary values, in percent
+        rel_error_pct: relative error of the MEAN / primary values, in percent
             (None when a value could not be parsed or units differ).
-        tolerance_pct: the tolerance applied, in percent (for the report).
+        sd_rel_error_pct: relative error of the SD, in percent, when BOTH sides
+            report a ``mean ± sd`` spread (None otherwise).
+        tolerance_pct / sd_tolerance_pct: the bands applied, in percent.
         reason: short human-readable explanation.
     """
 
@@ -46,5 +48,7 @@ class MatchResult(BaseModel):
     source_unit: str = ""
     label: AuditLabel = AuditLabel.NOT_COMPARABLE
     rel_error_pct: float | None = None
+    sd_rel_error_pct: float | None = None
     tolerance_pct: float | None = None
+    sd_tolerance_pct: float | None = None
     reason: str = ""

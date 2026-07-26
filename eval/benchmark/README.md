@@ -52,21 +52,23 @@ Aligned to the planned 4-table matching model (ReviewDataTable side):
 
 ## Tolerance policy, labels, encoding
 
-- **Numeric tolerance = 1% (MVP — may be revisited).** Two numbers agree if the
-  relative error of the **primary value** (mean / median / point estimate — the
-  first number in a `mean ± SD` or `median (IQR)` cell) is ≤ 1%. SD / spread is
-  secondary and does not by itself cause a mismatch in MVP. Each row carries its
-  computed `rel_error_pct`.
+- **Dual tolerance (MVP — may be revisited): mean 1% + SD 3%.** A `mean ± SD`
+  value has its MEAN (primary value — first number in the cell) compared at ≤ 1%
+  and, when BOTH sides report an SD, its SD compared at ≤ 3%. Both bands must
+  hold for a MATCH; the SD band is looser because SDs are noisier and it is
+  skipped when either side is a range / IQR / point value. Each row carries the
+  computed `rel_error_pct` (mean) and `sd_rel_error_pct` (SD, when applicable).
 - **Unit is a separate axis.** If the reported unit differs (e.g. `mm` vs `cm`,
   `kg/m2` vs `kg/m3`) the row is `unit_mismatch` regardless of how close the
   numbers are.
 - `expected_label` taxonomy (MVP, may be revised): `match` | `mismatch` |
-  `unit_mismatch`. **Distribution at 1% tolerance: 53 match / 0 mismatch / 4
-  unit_mismatch.** The only two rows with any numeric difference (A054 0.11%,
-  A057 0.42%) are both within 1% → match, so the natural axis has no numeric
-  mismatch; its positives are the 4 `unit_mismatch` — Keles cm↔mm (A022/A025, a
-  review error) and Svanteson `kg/m3` (A010/A013, a source-paper typo). Numeric
-  mismatch positives come from `seeded_discrepancies.csv`.
+  `unit_mismatch`. **Distribution under the dual band: 52 match / 1 mismatch / 4
+  unit_mismatch.** The single `mismatch` is **A003 Ahmad BMI** — mean identical
+  (20.57) but SD **1.7 vs 1.77 = 3.95% > 3%**, a genuine SD transcription slip
+  (1.77 does not round to 1.7) that the mean-only rule missed. The 4
+  `unit_mismatch` are Keles cm↔mm (A022/A025, a review error) and Svanteson
+  `kg/m3` (A010/A013, a source-paper typo). More numeric-mismatch positives come
+  from `seeded_discrepancies.csv`.
 - **Seeded discrepancies** (`seeded_discrepancies.csv`) provide the recall/precision
   positives the natural review lacks: 10 rows = 6 `mismatch` (gross shift; subtle
   just above 1% = S02 at 1.23%; group-swap; decimal error; digit transpose;

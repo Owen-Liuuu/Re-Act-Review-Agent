@@ -22,10 +22,16 @@ class ToleranceTable:
         self,
         default_rel_tolerance: float = 0.01,
         per_field_type: dict[str, float] | None = None,
+        default_sd_rel_tolerance: float = 0.03,
+        per_field_type_sd: dict[str, float] | None = None,
     ) -> None:
         self._default = float(default_rel_tolerance)
         self._per_field: dict[str, float] = {
             k: float(v) for k, v in (per_field_type or {}).items()
+        }
+        self._default_sd = float(default_sd_rel_tolerance)
+        self._per_field_sd: dict[str, float] = {
+            k: float(v) for k, v in (per_field_type_sd or {}).items()
         }
 
     @classmethod
@@ -37,11 +43,19 @@ class ToleranceTable:
         return cls(
             default_rel_tolerance=data.get("default_rel_tolerance", 0.01),
             per_field_type=data.get("per_field_type") or {},
+            default_sd_rel_tolerance=data.get("default_sd_rel_tolerance", 0.03),
+            per_field_type_sd=data.get("per_field_type_sd") or {},
         )
 
     def rel_tolerance(self, field_type: str) -> float:
-        """Relative-error MATCH bound for ``field_type`` (falls back to default)."""
+        """Relative-error MATCH bound for the MEAN (falls back to default)."""
         return self._per_field.get((field_type or "").strip().lower(), self._default)
+
+    def sd_rel_tolerance(self, field_type: str) -> float:
+        """Relative-error MATCH bound for the SD (falls back to default)."""
+        return self._per_field_sd.get(
+            (field_type or "").strip().lower(), self._default_sd
+        )
 
     def rule_for(self, field_type: str) -> ToleranceRule:
         """Return the resolved :class:`ToleranceRule` for ``field_type``."""

@@ -54,6 +54,34 @@ def test_unparseable_is_not_comparable():
     assert _label("not reported", "6.60", ru="mm", su="mm") == AuditLabel.NOT_COMPARABLE
 
 
+# --- dual band: SD comparison (mean 1% + SD 3%) ---
+
+def test_sd_within_band_matches():
+    # mean identical, SD 1.85 vs 1.857 = 0.4% <= 3%
+    assert _label("7.01 ± 1.85", "7.0180 ± 1.85737", ru="mm", su="mm") == AuditLabel.MATCH
+
+
+def test_sd_beyond_band_mismatches():
+    # mean identical (Ahmad BMI), SD 1.7 vs 1.77 = 3.95% > 3% (the A003 case)
+    assert _label("20.57 ± 1.7", "20.57 ± 1.77", ru="kg/m2", su="kg/m2", ft="bmi") == AuditLabel.MISMATCH
+
+
+def test_sd_only_checked_when_both_have_sd():
+    # one side is a range (no SD) -> SD band skipped, mean-only -> match
+    assert _label("34 (29-39)", "34", ru="years", su="years", ft="age") == AuditLabel.MATCH
+
+
+def test_sd_result_carries_sd_error():
+    r = compare_values(
+        field_type="bmi", review_value="20.57 ± 1.7", source_value="20.57 ± 1.77",
+        review_unit="kg/m2", source_unit="kg/m2",
+        rel_tolerance=0.01, sd_rel_tolerance=0.03,
+    )
+    assert r.label == AuditLabel.MISMATCH
+    assert r.rel_error_pct == pytest.approx(0.0, abs=1e-6)
+    assert r.sd_rel_error_pct == pytest.approx(3.95, abs=0.05)
+
+
 def test_result_carries_rel_error_and_tolerance():
     r = compare_values(
         field_type="bmi", review_value="23.6", source_value="23.31",

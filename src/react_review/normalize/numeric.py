@@ -1,51 +1,99 @@
-"""Deterministic numeric parsing: pull the PRIMARY value out of a cell string.
+"""Deterministic numeric parsing.
 
-The primary value is the first number in a ``mean ± SD`` / ``median (IQR)`` /
-``value (range)`` cell — i.e. the central estimate the audit compares. Handles
-the formats seen across systematic-review tables:
+Parses a systematic-review cell string into a structured value that keeps BOTH
+the central estimate AND the spread, so the audit can compare means and SDs
+separately and the report can show the range. Handles the formats seen across
+review tables:
 
-    "6.60 ± 0.71"          -> 6.60
-    "52.3 (36.1-65.5) cm3" -> 52.3
-    "52,3"                 -> 52.3   (European decimal comma)
-    "34 (29-39)"           -> 34
-    "7.0180 ± 1.85737"     -> 7.0180
-    100                    -> 100.0
-
-Ported from the reused ``steps/table_comparison/real_impl._normalise_numeric``
-and generalised to return a float (or None when no number is present).
+    "6.60 ± 0.71"          -> primary 6.60, spread 0.71 (sd),  [5.89, 7.31]
+    "52.3 (36.1-65.5) cm3" -> primary 52.3, range [36.1, 65.5]
+    "34 (29-39)"           -> primary 34,   range [29, 39]
+    "55 (38.3-79.6), IQR"  -> primary 55,   iqr   [38.3, 79.6]
+    "27.0 ± 4.7/27.9"      -> primary 27.0, spread 4.7 (sd)   (trailing junk ignored)
+    "52,3"                 -> primary 52.3  (European decimal comma)
+    "100"                  -> primary 100
 """
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
-_NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?")
+_NUM = r"-?\d+(?:\.\d+)?"
+_NUMBER_RE = re.compile(_NUM)
+# a parenthetical "(a - b)" range, allowing hyphen / en-dash / em-dash
+_RANGE_RE = re.compile(rf"\(\s*({_NUM})\s*[-–—]\s*({_NUM})\s*\)")
+
+
+@dataclass(frozen=True)
+class NumericValue:
+    """A parsed numeric cell: central estimate + spread + interval.
+
+    Attributes:
+        raw: the original verbatim string.
+        primary: the central estimate (mean / median / point value), or None.
+        spread: SD (for ``±``) or half-width ((upper-lower)/2 for a range/IQR),
+            or None when the cell is a bare point value.
+        spread_kind: ``"sd"`` | ``"range"`` | ``"iqr"`` | ``""``.
+        lower / upper: interval bounds (± band or explicit range), or None.
+    """
+
+    raw: str
+    primary: float | None
+    spread: float | None = None
+    spread_kind: str = ""
+    lower: float | None = None
+    upper: float | None = None
+
+
+def _euro_comma(s: str) -> str:
+    """Turn a decimal comma between digits into a decimal point ("52,3" -> "52.3")."""
+    return re.sub(r"(?<=\d),(?=\d)", ".", s)
+
+
+def parse_numeric(value: object) -> NumericValue:
+    """Parse ``value`` into a :class:`NumericValue` (primary may be None)."""
+    if value is None or isinstance(value, bool):
+        return NumericValue(raw="" if value is None else str(value), primary=None)
+    if isinstance(value, (int, float)):
+        return NumericValue(raw=str(value), primary=float(value))
+
+    raw = str(value)
+    s = _euro_comma(raw.strip())
+    if not s:
+        return NumericValue(raw=raw, primary=None)
+
+    # normalise the ± variants to a single marker
+    s_pm = s.replace("+/-", "±").replace("+-", "±")
+
+    m0 = _NUMBER_RE.search(s_pm)
+    if not m0:
+        return NumericValue(raw=raw, primary=None)
+    primary = float(m0.group(0))
+
+    # SD form: "<primary> ± <sd>"
+    m_sd = re.search(rf"({_NUM})\s*±\s*({_NUM})", s_pm)
+    if m_sd:
+        spread = float(m_sd.group(2))
+        return NumericValue(
+            raw=raw, primary=primary, spread=spread, spread_kind="sd",
+            lower=primary - spread, upper=primary + spread,
+        )
+
+    # Range / IQR form: "(a - b)"
+    m_rng = _RANGE_RE.search(s)
+    if m_rng:
+        lower = float(m_rng.group(1))
+        upper = float(m_rng.group(2))
+        kind = "iqr" if re.search(r"iqr|median", s, re.I) else "range"
+        spread = abs(upper - lower) / 2.0
+        return NumericValue(
+            raw=raw, primary=primary, spread=spread, spread_kind=kind,
+            lower=lower, upper=upper,
+        )
+
+    return NumericValue(raw=raw, primary=primary)
 
 
 def primary_number(value: object) -> float | None:
-    """Return the first numeric token in ``value`` as a float, or None.
-
-    A leading European decimal comma (``"52,3"``) is treated as a decimal
-    point. Thousands separators are not assumed (biomedical table values are
-    small), so we only convert commas that sit between digits.
-    """
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-
-    s = str(value).strip()
-    if not s:
-        return None
-
-    # European decimal comma: "52,3" -> "52.3" (only between digits).
-    s = re.sub(r"(?<=\d),(?=\d)", ".", s)
-
-    m = _NUMBER_RE.search(s)
-    if not m:
-        return None
-    try:
-        return float(m.group(0))
-    except ValueError:
-        return None
+    """Convenience: the central estimate only (or None)."""
+    return parse_numeric(value).primary

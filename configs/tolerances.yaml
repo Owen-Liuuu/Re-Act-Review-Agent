@@ -8,9 +8,15 @@
 #     abs(a - b) / max(|a|, |b|, eps) <= rel_tolerance
 # A unit difference is a separate axis (unit_mismatch) and is not governed here.
 
-default_rel_tolerance: 0.01   # 1%
+# Dual band: the MEAN (primary value) uses default_rel_tolerance; the SD is
+# checked separately with default_sd_rel_tolerance and only when BOTH sides
+# report an SD ("mean ± sd"). The SD band is looser because SDs are noisier.
+default_rel_tolerance: 0.01      # 1% on the mean / primary value
+default_sd_rel_tolerance: 0.03   # 3% on the SD (when both sides have one)
 
 per_field_type: {}
   # examples (disabled for MVP — single global band):
   # sample_size: 0.0
   # p_value: 0.001
+
+per_field_type_sd: {}

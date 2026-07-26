@@ -33,11 +33,11 @@ Review long table (parser / P1 CSV)                    Source PDF
 
 | stage | input | process | output | det / LLM |
 |---|---|---|---|---|
-| 0 syntax | any value/unit string | primary-number (`6.60 ± 0.71`→6.60), decimal comma, unit norm (`kg/m²`=`kg/m2`), case/punct, DOI prefix | clean number + canonical unit | **deterministic** |
+| 0 syntax | any value/unit string | structured parse KEEPING mean + spread (`6.60 ± 0.71` → primary 6.60, sd 0.71, [5.89, 7.31]); decimal comma; unit norm (`kg/m²`=`kg/m2`); case/punct; DOI prefix | `NumericValue` (primary, spread, kind, lower/upper) + canonical unit | **deterministic** |
 | 1b field_type | raw_field_name + context | cache key=(norm name+context); hit→lookup; miss→LLM maps into controlled vocab (or adds) → write cache+vocab | canonical `field_type` | cache hit=det / miss=LLM |
 | 1c group | group_raw + context | same mechanism, separate group vocab | canonical group | same |
 | 2 directed extract | (study, group, field_type) + vocab entry + context + source PDF | LLM targeted lookup; maps canonical concept back to the source's wording; returns value+quote+location+unit | source value | **LLM** (dual-LLM, ≤3 retries) |
-| 3 compare | normalized review item + source item | units differ→`unit_mismatch`; else rel≤tol→`match` else `mismatch` | `MatchResult` | **deterministic** |
+| 3 compare | normalized review item + source item | units differ→`unit_mismatch`; else dual band — mean ≤1% AND (both have SD → SD ≤3%) → `match`, else `mismatch` | `MatchResult` | **deterministic** |
 
 ## Why directed (not blind-parallel)
 

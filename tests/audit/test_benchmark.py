@@ -30,6 +30,7 @@ def _predict(row: dict[str, str]) -> str:
         review_unit=row.get("unit", ""),
         source_unit=row.get("source_unit", ""),
         rel_tolerance=TOL.rel_tolerance(ft),
+        sd_rel_tolerance=TOL.sd_rel_tolerance(ft),
     ).label.value
 
 
@@ -41,11 +42,14 @@ def test_audit_template_reproduced_exactly():
         if _predict(r) != r["expected_label"].strip()
     ]
     assert not wrong, f"mislabelled audit rows: {wrong}"
-    # Sanity on the known distribution at 1% tolerance.
+    # Known distribution under the dual band (mean 1% + SD 3%).
     labels = [_predict(r) for r in rows]
-    assert labels.count("match") == 53
-    assert labels.count("mismatch") == 0
+    assert labels.count("match") == 52
+    assert labels.count("mismatch") == 1
     assert labels.count("unit_mismatch") == 4
+    # A003 is the SD-driven mismatch (mean identical, SD 1.7 vs 1.77 = 3.95%).
+    a003 = next(r for r in rows if r["audit_id"] == "A003")
+    assert _predict(a003) == "mismatch"
 
 
 def test_seeded_discrepancies_full_recall_and_precision():
