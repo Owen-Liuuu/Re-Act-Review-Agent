@@ -1,58 +1,58 @@
-audit_id,study_id,group,field_type,review_value,unit,source_value,source_quote,source_location_in_paper,expected_label,source_unit
-A001,ahmad_2022,-,sample_size,100,count,100,“A total of 100 participants (50 with T1DM and 50 healthy controls) were enrolled in this study.”,Results；印刷页码 p.1002,match,count
-A002,ahmad_2022,t1dm,age,12.90 ± 1.30,years,12.90 ± 1.30,Table 1,Age (years) 行，Diabetic children 列；印刷 p.1003,match,years
-A003,ahmad_2022,t1dm,bmi,20.57 ± 1.7,kg/m2,20.57 ± 1.77,Table 1,BMI (kg/m2) 行，Diabetic children 列；印刷 p.1003,match,kg/m2
-A004,ahmad_2022,t1dm,eat_thickness,6.60 ± 0.71,mm,6.60 ± 0.71,Table 2,EFT (mm) 行，Diabetic children 列；印刷 p.1004,match,mm
-A005,ahmad_2022,control,age,12.96 ± 1.12, ,12.96 ± 1.12,Table 1,Age (years) 行，Control children 列；印刷 p.1003,match, 
-A006,ahmad_2022,control,bmi,20.33 ± 0.69,kg/m2,20.33 ± 0.69,Table 1,BMI (kg/m2) 行，Control children 列；印刷 p.1003,match,kg/m2
-A007,ahmad_2022,control,eat_thickness,3.83 ± 0.35,mm,3.83 ± 0.35,Table 2,EFT (mm) 行，Control children 列；印刷 p.1004,match,mm
-A008,svanteson_2019,-,sample_size,148,count,148,Table 1,表头：T1DM-patients (n=88) + Controls (n=60)，合计 148；PDF p.4,match,count
-A009,svanteson_2019,t1dm,age,61.3 ± 7.1,years,61.3 ± 7.1,Table 1,Age (years) 行，T1DM-patients 列；PDF p.4,match,years
-A010,svanteson_2019,t1dm,bmi,25.8 ± 3.9,kg/m2,25.8 ± 3.9,Table 1,Body mass index 行，T1DM-patients 列；PDF p.4,unit_mismatch,kg/m3
-A011,svanteson_2019,t1dm,eat_volume,52.3 (36.1–65.5),cm3,52.3 (36.1–65.5),Table 2,Epicardial adipose tissue (cm3) 行，Type 1 diabetes 列；PDF p.5,match,cm3
-A012,svanteson_2019,control,age,62.3 ± 6.8,years,62.3 ± 6.8,Table 1,Age (years) 行，Controls 列；PDF p.4,match,years
-A013,svanteson_2019,control,bmi,25.5 ± 4.2,kg/m2,25.5 ± 4.2,Table 1,Body mass index 行，Controls 列；PDF p.4,unit_mismatch,kg/m3
-A014,svanteson_2019,control,eat_volume,"55 (38.3–79.6) cm3, Median (IQR)",cm3,55 (38.3–79.6),Table 2,Epicardial adipose tissue (cm3) 行，Controls 列；PDF p.5,match,cm3
-A015,de_gonzalo_calvo_2018,-,sample_size,73,count,73,Table 1,表头：N = 73；PDF p.2,match,count
-A016,de_gonzalo_calvo_2018,all,age,47.1 ± 8.6,years,47.1 ± 8.6,Table 1,Age (years) 行；PDF p.2,match,years
-A017,de_gonzalo_calvo_2018,all,bmi,27.0 ± 4.6,kg/m2,27.0 ± 4.6,Table 1,Body Mass Index (Kg/m2) 行；PDF p.2,match,kg/m2
-A018,de_gonzalo_calvo_2018,all,eat_volume,80.2 ± 49.0 cm3,cm3,80.2 ± 49.0,Table 1,Epicardial Fat Volume (cm3) 行；PDF p.2,match,cm3
-A019,keles_2016,-,sample_size,80,count,80,Table 1,表头：All subjects (n=80)；PDF p.3，印刷 p.128,match,count
-A020,keles_2016,t1dm,age,34 (29–39),years,34 (29–39),Table 1,Age (years) 行，DM 列；PDF p.3，印刷 p.128,match,years
-A021,keles_2016,t1dm,bmi,24.1 (22.3–26.7),kg/m2,24.1 (22.3–26.7),Table 1,BMI (kg/m2) 行，DM 列；PDF p.3，印刷 p.128,match,kg/m2
-A022,keles_2016,t1dm,eat_thickness,0.7 (0.6–0.9),mm,0.7 (0.6–0.9),Table 2,EFT (cm) 行，DM 列；PDF p.4，印刷 p.129,unit_mismatch,cm
-A023,keles_2016,control,age,32 (28–37.5),years,32 (28–37.5),Table 1,Age (years) 行，Control 列；PDF p.3，印刷 p.128,match,years
-A024,keles_2016,control,bmi,26.7 (21.8–30.2),kg/m2,26.7 (21.8–30.2),Table 1,BMI (kg/m2) 行，Control 列；PDF p.3，印刷 p.128,match,kg/m2
-A025,keles_2016,control,eat_thickness,0.6 (0.5–0.7),mm,0.6 (0.5–0.7),Table 2,EFT (cm) 行，Control 列；PDF p.4，印刷 p.129,unit_mismatch,cm
-A026,aslan_2015,-,sample_size,112,count,112,Table II,表头：Combined (n = 112)；PDF p.5，印刷 p.1749,match,count
-A027,aslan_2015,t1dm,age,30.6 ± 10.3,years,30.6 ± 10.3,Table I,Age (years) 行，Patient (n=76) 列；PDF p.4，印刷 p.1748,match,years
-A028,aslan_2015,t1dm,bmi,23.31 ± 2.73,kg/m2,23.31 ± 2.73,Table I,BMI (kg/m2) 行，Patient 列；PDF p.4，印刷 p.1748,match,kg/m2
-A029,aslan_2015,t1dm,eat_thickness,3.56 ± 0.48,mm,3.56 ± 0.48,Table I,EFT (mm) 行，Patient 列；PDF p.4，印刷 p.1748,match,mm
-A030,aslan_2015,control,age,32.4 ± 8.5,years,32.4 ± 8.5,Table I,Age (years) 行，Control (n=36) 列；PDF p.4，印刷 p.1748,match,years
-A031,aslan_2015,control,bmi,24.19 ± 2.70,kg/m2,24.19 ± 2.70,Table I,BMI (kg/m2) 行，Control 列；PDF p.4，印刷 p.1748,match,kg/m2
-A032,aslan_2015,control,eat_thickness,3.03 ± 0.48,mm,3.03 ± 0.48,Table I,EFT (mm) 行，Control 列；PDF p.4，印刷 p.1748,match,mm
-A033,iacobellis_2014,-,sample_size,30,count,30,“We studied 15 subjects with established and documented diagnosis of type 1 diabetes … and 15 non-diabetic controls.”,Methods；PDF p.2，印刷 p.726；合计 15+15,match,count
-A034,iacobellis_2014,t1dm,age,52.8 ± 12,years,52.8 ± 12,Table 1,Age (years) 行，T1DM 列；PDF p.2，印刷 p.726,match,years
-A035,iacobellis_2014,t1dm,bmi,27.8 ± 5.2,kg/m2,27.8 ± 5.2,Table 1,BMI (Kg/m2) 行，T1DM 列；PDF p.2，印刷 p.726,match,kg/m2
-A036,iacobellis_2014,t1dm,eat_thickness,7.2 ± 2.1,mm,7.2 ± 2.1,Table 1,Epicardial fat thickness (mm) 行，T1DM 列；PDF p.2，印刷 p.726,match,mm
-A037,iacobellis_2014,control,age,53 ± 9,years,53 ± 9,Table 1,Age (years) 行，Controls 列；PDF p.2，印刷 p.726,match,years
-A038,iacobellis_2014,control,bmi,27.4 ± 4.1,kg/m2,27.4 ± 4.1,Table 1,BMI (Kg/m2) 行，Controls 列；PDF p.2，印刷 p.726,match,kg/m2
-A039,iacobellis_2014,control,eat_thickness,4.9 ± 2.5,mm,4.9 ± 2.5,Table 1,Epicardial fat thickness (mm) 行，Controls 列；PDF p.2，印刷 p.726,match,mm
-A040,yazici_2011,-,sample_size,79,count,79,Table 1,表头：DM (n=36) + CONTROL (n=43)，合计 79；PDF p.3，印刷 p.252,match,count
-A041,yazici_2011,t1dm,age,30.8 ± 7.7,years,30.8 ± 7.7,Table 1,Age (yrs) 行，DM 列；PDF p.3，印刷 p.252,match,years
-A042,yazici_2011,t1dm,bmi,24.7 ± 3.8,kg/m2,24.7 ± 3.8,Table 1,BMI (kg/m2) 行，DM 列；PDF p.3，印刷 p.252,match,kg/m2
-A043,yazici_2011,t1dm,eat_thickness,3.30 ± 1.06,mm,3.30 ± 1.06,Table 2,EAT thickness average (mm) 行，DM 列；PDF p.4，印刷 p.253,match,mm
-A044,yazici_2011,control,age,29.9 ± 4.9,years,29.9 ± 4.9,Table 1,Age (yrs) 行，CONTROL 列；PDF p.3，印刷 p.252,match,years
-A045,yazici_2011,control,bmi,24.6 ± 3.0,kg/m2,24.6 ± 3.0,Table 1,BMI (kg/m2) 行，CONTROL 列；PDF p.3，印刷 p.252,match,kg/m2
-A046,yazici_2011,control,eat_thickness,2.30 ± 0.34 mm,mm,2.30 ± 0.34,Table 2,EAT thickness average (mm) 行，CONTROL 列；PDF p.4，印刷 p.253,match,mm
-A047,colom_2018,-,sample_size,72,count,72,"“Finally, 72 patients underwent CCTA and blood extraction…”",Methods；PDF p.2。Table 1 中 Male/female 为 44+28=72,match,count
-A048,colom_2018,all,age,47.1 ± 8.7,years,47.1 ± 8.7,Table 1,Age (years) 行；PDF p.4,match,years
-A049,colom_2018,all,bmi,27.0 ± 4.7/27.9,kg/m2,27.0 ± 4.7,Table 1,Global BMI/BMI males/BMI females 行，第一项 Global BMI；PDF p.4,match,kg/m2
-A050,colom_2018,all,eat_volume,40.47 ± 22.18 cm3/m2,cm3/m2,40.47 ± 22.18,Table 1,Epicardial fat → iEAT (cm3/m2) 行；PDF p.4,match,cm3/m2
-A051,elbaky_2023,-,sample_size,97,count,97,Table 1,表题：Diabetic patients (N=63) + control group (N=34)，合计 97；PDF p.3，印刷 p.280,match,count
-A052,elbaky_2023,t1dm,age,12.82 ± 3.24,years,12.82 ± 3.24,Table 1,Age [years] 行，Diabetic patients 列；PDF p.3，印刷 p.280,match,years
-A053,elbaky_2023,t1dm,bmi,21.15 ± 4.10,kg/m2,21.15 ± 4.10,Table 1,BMI 行，Diabetic patients 列；PDF p.3，印刷 p.280,match,kg/m2
-A054,elbaky_2023,t1dm,eat_thickness,7.01 ± 1.85,mm,7.0180 ± 1.85737,Table 2,Epicardial fat thickness [mm] 行，T1DM (1) 列；PDF p.4，印刷 p.281,match,mm
-A055,elbaky_2023,control,age,11.65 ± 3.54,years,11.65 ± 3.54,Table 1,Age [years] 行，Controls 列；PDF p.3，印刷 p.280,match,years
-A056,elbaky_2023,control,bmi,18.72 ± 4.10,kg/m2,18.72 ± 4.10,Table 1,BMI 行，Controls 列；PDF p.3，印刷 p.280,match,kg/m2
-A057,elbaky_2023,control,eat_thickness,2.16 ± 0.58,mm,2.1692 ± 0.58933,Table 2,Epicardial fat thickness [mm] 行，Controls (2) 列；PDF p.4，印刷 p.281,match,mm
+audit_id,study_id,group,field_type,review_value,unit,source_value,source_quote,source_location_in_paper,expected_label,rel_error_pct,source_unit
+A001,ahmad_2022,-,sample_size,100,count,100,“A total of 100 participants (50 with T1DM and 50 healthy controls) were enrolled in this study.”,Results；印刷页码 p.1002,match,0.000,count
+A002,ahmad_2022,t1dm,age,12.90 ± 1.30,years,12.90 ± 1.30,Table 1,Age (years) 行，Diabetic children 列；印刷 p.1003,match,0.000,years
+A003,ahmad_2022,t1dm,bmi,20.57 ± 1.7,kg/m2,20.57 ± 1.77,Table 1,BMI (kg/m2) 行，Diabetic children 列；印刷 p.1003,match,0.000,kg/m2
+A004,ahmad_2022,t1dm,eat_thickness,6.60 ± 0.71,mm,6.60 ± 0.71,Table 2,EFT (mm) 行，Diabetic children 列；印刷 p.1004,match,0.000,mm
+A005,ahmad_2022,control,age,12.96 ± 1.12, ,12.96 ± 1.12,Table 1,Age (years) 行，Control children 列；印刷 p.1003,match,0.000, 
+A006,ahmad_2022,control,bmi,20.33 ± 0.69,kg/m2,20.33 ± 0.69,Table 1,BMI (kg/m2) 行，Control children 列；印刷 p.1003,match,0.000,kg/m2
+A007,ahmad_2022,control,eat_thickness,3.83 ± 0.35,mm,3.83 ± 0.35,Table 2,EFT (mm) 行，Control children 列；印刷 p.1004,match,0.000,mm
+A008,svanteson_2019,-,sample_size,148,count,148,Table 1,表头：T1DM-patients (n=88) + Controls (n=60)，合计 148；PDF p.4,match,0.000,count
+A009,svanteson_2019,t1dm,age,61.3 ± 7.1,years,61.3 ± 7.1,Table 1,Age (years) 行，T1DM-patients 列；PDF p.4,match,0.000,years
+A010,svanteson_2019,t1dm,bmi,25.8 ± 3.9,kg/m2,25.8 ± 3.9,Table 1,Body mass index 行，T1DM-patients 列；PDF p.4,unit_mismatch,0.000,kg/m3
+A011,svanteson_2019,t1dm,eat_volume,52.3 (36.1–65.5),cm3,52.3 (36.1–65.5),Table 2,Epicardial adipose tissue (cm3) 行，Type 1 diabetes 列；PDF p.5,match,0.000,cm3
+A012,svanteson_2019,control,age,62.3 ± 6.8,years,62.3 ± 6.8,Table 1,Age (years) 行，Controls 列；PDF p.4,match,0.000,years
+A013,svanteson_2019,control,bmi,25.5 ± 4.2,kg/m2,25.5 ± 4.2,Table 1,Body mass index 行，Controls 列；PDF p.4,unit_mismatch,0.000,kg/m3
+A014,svanteson_2019,control,eat_volume,"55 (38.3–79.6) cm3, Median (IQR)",cm3,55 (38.3–79.6),Table 2,Epicardial adipose tissue (cm3) 行，Controls 列；PDF p.5,match,0.000,cm3
+A015,de_gonzalo_calvo_2018,-,sample_size,73,count,73,Table 1,表头：N = 73；PDF p.2,match,0.000,count
+A016,de_gonzalo_calvo_2018,all,age,47.1 ± 8.6,years,47.1 ± 8.6,Table 1,Age (years) 行；PDF p.2,match,0.000,years
+A017,de_gonzalo_calvo_2018,all,bmi,27.0 ± 4.6,kg/m2,27.0 ± 4.6,Table 1,Body Mass Index (Kg/m2) 行；PDF p.2,match,0.000,kg/m2
+A018,de_gonzalo_calvo_2018,all,eat_volume,80.2 ± 49.0 cm3,cm3,80.2 ± 49.0,Table 1,Epicardial Fat Volume (cm3) 行；PDF p.2,match,0.000,cm3
+A019,keles_2016,-,sample_size,80,count,80,Table 1,表头：All subjects (n=80)；PDF p.3，印刷 p.128,match,0.000,count
+A020,keles_2016,t1dm,age,34 (29–39),years,34 (29–39),Table 1,Age (years) 行，DM 列；PDF p.3，印刷 p.128,match,0.000,years
+A021,keles_2016,t1dm,bmi,24.1 (22.3–26.7),kg/m2,24.1 (22.3–26.7),Table 1,BMI (kg/m2) 行，DM 列；PDF p.3，印刷 p.128,match,0.000,kg/m2
+A022,keles_2016,t1dm,eat_thickness,0.7 (0.6–0.9),mm,0.7 (0.6–0.9),Table 2,EFT (cm) 行，DM 列；PDF p.4，印刷 p.129,unit_mismatch,0.000,cm
+A023,keles_2016,control,age,32 (28–37.5),years,32 (28–37.5),Table 1,Age (years) 行，Control 列；PDF p.3，印刷 p.128,match,0.000,years
+A024,keles_2016,control,bmi,26.7 (21.8–30.2),kg/m2,26.7 (21.8–30.2),Table 1,BMI (kg/m2) 行，Control 列；PDF p.3，印刷 p.128,match,0.000,kg/m2
+A025,keles_2016,control,eat_thickness,0.6 (0.5–0.7),mm,0.6 (0.5–0.7),Table 2,EFT (cm) 行，Control 列；PDF p.4，印刷 p.129,unit_mismatch,0.000,cm
+A026,aslan_2015,-,sample_size,112,count,112,Table II,表头：Combined (n = 112)；PDF p.5，印刷 p.1749,match,0.000,count
+A027,aslan_2015,t1dm,age,30.6 ± 10.3,years,30.6 ± 10.3,Table I,Age (years) 行，Patient (n=76) 列；PDF p.4，印刷 p.1748,match,0.000,years
+A028,aslan_2015,t1dm,bmi,23.31 ± 2.73,kg/m2,23.31 ± 2.73,Table I,BMI (kg/m2) 行，Patient 列；PDF p.4，印刷 p.1748,match,0.000,kg/m2
+A029,aslan_2015,t1dm,eat_thickness,3.56 ± 0.48,mm,3.56 ± 0.48,Table I,EFT (mm) 行，Patient 列；PDF p.4，印刷 p.1748,match,0.000,mm
+A030,aslan_2015,control,age,32.4 ± 8.5,years,32.4 ± 8.5,Table I,Age (years) 行，Control (n=36) 列；PDF p.4，印刷 p.1748,match,0.000,years
+A031,aslan_2015,control,bmi,24.19 ± 2.70,kg/m2,24.19 ± 2.70,Table I,BMI (kg/m2) 行，Control 列；PDF p.4，印刷 p.1748,match,0.000,kg/m2
+A032,aslan_2015,control,eat_thickness,3.03 ± 0.48,mm,3.03 ± 0.48,Table I,EFT (mm) 行，Control 列；PDF p.4，印刷 p.1748,match,0.000,mm
+A033,iacobellis_2014,-,sample_size,30,count,30,“We studied 15 subjects with established and documented diagnosis of type 1 diabetes … and 15 non-diabetic controls.”,Methods；PDF p.2，印刷 p.726；合计 15+15,match,0.000,count
+A034,iacobellis_2014,t1dm,age,52.8 ± 12,years,52.8 ± 12,Table 1,Age (years) 行，T1DM 列；PDF p.2，印刷 p.726,match,0.000,years
+A035,iacobellis_2014,t1dm,bmi,27.8 ± 5.2,kg/m2,27.8 ± 5.2,Table 1,BMI (Kg/m2) 行，T1DM 列；PDF p.2，印刷 p.726,match,0.000,kg/m2
+A036,iacobellis_2014,t1dm,eat_thickness,7.2 ± 2.1,mm,7.2 ± 2.1,Table 1,Epicardial fat thickness (mm) 行，T1DM 列；PDF p.2，印刷 p.726,match,0.000,mm
+A037,iacobellis_2014,control,age,53 ± 9,years,53 ± 9,Table 1,Age (years) 行，Controls 列；PDF p.2，印刷 p.726,match,0.000,years
+A038,iacobellis_2014,control,bmi,27.4 ± 4.1,kg/m2,27.4 ± 4.1,Table 1,BMI (Kg/m2) 行，Controls 列；PDF p.2，印刷 p.726,match,0.000,kg/m2
+A039,iacobellis_2014,control,eat_thickness,4.9 ± 2.5,mm,4.9 ± 2.5,Table 1,Epicardial fat thickness (mm) 行，Controls 列；PDF p.2，印刷 p.726,match,0.000,mm
+A040,yazici_2011,-,sample_size,79,count,79,Table 1,表头：DM (n=36) + CONTROL (n=43)，合计 79；PDF p.3，印刷 p.252,match,0.000,count
+A041,yazici_2011,t1dm,age,30.8 ± 7.7,years,30.8 ± 7.7,Table 1,Age (yrs) 行，DM 列；PDF p.3，印刷 p.252,match,0.000,years
+A042,yazici_2011,t1dm,bmi,24.7 ± 3.8,kg/m2,24.7 ± 3.8,Table 1,BMI (kg/m2) 行，DM 列；PDF p.3，印刷 p.252,match,0.000,kg/m2
+A043,yazici_2011,t1dm,eat_thickness,3.30 ± 1.06,mm,3.30 ± 1.06,Table 2,EAT thickness average (mm) 行，DM 列；PDF p.4，印刷 p.253,match,0.000,mm
+A044,yazici_2011,control,age,29.9 ± 4.9,years,29.9 ± 4.9,Table 1,Age (yrs) 行，CONTROL 列；PDF p.3，印刷 p.252,match,0.000,years
+A045,yazici_2011,control,bmi,24.6 ± 3.0,kg/m2,24.6 ± 3.0,Table 1,BMI (kg/m2) 行，CONTROL 列；PDF p.3，印刷 p.252,match,0.000,kg/m2
+A046,yazici_2011,control,eat_thickness,2.30 ± 0.34 mm,mm,2.30 ± 0.34,Table 2,EAT thickness average (mm) 行，CONTROL 列；PDF p.4，印刷 p.253,match,0.000,mm
+A047,colom_2018,-,sample_size,72,count,72,"“Finally, 72 patients underwent CCTA and blood extraction…”",Methods；PDF p.2。Table 1 中 Male/female 为 44+28=72,match,0.000,count
+A048,colom_2018,all,age,47.1 ± 8.7,years,47.1 ± 8.7,Table 1,Age (years) 行；PDF p.4,match,0.000,years
+A049,colom_2018,all,bmi,27.0 ± 4.7/27.9,kg/m2,27.0 ± 4.7,Table 1,Global BMI/BMI males/BMI females 行，第一项 Global BMI；PDF p.4,match,0.000,kg/m2
+A050,colom_2018,all,eat_volume,40.47 ± 22.18 cm3/m2,cm3/m2,40.47 ± 22.18,Table 1,Epicardial fat → iEAT (cm3/m2) 行；PDF p.4,match,0.000,cm3/m2
+A051,elbaky_2023,-,sample_size,97,count,97,Table 1,表题：Diabetic patients (N=63) + control group (N=34)，合计 97；PDF p.3，印刷 p.280,match,0.000,count
+A052,elbaky_2023,t1dm,age,12.82 ± 3.24,years,12.82 ± 3.24,Table 1,Age [years] 行，Diabetic patients 列；PDF p.3，印刷 p.280,match,0.000,years
+A053,elbaky_2023,t1dm,bmi,21.15 ± 4.10,kg/m2,21.15 ± 4.10,Table 1,BMI 行，Diabetic patients 列；PDF p.3，印刷 p.280,match,0.000,kg/m2
+A054,elbaky_2023,t1dm,eat_thickness,7.01 ± 1.85,mm,7.0180 ± 1.85737,Table 2,Epicardial fat thickness [mm] 行，T1DM (1) 列；PDF p.4，印刷 p.281,match,0.114,mm
+A055,elbaky_2023,control,age,11.65 ± 3.54,years,11.65 ± 3.54,Table 1,Age [years] 行，Controls 列；PDF p.3，印刷 p.280,match,0.000,years
+A056,elbaky_2023,control,bmi,18.72 ± 4.10,kg/m2,18.72 ± 4.10,Table 1,BMI 行，Controls 列；PDF p.3，印刷 p.280,match,0.000,kg/m2
+A057,elbaky_2023,control,eat_thickness,2.16 ± 0.58,mm,2.1692 ± 0.58933,Table 2,Epicardial fat thickness [mm] 行，Controls (2) 列；PDF p.4，印刷 p.281,mismatch,0.424,mm

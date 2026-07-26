@@ -50,42 +50,49 @@ Aligned to the planned 4-table matching model (ReviewDataTable side):
 
 ## Tolerance policy, labels, encoding
 
-- **Numeric tolerance = 3% (MVP).** Two numbers agree if the relative error of
-  the **primary value** (mean / median / point estimate — the first number in a
-  `mean ± SD` or `median (IQR)` cell) is ≤ 3%. SD / spread is secondary and does
-  not by itself cause a mismatch in MVP.
+- **Numeric tolerance = 0.3% (MVP — performance-testing setting, will be revisited).**
+  Two numbers agree if the relative error of the **primary value** (mean /
+  median / point estimate — the first number in a `mean ± SD` or `median (IQR)`
+  cell) is ≤ 0.3%. SD / spread is secondary and does not by itself cause a
+  mismatch in MVP. Each row carries its computed `rel_error_pct`.
 - **Unit is a separate axis.** If the reported unit differs (e.g. `mm` vs `cm`,
   `kg/m2` vs `kg/m3`) the row is `unit_mismatch` regardless of how close the
   numbers are.
 - `expected_label` taxonomy (MVP, may be revised): `match` | `mismatch` |
-  `unit_mismatch`. **Distribution after applying 3% tolerance: 53 match / 0
-  mismatch / 4 unit_mismatch.** The 4 unit_mismatch are Keles cm↔mm (A022/A025)
-  and Svanteson `kg/m3` source typo (A010/A013).
-- **Seeded discrepancies needed.** Because the review's Table-1 means all agree
-  with the sources within 3% (0 real value-mismatches), the main axis alone
-  cannot measure Auditor mismatch-recall. Add a small set of deliberately
-  corrupted review values (Proposal §6 "Auditor recall on seeded discrepancies")
-  before evaluating recall. The internal axis (IC01/IC02 Keles) provides a few
-  real positive detections in the meantime.
+  `unit_mismatch`. **Distribution at 0.3% tolerance: 52 match / 1 mismatch / 4
+  unit_mismatch** (5 positive detections total). The single `mismatch` is A057
+  ElBaky EAT (2.16 vs 2.1692 = 0.42%) — a rounding-driven positive that would be
+  a `match` again under a looser tolerance. The 4 `unit_mismatch` are the real
+  unit errors: Keles cm↔mm (A022/A025, a review error) and Svanteson `kg/m3`
+  (A010/A013, a source-paper typo). Only 2 of 57 rows have any numeric
+  difference at all (A054 0.11%, A057 0.42%); the review's transcription is
+  otherwise exact.
+- **Seeded discrepancies still recommended for recall.** The one rounding-driven
+  mismatch is a weak positive; for a robust Auditor mismatch-recall metric add a
+  small set of deliberately corrupted review values (Proposal §6). The internal
+  axis (IC01/IC02 Keles) also provides real positives.
 - All CSVs are plain UTF-8 (no BOM). Re-editing in Excel may re-save as GBK or
   add a BOM — the loader should read with `utf-8-sig`; re-normalise before freeze.
-- **Policy-sensitive rows** (flipped to `match` under 3%, override if a stricter
-  policy is wanted): A003 Ahmad BMI (mean identical, SD 1.7 vs 1.77 — a real SD
-  slip we ignore when auditing the mean); A049 Colom BMI (mean identical but the
-  review cell string `27.0 ± 4.7/27.9` is malformed).
 
-## How this is used
+## What this benchmark measures
 
-1. **Parser eval (review side).** Run the Parser on `raw/EAT_T1DM_SRMA.pdf` and
-   compare its long-table output against `review_ground_truth.csv` (value-level
-   accuracy + correct `study / group / field_type` assignment).
-2. **Auditor eval (main axis, review vs source).** Run the Auditor over
-   `audit_template.csv` (review_value vs source_value) and score its
-   match/mismatch/unit_mismatch labels against `expected_label`.
-3. **Auditor eval (secondary axis, review vs itself).** Score the Auditor
-   against `internal_consistency.csv` (Table 1 vs forest / reference list).
-4. **Auditor recall.** Add seeded discrepancies (see policy note) to measure
-   mismatch-detection recall (Proposal §6).
+There are two INDEPENDENT extraction ground-truths (does the system read each
+side correctly) plus the audit judgement key (does it compare correctly):
+
+| # | capability under test | ground truth | catches |
+|---|---|---|---|
+| 1 | **Review-side extraction** — Parser reads the review PDF (原文) | `review_ground_truth.csv` | Parser misreading the review's Table 1 / figures |
+| 2 | **Source-side extraction** — Collector reads each source paper (源论文) | `source_value` column in `audit_template.csv` (against the 9 source PDFs, added later) | Collector misreading a source paper |
+| 3 | **Audit judgement** — Auditor compares review value vs source value | `expected_label` column in `audit_template.csv` | wrong match / mismatch / unit_mismatch verdict |
+| 4 | **Internal consistency** — Auditor checks the review against itself | `internal_consistency.csv` | review self-contradiction (Table vs figure, citation nos) |
+| 5 | **Auditor recall** | seeded discrepancies (to add) | failure to flag deliberately injected errors |
+
+Targets **1** and **2** are the two extraction benchmarks: #1 grades extraction
+from the review itself, #2 grades extraction from the cited source papers. They
+are separate because a wrong audit verdict can come from either a bad review
+read, a bad source read, or a bad comparison — and this split tells them apart.
+(Fully exercising #2 needs the 9 source PDFs; for now the hand-annotated
+`source_value` is the ground truth.)
 
 ## Provenance / caveats
 
