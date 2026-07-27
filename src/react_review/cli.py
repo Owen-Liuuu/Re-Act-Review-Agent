@@ -446,11 +446,102 @@ def _audit_main(argv: list[str] | None = None) -> None:
     _safe_print(f"\n[PACKAGE] {pkg_path.resolve()}")
 
 
+def _run_main(argv: list[str] | None = None) -> None:
+    """Full LLM pipeline: review PDF → Parser → Collector → Auditor → Judge.
+
+    Parses the review PDF, resolves each study to the included-studies registry,
+    reads the LOCAL source PDFs, extracts + audits + adjudicates, and persists the
+    EvidencePackage. Requires ``--config`` with an LLM api_key (GLM etc.).
+    """
+    import uuid
+
+    from react_review.agents.collector import Collector
+    from react_review.audit import ToleranceTable
+    from react_review.csv_io import load_included_studies
+    from react_review.normalize.vocabulary import Vocabulary
+    from react_review.orchestrator import AuditOrchestrator, AuditPipeline, Judge
+    from react_review.parser.review_parser import ReviewParser
+    from react_review.pipeline.factory import _create_llm_backend
+    from react_review.retrieval.local_pdf import LocalPdfRetriever
+    from react_review.store import EvidencePackageStore
+    from react_review.study_match import build_reference_resolver, resolve_studies
+    from react_review.tools.compare import CompareValuesTool
+    from react_review.tools.extract import FetchFullTextTool
+    from react_review.tools.extract_source import ExtractSourceValueTool
+    from react_review.tools.normalize import NormalizeFieldTool
+    from react_review.tools.registry import ToolRegistry
+
+    ap = argparse.ArgumentParser(
+        prog="react-review run",
+        description="Full audit: review PDF → Collector → Auditor → Judge.",
+    )
+    ap.add_argument("--pdf", type=Path, required=True, help="the systematic review PDF")
+    ap.add_argument("--studies", type=Path, required=True,
+                    help="included_studies.csv (study_id, doi, source_pdf)")
+    ap.add_argument("--config", type=Path, default=Path("configs/config.local.yaml"),
+                    help="LLM config with an api_key (default: configs/config.local.yaml)")
+    ap.add_argument("--pdf-dir", type=Path, default=None,
+                    help="base dir for source_pdf paths (default: the --studies parent)")
+    ap.add_argument("--tolerances", type=Path, default=None)
+    ap.add_argument("--context", default="", help="one-sentence research context")
+    ap.add_argument("--out", type=Path, default=Path("output/runs"))
+    ap.add_argument("--run-id", default=None)
+    ap.add_argument("--limit", type=int, default=0,
+                    help="audit only the first N review items (0 = all)")
+    args = ap.parse_args(argv)
+
+    config = load_config(args.config)
+    setup_logging(log_file=config.paths.log_file)
+    backend = _create_llm_backend(config)
+
+    seed = Path(__file__).resolve().parents[2] / "configs" / "vocabulary.seed.json"
+    vocab = Vocabulary.from_json(seed)
+    review_parser = ReviewParser(backend, NormalizeFieldTool(vocab, backend))
+
+    _safe_print(f"Parsing review PDF: {args.pdf}")
+    parsed = asyncio.run(review_parser.parse(args.pdf, research_context=args.context))
+    _safe_print(f"  parsed {len(parsed.items)} review items")
+
+    studies = load_included_studies(args.studies)
+    review_items, sid_map = resolve_studies(parsed.items, studies)
+    if args.limit:
+        review_items = review_items[: args.limit]
+
+    base_dir = args.pdf_dir or args.studies.parent
+    doi_to_path = {s.doi: s.source_pdf for s in studies if s.doi and s.source_pdf}
+    retriever = LocalPdfRetriever(doi_to_path, base_dir=base_dir)
+
+    tol = ToleranceTable.from_yaml(args.tolerances) if args.tolerances else ToleranceTable()
+    reg = ToolRegistry()
+    reg.register(FetchFullTextTool(retriever))
+    reg.register(ExtractSourceValueTool(backend))
+    reg.register(CompareValuesTool(tol))
+    pipeline = AuditPipeline(
+        Collector(reg, vocabulary=vocab), AuditOrchestrator(reg), Judge(),
+        store=EvidencePackageStore(args.out),
+    )
+
+    run_id = args.run_id or uuid.uuid4().hex[:12]
+    _safe_print(f"Auditing {len(review_items)} items (run {run_id}) …")
+    pkg = asyncio.run(pipeline.run(
+        review_items, build_reference_resolver(sid_map),
+        research_context=args.context, run_id=run_id, parser_record=parsed.record,
+    ))
+
+    fv = pkg.final_verification
+    _safe_print("\n" + fv.summary)
+    for f in fv.human_review_flags[:40]:
+        _safe_print(f"  [{f.label}] {f.study_id}/{f.group}/{f.field_type}: {f.reason}")
+    _safe_print(f"\n[PACKAGE] {(args.out / run_id / 'package.json').resolve()}")
+
+
 def main() -> None:
-    """CLI entry point. Subcommands: ``audit`` (new deterministic) / ``legacy``."""
+    """CLI entry point. Subcommands: ``run`` / ``audit`` (deterministic) / ``legacy``."""
     import sys
 
     argv = sys.argv[1:]
+    if argv and argv[0] == "run":
+        return _run_main(argv[1:])
     if argv and argv[0] == "audit":
         return _audit_main(argv[1:])
     if argv and argv[0] == "legacy":

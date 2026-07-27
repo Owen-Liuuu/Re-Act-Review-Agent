@@ -10,7 +10,11 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
+from react_review.schemas.evidence import (
+    IncludedStudy,
+    ReviewDataItem,
+    SourceEvidenceItem,
+)
 
 
 def _rows(path: Path | str) -> list[dict[str, str]]:
@@ -46,6 +50,29 @@ def load_review_items(path: Path | str) -> list[ReviewDataItem]:
             unit=_first(r, "unit", "review_unit"),
         ))
     return items
+
+
+def load_included_studies(path: Path | str) -> list[IncludedStudy]:
+    """Load the included-studies registry (study_id, doi, source_pdf, …)."""
+    studies: list[IncludedStudy] = []
+    for r in _rows(path):
+        sid = _first(r, "study_id")
+        if not sid:
+            continue
+        n = _first(r, "reported_N")
+        studies.append(IncludedStudy(
+            study_id=sid,
+            review_citation=_first(r, "review_citation"),
+            country=_first(r, "country"),
+            reported_N=int(n) if n.isdigit() else None,
+            measurement_tool=_first(r, "measurement_tool"),
+            modality=_first(r, "modality"),
+            overall_quality=_first(r, "overall_quality"),
+            doi=_first(r, "doi"),
+            review_ref_number=_first(r, "review_ref_number"),
+            source_pdf=_first(r, "source_pdf"),
+        ))
+    return studies
 
 
 def load_source_items(path: Path | str) -> list[SourceEvidenceItem]:

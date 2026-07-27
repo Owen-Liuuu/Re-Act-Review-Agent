@@ -8,6 +8,7 @@ docs/normalization_pipeline.md.
 from react_review.normalize.numeric import NumericValue, parse_numeric, primary_number
 from react_review.normalize.units import normalize_unit, units_differ
 from react_review.normalize.groups import normalize_group
+from react_review.normalize.doi import normalize_doi
 
 __all__ = [
     "NumericValue",
@@ -16,4 +17,5 @@ __all__ = [
     "normalize_unit",
     "units_differ",
     "normalize_group",
+    "normalize_doi",
 ]
