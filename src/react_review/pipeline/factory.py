@@ -76,9 +76,19 @@ def _create_backend_from_settings(settings: "LLMSettings") -> LLMBackend:
         from react_review.llm.qwen_backend import QwenBackend
         return QwenBackend(settings)
 
+    if provider in ("glm", "zhipu"):
+        # GLM / Zhipu expose an OpenAI-compatible endpoint; reuse OpenAIBackend
+        # and default the base_url to BigModel if the config didn't set one.
+        from react_review.llm.openai_backend import OpenAIBackend
+        if not settings.base_url:
+            settings = settings.model_copy(
+                update={"base_url": "https://open.bigmodel.cn/api/paas/v4"}
+            )
+        return OpenAIBackend(settings)
+
     raise ValueError(
         f"Unknown LLM provider: '{provider}'. "
-        "Supported: mock, openai, anthropic, gemini, qwen."
+        "Supported: mock, openai, anthropic, gemini, qwen, glm."
     )
 
 
