@@ -47,6 +47,10 @@ pip install -e ".[dev]"
 pytest                          # full test suite
 python eval/run_benchmark.py    # score the audit core vs the answer key
 python eval/run_pipeline.py     # end-to-end audit over the benchmark tables
+
+# Deterministic audit from the CLI (no LLM): match review vs source, compare,
+# print the report, and persist the run's evidence package under --out.
+react-review audit review.csv source.csv --out output/runs
 ```
 
 ## Reuse provenance

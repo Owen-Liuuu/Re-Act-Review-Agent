@@ -299,11 +299,11 @@ def _print_result(result: PipelineRunResult) -> None:
     _safe_print("\n" + "=" * 70)
 
 
-def main() -> None:
-    """CLI entry point."""
+def _legacy_main(argv: list[str] | None = None) -> None:
+    """Legacy 4-step prototype pipeline (reachable via ``react-review legacy``)."""
     parser = argparse.ArgumentParser(
-        prog="react-review",
-        description="LLM-powered academic literature integrity detection",
+        prog="react-review legacy",
+        description="Legacy lit_inspector 4-step pipeline (prototype).",
     )
     parser.add_argument(
         "--config",
@@ -336,7 +336,7 @@ def main() -> None:
         help="Generate a DOCX evaluation report at the given path "
              "(e.g. --report output/report.docx).",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     # Load config
     config = load_config(args.config)
@@ -383,3 +383,77 @@ def main() -> None:
         from react_review.steps.reporting import generate_docx_report
         report_path = generate_docx_report(result, report_path)
         _safe_print(f"\n[REPORT] Saved to: {report_path.resolve()}")
+
+
+def _audit_main(argv: list[str] | None = None) -> None:
+    """New deterministic audit: match review↔source, compare, report, persist.
+
+    Runs the P1 AuditOrchestrator over a review table and a source table (CSV),
+    prints the audit report, and saves the full EvidencePackage under --out.
+    No LLM / network — this is the deterministic Tier-3 path.
+    """
+    import uuid
+
+    from react_review.audit import ToleranceTable
+    from react_review.core.config import AppConfig
+    from react_review.csv_io import load_review_items, load_source_items
+    from react_review.orchestrator import AuditOrchestrator
+    from react_review.schemas.package import EvidencePackage
+    from react_review.store import EvidencePackageStore
+    from react_review.tools import build_catalogue
+
+    parser = argparse.ArgumentParser(
+        prog="react-review audit",
+        description="Audit a review's reported values against source evidence.",
+    )
+    parser.add_argument("review_csv", type=Path,
+                        help="review-side long table (study_id, group, field_type, value, unit)")
+    parser.add_argument("source_csv", type=Path,
+                        help="source-side evidence (study_id, group, field_type, source_value, source_unit)")
+    parser.add_argument("--out", type=Path, default=Path("output/runs"),
+                        help="base dir for the run's evidence package (default: output/runs)")
+    parser.add_argument("--tolerances", type=Path, default=None,
+                        help="tolerances.yaml (default: shipped configs/tolerances.yaml)")
+    parser.add_argument("--run-id", default=None, help="explicit run id (default: random)")
+    parser.add_argument("--json", action="store_true", help="print the full report as JSON")
+    args = parser.parse_args(argv)
+
+    setup_logging()
+
+    review = load_review_items(args.review_csv)
+    source = load_source_items(args.source_csv)
+    _safe_print(f"Loaded {len(review)} review rows, {len(source)} source rows.")
+
+    tol = ToleranceTable.from_yaml(args.tolerances) if args.tolerances else None
+    catalogue = build_catalogue(AppConfig(mock_mode=True), tolerance=tol)
+    orch = AuditOrchestrator(catalogue)
+
+    run_id = args.run_id or uuid.uuid4().hex[:12]
+    report = asyncio.run(orch.run(review, source, run_id=run_id))
+
+    store = EvidencePackageStore(args.out)
+    pkg_path = store.save(EvidencePackage(
+        run_id=run_id, review_items=review, source_items=source, report=report,
+    ))
+
+    if args.json:
+        _safe_print(json.dumps(report.model_dump(mode="json"), indent=2, ensure_ascii=False))
+    else:
+        _safe_print("\n" + report.summary)
+        for r in report.results:
+            if r.label.value != "match":
+                _safe_print(f"  [{r.label.value}] {r.study_id}/{r.group}/{r.field_type}: {r.reason}")
+    _safe_print(f"\n[PACKAGE] {pkg_path.resolve()}")
+
+
+def main() -> None:
+    """CLI entry point. Subcommands: ``audit`` (new deterministic) / ``legacy``."""
+    import sys
+
+    argv = sys.argv[1:]
+    if argv and argv[0] == "audit":
+        return _audit_main(argv[1:])
+    if argv and argv[0] == "legacy":
+        return _legacy_main(argv[1:])
+    # Back-compat: no recognised subcommand falls through to the legacy pipeline.
+    return _legacy_main(argv)
