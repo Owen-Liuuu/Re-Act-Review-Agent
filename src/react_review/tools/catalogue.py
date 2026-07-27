@@ -6,7 +6,7 @@ tools across the four stages:
 
     Search : search_pubmed, count_pubmed, count_europepmc, count_openalex
     Verify : verify_reference
-    Extract: fetch_fulltext, extract_fields, normalize_field
+    Extract: fetch_fulltext, extract_fields, extract_source_value, normalize_field
     Compare: compare_values
 """
 from __future__ import annotations
@@ -20,6 +20,7 @@ from react_review.steps.search_validation.multi_db_count import IdentificationCo
 from react_review.tools.base import Tool
 from react_review.tools.compare import CompareValuesTool
 from react_review.tools.extract import ExtractFieldsTool, FetchFullTextTool
+from react_review.tools.extract_source import ExtractSourceValueTool
 from react_review.tools.normalize import NormalizeFieldTool
 from react_review.tools.registry import ToolRegistry
 from react_review.tools.search import CountResultsTool, SearchPubMedTool
@@ -132,6 +133,7 @@ def build_catalogue(
         VerifyReferenceTool(verifier),
         FetchFullTextTool(retriever),
         ExtractFieldsTool(extractor),
+        ExtractSourceValueTool(norm_backend),
         NormalizeFieldTool(_load_seed_vocabulary(), norm_backend),
         CompareValuesTool(tol),
     ]
