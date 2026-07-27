@@ -8,5 +8,6 @@ from react_review.agents.runtime import (
     BoundedReActAgent,
     ProposedAction,
 )
+from react_review.agents.llm_policy import LLMReActPolicy
 
-__all__ = ["AgentPolicy", "BoundedReActAgent", "ProposedAction"]
+__all__ = ["AgentPolicy", "BoundedReActAgent", "ProposedAction", "LLMReActPolicy"]

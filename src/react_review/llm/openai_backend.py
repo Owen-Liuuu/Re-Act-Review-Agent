@@ -77,6 +77,9 @@ class OpenAIBackend(LLMBackend):
             "max_tokens": self._settings.max_tokens,
             "seed": seed,
         }
+        # Provider-specific extras (e.g. GLM {"thinking": {"type": "disabled"}}).
+        if self._settings.extra_body:
+            payload.update(self._settings.extra_body)
 
         logger.info(
             "openai_request",

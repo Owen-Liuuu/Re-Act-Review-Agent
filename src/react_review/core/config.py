@@ -19,6 +19,12 @@ class LLMSettings(BaseModel):
     max_tokens: int = 4096
     api_key: str = ""
     base_url: str = ""
+    # Extra fields merged verbatim into the OpenAI-compatible request body.
+    # Provider-specific knobs go here, e.g. GLM-4.5 reasoning control:
+    #   extra_body: {"thinking": {"type": "disabled"}}
+    # (reasoning models otherwise spend the token budget "thinking" and get
+    # truncated before emitting the answer).
+    extra_body: dict = Field(default_factory=dict)
     # Gemini-only: controls reasoning budget for 2.5-series models.
     #   None → auto (disable for 2.5 to avoid truncation surprises)
     #   0    → explicitly disable thinking
