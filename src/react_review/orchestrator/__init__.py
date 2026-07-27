@@ -12,6 +12,8 @@ from react_review.orchestrator.reflection import (
     ReflectionOutcome,
     ReflectionSignals,
 )
+from react_review.orchestrator.judge import Judge
+from react_review.orchestrator.audit_pipeline import AuditPipeline
 
 __all__ = [
     "AuditOrchestrator",
@@ -20,4 +22,6 @@ __all__ = [
     "ReflectionDecider",
     "ReflectionOutcome",
     "ReflectionSignals",
+    "Judge",
+    "AuditPipeline",
 ]

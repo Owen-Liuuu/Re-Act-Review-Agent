@@ -31,3 +31,22 @@ class AuditReport(BaseModel):
     verdict: ReportVerdict = ReportVerdict.INCOMPLETE
     flags: list[str] = Field(default_factory=list)
     summary: str = ""
+
+
+class HumanReviewFlag(BaseModel):
+    """One item the Judge routes to a human (architecture: Human Review Flag)."""
+
+    study_id: str = ""
+    group: str = "-"
+    field_type: str = ""
+    label: str = ""          # the audit label, or "escalated"/"unmatched"
+    reason: str = ""
+
+
+class FinalVerification(BaseModel):
+    """The Judge's adjudicated outcome over one audit run."""
+
+    run_id: str = ""
+    verdict: ReportVerdict = ReportVerdict.INCOMPLETE
+    human_review_flags: list[HumanReviewFlag] = Field(default_factory=list)
+    summary: str = ""

@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from react_review.schemas.agent import AgentRun
 from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
-from react_review.schemas.report import AuditReport
+from react_review.schemas.report import AuditReport, FinalVerification
 
 
 class EvidencePackage(BaseModel):
@@ -27,4 +27,5 @@ class EvidencePackage(BaseModel):
     review_items: list[ReviewDataItem] = Field(default_factory=list)
     source_items: list[SourceEvidenceItem] = Field(default_factory=list)
     report: AuditReport | None = None
+    final_verification: FinalVerification | None = None
     processing_records: list[AgentRun] = Field(default_factory=list)
