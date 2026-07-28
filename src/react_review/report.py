@@ -176,6 +176,55 @@ def render_eval_report(metrics: dict[str, Any], rows: list) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# Parser accuracy report (parser stage vs review_ground_truth)
+# --------------------------------------------------------------------------- #
+
+def render_parser_report(stats: dict[str, Any]) -> str:
+    tiles = [("Field coverage", _pct(stats["recall"]), "accent"),
+             ("Value match · aligned", _pct(stats["value_match"]), "good"),
+             ("Field precision", _pct(stats["precision"]), "muted")]
+    tiles_html = "".join(
+        f'<div class="tile {c}"><div class="tv">{v}</div><div class="tk">{escape(k)}</div></div>'
+        for k, v, c in tiles)
+    note = (f'<p class="sub">Parser produced <b>{stats["n_parser"]}</b> rows vs '
+            f'<b>{stats["n_gt"]}</b> ground-truth rows; <b>{stats["n_matched"]}</b> keys aligned. '
+            'Value match is measured only on aligned keys — i.e. once the parser and the '
+            'ground truth agree on WHAT to extract, how often the extracted VALUE is correct.</p>')
+
+    def _kv(title: str, d: dict) -> str:
+        if not d:
+            return f'<div class="fg"><b>{escape(title)}</b><span class="empty"> — none</span></div>'
+        items = "".join(f'<li><code>{escape(k)}</code> <span class="fgn">×{v}</span></li>'
+                        for k, v in sorted(d.items(), key=lambda x: -x[1]))
+        return f'<div class="fg"><b>{escape(title)}</b><ul>{items}</ul></div>'
+
+    missed = _kv("Missed (in ground truth, no matching parser key)", stats.get("missed", {}))
+    spurious = _kv("Extra (parser produced, no matching ground-truth key)", stats.get("spurious", {}))
+
+    mm = stats.get("mismatched_values", [])
+    mm_html = ""
+    if mm:
+        rows = "".join(
+            f'<tr class="r-warn"><td><b>{escape(m["study"])}</b><br>'
+            f'<span class="sub">{escape(m["group"])}</span></td><td>{escape(m["field"])}</td>'
+            f'<td class="num">{escape(str(m["parser_value"]))}</td>'
+            f'<td class="num">{escape(str(m["gt_value"]))}</td></tr>' for m in mm)
+        mm_html = ('<h2>Value mismatches (aligned key, value differs)</h2>'
+                   '<div class="scroll"><table><thead><tr><th>Study / Group</th><th>Field</th>'
+                   '<th>Parser value</th><th>Ground truth</th></tr></thead>'
+                   f'<tbody>{rows}</tbody></table></div>')
+
+    body = (f'<div class="tiles">{tiles_html}</div>{note}'
+            f'<h2>Coverage gaps</h2>{missed}{spurious}{mm_html}')
+    return _shell(
+        title="Parser Accuracy Report", eyebrow="ReAct-Review · Parser stage",
+        h1="Parser Accuracy Report",
+        rid=f"review PDF → long table vs review_ground_truth ({stats['n_gt']} rows)",
+        body=body,
+        foot="Deterministic score of the real parser output vs the hand-labelled review ground truth")
+
+
+# --------------------------------------------------------------------------- #
 
 def _shell(title: str, eyebrow: str, h1: str, rid: str, body: str, foot: str) -> str:
     return (f'<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'

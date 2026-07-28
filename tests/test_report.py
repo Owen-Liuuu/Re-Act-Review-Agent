@@ -3,7 +3,11 @@ from __future__ import annotations
 
 from react_review.core.enums import AuditLabel, ReportVerdict
 from react_review.eval_accuracy import RowResult, score_rows
-from react_review.report import render_eval_report, render_html_report
+from react_review.report import (
+    render_eval_report,
+    render_html_report,
+    render_parser_report,
+)
 from react_review.schemas.audit import MatchResult
 from react_review.schemas.evidence import SourceEvidenceItem
 from react_review.schemas.package import EvidencePackage
@@ -73,3 +77,18 @@ def test_render_eval_report():
     assert "Benchmark Accuracy Report" in html
     assert "Per-row results" in html
     assert "ahmad_2022" in html and "keles_2016" in html
+
+
+def test_render_parser_report():
+    stats = {
+        "n_gt": 101, "n_parser": 112, "n_matched": 40, "recall": 0.396,
+        "precision": 0.357, "value_match": 0.95, "value_matched": 38,
+        "missed": {"subgroup_n": 15, "country": 9}, "spurious": {"sample_size": 16},
+        "mismatched_values": [{"study": "keles_2016", "group": "t1dm", "field": "age",
+                               "parser_value": "34", "gt_value": "34 (29-39)"}],
+    }
+    html = render_parser_report(stats)
+    assert html.startswith("<!doctype html>")
+    assert "Parser Accuracy Report" in html
+    assert "subgroup_n" in html and "sample_size" in html
+    assert "Value mismatches" in html

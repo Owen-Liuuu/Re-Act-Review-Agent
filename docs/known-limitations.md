@@ -17,6 +17,7 @@
 | **L1** | **图片 / 森林图 / 扫描页读不到** —— `get_text()` 只读文字层,无 OCR / 无多模态 | Meta 分析的**效应量常在森林图=图片里 → 全丢**;某研究若只把数据画成图也会漏 | `retrieval/local_pdf.py` `_pdf_text`、`parser/review_parser.py` `_pdf_text` | 接 OCR / 多模态视觉模型读图与扫描页 |
 | **L2** | **表格结构被拍平** —— `get_text()` 把表格线性化成一维文字流,列对齐丢失 | 模型分不清"哪个值属于哪一列/队列" → **group 串列**(拿糖尿病组的值当对照组) | 同上 | 版面感知的结构化表格抽取(PyMuPDF table detection / layout parser) |
 | **L3** | **`[:50000]` 截断** | 超 5 万字符的后半部分被切;Table 1 通常在前面所以目前没踩到 | `ReviewParser.max_chars` | 定位相关表格区域后再喂,或按需调大 |
+| **L11** | **Stage-2 单次吐全表 → 输出 token 上限** —— 9 篇 ≈12k 字符 JSON;`max_tokens<8192` 直接截断→JSON 失败→**0 项**;综述再大(几十篇)连 8192 也会爆 | parser 整段失败 | `parser/review_parser.py` `_STAGE2` | **运行时 `max_tokens≥8192` 必需**;根治=Stage-2 按研究/分节**分块抽取**(输出有界,不受综述规模限制) |
 
 ### B. 相关性 / 上下文
 
