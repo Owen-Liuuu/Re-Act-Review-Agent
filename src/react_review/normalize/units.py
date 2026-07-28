@@ -6,19 +6,22 @@ Canonicalises the surface form of a unit so equivalent spellings compare equal
 """
 from __future__ import annotations
 
-# Domain-UNIVERSAL unit equivalences (physics, not domain knowledge): fold
-# equivalent spellings of the same quantity to one canonical token so they
-# compare equal. Volume: cm³ = cc = mL.
+# Domain-UNIVERSAL unit equivalences (physics/spelling, not domain knowledge):
+# fold equivalent spellings of the same quantity to one canonical token so they
+# compare equal. Applied PER /-separated component so compound units line up too
+# (cc/m2 == cm3/m2 == ml/m2). Volume: cm³ = cc = mL. Age: years = yr = y.
 _EQUIVALENTS = {
     "cm3": "ml", "cc": "ml",
     "milliliter": "ml", "millilitre": "ml",
     "milliliters": "ml", "millilitres": "ml",
+    "years": "yr", "year": "yr", "yrs": "yr", "y": "yr",
 }
 
 
 def normalize_unit(unit: str | None) -> str:
     """Lower-case, strip spaces, fold superscripts to digits, and canonicalise
-    universally-equivalent units (cm³/cc/mL → ml).
+    universally-equivalent units per component (cm³/cc/mL → ml; years/yrs → yr;
+    cc/m2 → ml/m2).
 
     Returns ``""`` for a missing / blank unit (which the compare step treats as
     "no unit asserted", so it never triggers a unit_mismatch on its own).
@@ -27,7 +30,7 @@ def normalize_unit(unit: str | None) -> str:
         return ""
     u = str(unit).strip().lower().replace(" ", "")
     u = u.replace("²", "2").replace("³", "3").replace("^", "").replace("·", "")
-    return _EQUIVALENTS.get(u, u)
+    return "/".join(_EQUIVALENTS.get(p, p) for p in u.split("/"))
 
 
 def units_differ(a: str | None, b: str | None) -> bool:

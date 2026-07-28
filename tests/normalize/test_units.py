@@ -19,6 +19,12 @@ from react_review.normalize.units import normalize_unit, units_differ
         ("cm^3", "ml"),      # caret form folds too
         ("cc", "ml"),
         ("mL", "ml"),
+        ("yrs", "yr"),       # age spellings: years = yr = y
+        ("years", "yr"),
+        ("year", "yr"),
+        ("cc/m2", "ml/m2"),  # per-component: cc/m2 = cm3/m2 = ml/m2
+        ("cm3/m2", "ml/m2"),
+        ("kg/m²", "kg/m2"),  # non-equivalent components pass through unchanged
         (None, ""),
         ("", ""),
     ],
@@ -39,3 +45,5 @@ def test_units_differ_false_when_equivalent_or_blank():
     assert units_differ("mm", None) is False
     assert units_differ("cm3", "ml") is False        # volume equivalence
     assert units_differ("cc", "mL") is False
+    assert units_differ("yrs", "years") is False     # age spelling
+    assert units_differ("cc/m2", "cm3/m2") is False  # compound volume/BSA
