@@ -9,6 +9,7 @@ from react_review.normalize.numeric import NumericValue, parse_numeric, primary_
 from react_review.normalize.units import normalize_unit, units_differ
 from react_review.normalize.groups import normalize_group
 from react_review.normalize.doi import normalize_doi
+from react_review.normalize.text import clean_pdf_text
 
 __all__ = [
     "NumericValue",
@@ -18,4 +19,5 @@ __all__ = [
     "units_differ",
     "normalize_group",
     "normalize_doi",
+    "clean_pdf_text",
 ]

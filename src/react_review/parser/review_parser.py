@@ -66,9 +66,11 @@ class ParsedReview(BaseModel):
 def _pdf_text(pdf_path: Path | str) -> str:
     import fitz  # PyMuPDF
 
+    from react_review.normalize.text import clean_pdf_text
+
     doc = fitz.open(str(pdf_path))
     try:
-        return "\n\n".join(doc[i].get_text() for i in range(len(doc)))
+        return clean_pdf_text("\n\n".join(doc[i].get_text() for i in range(len(doc))))
     finally:
         doc.close()
 

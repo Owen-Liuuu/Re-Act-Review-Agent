@@ -188,9 +188,11 @@ def parse_llm_response(raw: str, model_id: str) -> dict:
     # Strip <think>...</think> reasoning blocks (deepseek-reasoner, etc.)
     raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
 
+    # strict=False tolerates stray control characters inside strings (some PDFs
+    # mis-encode ± etc. and the model echoes them) instead of hard-failing.
     # Try direct parse first
     try:
-        return json.loads(raw)
+        return json.loads(raw, strict=False)
     except json.JSONDecodeError:
         pass
 
@@ -198,7 +200,7 @@ def parse_llm_response(raw: str, model_id: str) -> dict:
     match = re.search(r"```(?:json)?\s*\n?(.*?)```", raw, re.DOTALL)
     if match:
         try:
-            return json.loads(match.group(1).strip())
+            return json.loads(match.group(1).strip(), strict=False)
         except json.JSONDecodeError:
             pass
 
@@ -206,7 +208,7 @@ def parse_llm_response(raw: str, model_id: str) -> dict:
     match = re.search(r"\{.*\}", raw, re.DOTALL)
     if match:
         try:
-            return json.loads(match.group(0))
+            return json.loads(match.group(0), strict=False)
         except json.JSONDecodeError:
             pass
 

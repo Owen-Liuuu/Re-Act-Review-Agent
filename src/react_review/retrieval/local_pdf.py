@@ -22,9 +22,11 @@ logger = structlog.get_logger(__name__)
 def _pdf_text(path: Path) -> str:
     import fitz  # PyMuPDF
 
+    from react_review.normalize.text import clean_pdf_text
+
     doc = fitz.open(str(path))
     try:
-        return "\n\n".join(doc[i].get_text() for i in range(len(doc)))
+        return clean_pdf_text("\n\n".join(doc[i].get_text() for i in range(len(doc))))
     finally:
         doc.close()
 
