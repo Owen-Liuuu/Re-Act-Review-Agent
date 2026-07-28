@@ -55,6 +55,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--context", default="EAT thickness/volume in T1DM vs healthy controls")
     ap.add_argument("--tolerances", type=Path, default=None)
     ap.add_argument("--out", type=Path, default=None, help="write a JSON report")
+    ap.add_argument("--html", type=Path, default=None, help="write an HTML test report")
     ap.add_argument("--dry-run", action="store_true",
                     help="offline: just show the answer-key distribution")
     args = ap.parse_args(argv)
@@ -104,6 +105,11 @@ def main(argv: list[str] | None = None) -> None:
 
     metrics = score_rows(results)
     print(format_report(metrics))
+
+    if args.html:
+        from react_review.report import render_eval_report
+        args.html.write_text(render_eval_report(metrics, results), encoding="utf-8")
+        print(f"[html] {args.html.resolve()}")
 
     if args.out:
         args.out.write_text(

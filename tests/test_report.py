@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from react_review.core.enums import AuditLabel, ReportVerdict
-from react_review.report import render_html_report
+from react_review.eval_accuracy import RowResult, score_rows
+from react_review.report import render_eval_report, render_html_report
 from react_review.schemas.audit import MatchResult
 from react_review.schemas.evidence import SourceEvidenceItem
 from react_review.schemas.package import EvidencePackage
@@ -38,8 +39,9 @@ def test_render_html_report():
     assert "20.57 ± 1.77" in html                     # source value
     assert "BMI (kg/m2) 20.57 ± 1.77" in html         # verbatim quote rendered
     assert "Table 1" in html                          # location
-    assert "未通过" in html                            # FAIL verdict banner
-    assert "不一致" in html                            # mismatch chip
+    assert "FAIL" in html                             # verdict banner (English)
+    assert "Mismatch" in html                         # mismatch chip (English)
+    assert "Evidence by source paper" in html         # grouped-by-study section
 
 
 def test_render_escapes_html():
@@ -53,3 +55,21 @@ def test_render_escapes_html():
                                               report=rep, final_verification=fv))
     assert "<script>alert(1)</script>" not in html     # escaped, not injected
     assert "&lt;script&gt;" in html
+
+
+def test_render_eval_report():
+    rows = [
+        RowResult("ahmad_2022", "t1dm", "bmi", expected_label="mismatch",
+                  predicted_label="mismatch", expected_source="20.57 ± 1.77",
+                  extracted_source="20.57 ± 1.77", found=True, outcome="found",
+                  extraction_correct=True),
+        RowResult("keles_2016", "t1dm", "eat_thickness", expected_label="unit_mismatch",
+                  predicted_label="mismatch", expected_source="0.7",
+                  extracted_source="4.8", found=True, outcome="found",
+                  extraction_correct=False),
+    ]
+    html = render_eval_report(score_rows(rows), rows)
+    assert html.startswith("<!doctype html>")
+    assert "Benchmark Accuracy Report" in html
+    assert "Per-row results" in html
+    assert "ahmad_2022" in html and "keles_2016" in html
