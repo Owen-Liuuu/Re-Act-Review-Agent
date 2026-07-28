@@ -10,31 +10,61 @@ genuinely ambiguous cases) can slot in later.
 """
 from __future__ import annotations
 
-from react_review.core.enums import AuditLabel
+from react_review.core.enums import AuditLabel, CollectionOutcome
+from react_review.schemas.evidence import SourceEvidenceItem
 from react_review.schemas.report import AuditReport, FinalVerification, HumanReviewFlag
+
+# A missing source value means two very different things; label them apart so a
+# human sees "we couldn't get the paper" vs "the paper doesn't say this".
+_OUTCOME_FLAG = {
+    CollectionOutcome.SOURCE_ACCESS_FAILED: (
+        "source_access_failed", "source full text could not be retrieved"),
+    CollectionOutcome.MISSING_SOURCE: (
+        "missing_source",
+        "source paper retrieved but this value is not stated in it "
+        "(possible fabrication)"),
+}
 
 
 class Judge:
     """Turn an AuditReport into a FinalVerification with human-review flags."""
 
-    def adjudicate(self, report: AuditReport) -> FinalVerification:
+    def adjudicate(
+        self,
+        report: AuditReport,
+        source_items: list[SourceEvidenceItem] | None = None,
+    ) -> FinalVerification:
+        outcome_by_key = {
+            (s.study_id, s.group, s.field_type): s.collection_outcome
+            for s in (source_items or [])
+        }
         flags: list[HumanReviewFlag] = []
 
         for r in report.results:
-            if r.label != AuditLabel.MATCH:
-                flags.append(HumanReviewFlag(
-                    study_id=r.study_id, group=r.group, field_type=r.field_type,
-                    label=r.label.value, reason=r.reason,
-                ))
+            if r.label == AuditLabel.MATCH:
+                continue
+            label, reason = r.label.value, r.reason
+            if r.label == AuditLabel.NOT_COMPARABLE:
+                refined = _OUTCOME_FLAG.get(
+                    outcome_by_key.get((r.study_id, r.group, r.field_type)))
+                if refined:
+                    label, reason = refined
+            flags.append(HumanReviewFlag(
+                study_id=r.study_id, group=r.group, field_type=r.field_type,
+                label=label, reason=reason,
+            ))
 
         for key in report.unmatched_review:
             parts = key.split("/")
+            study = parts[0] if parts else ""
+            group = parts[1] if len(parts) > 1 else "-"
+            field_type = parts[3] if len(parts) > 3 else ""
+            refined = _OUTCOME_FLAG.get(outcome_by_key.get((study, group, field_type)))
+            label, reason = refined or (
+                "unmatched", "no source evidence for this review claim")
             flags.append(HumanReviewFlag(
-                study_id=parts[0] if parts else "",
-                group=parts[1] if len(parts) > 1 else "-",
-                field_type=parts[3] if len(parts) > 3 else "",
-                label="unmatched",
-                reason="no source evidence for this review claim",
+                study_id=study, group=group, field_type=field_type,
+                label=label, reason=reason,
             ))
 
         summary = (

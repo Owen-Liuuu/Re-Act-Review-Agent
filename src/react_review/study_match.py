@@ -18,7 +18,8 @@ def _parts(study_id: str) -> tuple[str, str]:
     """(surname, year) from a study_id like 'yazici_2011' -> ('yazici', '2011')."""
     sid = (study_id or "").strip().lower()
     year_m = re.search(r"(19|20)\d{2}", sid)
-    surname = sid.split("_")[0] if sid else ""
+    # strip hyphens/punctuation so "el-baky" matches canonical "elbaky"
+    surname = re.sub(r"[^a-z0-9]", "", sid.split("_")[0]) if sid else ""
     return surname, (year_m.group(0) if year_m else "")
 
 

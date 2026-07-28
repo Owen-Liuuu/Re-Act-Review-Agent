@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
-from react_review.steps.data_extraction.schemas import PaperDocument
 from react_review.steps.paper_verification.schemas import (
     ReferenceEntry,
     ReferenceVerificationResult,
 )
+
+if TYPE_CHECKING:  # avoid a data_extraction <-> paper_verification import cycle
+    from react_review.steps.data_extraction.schemas import PaperDocument
 
 
 class ReferenceVerifier(ABC):

@@ -27,6 +27,7 @@ STUDIES = load_included_studies(BENCH / "included_studies.csv")
         ("de_2018", "de_gonzalo_calvo_2018"),        # particle name, year disambiguates
         ("colom_2018", "colom_2018"),                # same year as de_… but surname differs
         ("iacobellis_2014", "iacobellis_2014"),
+        ("el-baky_2023", "elbaky_2023"),             # hyphenated surname -> strip to match
     ],
 )
 def test_resolve_study(parser_sid, canonical):

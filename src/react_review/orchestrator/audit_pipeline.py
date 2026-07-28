@@ -68,7 +68,7 @@ class AuditPipeline:
             records.append(result.record)
 
         report = await self._auditor.run(review_items, source_items, run_id=run_id)
-        final = self._judge.adjudicate(report)
+        final = self._judge.adjudicate(report, source_items)
 
         package = EvidencePackage(
             run_id=run_id,

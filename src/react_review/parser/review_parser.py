@@ -48,6 +48,7 @@ separate rows per cohort. Copy values EXACTLY as printed (keep "mean ± SD").
 
 Rules:
 - ``group`` = the cohort the value belongs to; use "all" when the study reports a single combined value.
+- Do NOT emit rows for IDENTIFIER/label columns (Author, Study, Reference, Group, Cohort, Subgroup). Those identify the row — "Group" only sets ``group`` — they are not measurements.
 - Do NOT invent studies, columns, or values. Skip blank cells.
 
 ## REVIEW TEXT
@@ -82,6 +83,18 @@ def _study_slug(raw: str) -> str:
 
 
 _PLACEHOLDER = {"", "null", "none", "n/a", "na", "-", "—", "nr", "not reported"}
+
+# Identifier / dimension columns describe a row; they are NOT measurements and
+# must not leak in as spurious field_types (Author→author, Group→study_group).
+_IDENTIFIER_COLUMNS = {
+    "author", "authors", "first author", "study", "studies", "citation",
+    "reference", "ref", "ref no", "reference number", "reference no",
+    "group", "groups", "cohort", "subgroup", "arm", "study group",
+}
+
+
+def _norm_col(name: str) -> str:
+    return re.sub(r"[^a-z0-9 ]", "", name.lower()).strip()
 
 
 class ReviewParser:
@@ -145,6 +158,8 @@ class ReviewParser:
             value = r.get("value")
             if not raw_name or value is None:
                 continue
+            if _norm_col(raw_name) in _IDENTIFIER_COLUMNS:
+                continue  # identifier/dimension column, not a measurement
             if isinstance(value, str) and value.strip().lower() in _PLACEHOLDER:
                 continue
             unit = str(r.get("unit") or "").strip()

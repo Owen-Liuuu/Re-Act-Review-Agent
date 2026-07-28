@@ -110,3 +110,21 @@ class AuditLabel(str, Enum):
     MISMATCH = "mismatch"
     UNIT_MISMATCH = "unit_mismatch"
     NOT_COMPARABLE = "not_comparable"
+
+
+class CollectionOutcome(str, Enum):
+    """How the Collector's source lookup ended — drives the human-review label.
+
+    Splits the old single "no source value" case into two very different
+    signals:
+
+    - FOUND:                the source value was located in the paper.
+    - SOURCE_ACCESS_FAILED: the source full text could not be retrieved at all
+                            (an access/coverage gap — NOT the review's fault).
+    - MISSING_SOURCE:       the paper WAS retrieved but the value is not stated
+                            in it — a potential fabrication in the review.
+    """
+
+    FOUND = "found"
+    SOURCE_ACCESS_FAILED = "source_access_failed"
+    MISSING_SOURCE = "missing_source"

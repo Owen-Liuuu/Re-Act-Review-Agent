@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from react_review.core.enums import ReflectionDecision
+from react_review.core.enums import CollectionOutcome, ReflectionDecision
 from react_review.normalize.vocabulary import Vocabulary
 from react_review.orchestrator.reflection import ReflectionDecider, ReflectionSignals
 from react_review.schemas.agent import AgentRun, StepRecord
@@ -77,7 +77,8 @@ class Collector:
         if not fetched.retrieved or fetched.document is None:
             out = self._decider.decide(ReflectionSignals(retrieval_ok=False, attempt=0))
             return self._result(review_item, SourceValueResult(found=False),
-                                 steps, out.decision)
+                                 steps, out.decision,
+                                 CollectionOutcome.SOURCE_ACCESS_FAILED)
 
         # 2. Directed extraction, with a bounded reflection-driven retry loop.
         concept = self._concept_for(review_item.field_type)
@@ -107,7 +108,10 @@ class Collector:
             if result.found or decision != ReflectionDecision.RETRY:
                 break
 
-        return self._result(review_item, result, steps, decision)
+        # Retrieved but the value was never located → potential fabrication.
+        outcome = (CollectionOutcome.FOUND if result.found
+                   else CollectionOutcome.MISSING_SOURCE)
+        return self._result(review_item, result, steps, decision, outcome)
 
     def _result(
         self,
@@ -115,6 +119,7 @@ class Collector:
         result: SourceValueResult,
         steps: list[StepRecord],
         decision: ReflectionDecision,
+        outcome: CollectionOutcome = CollectionOutcome.FOUND,
     ) -> CollectResult:
         source_item = SourceEvidenceItem(
             study_id=review_item.study_id,
@@ -125,6 +130,7 @@ class Collector:
             source_unit=result.unit,
             source_quote=result.quote,
             source_location_in_paper=result.location,
+            collection_outcome=outcome,
         )
         record = AgentRun(
             agent="collector",

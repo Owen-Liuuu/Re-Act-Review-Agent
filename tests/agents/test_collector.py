@@ -6,7 +6,7 @@ import json
 import pytest
 
 from react_review.agents.collector import Collector
-from react_review.core.enums import ReflectionDecision
+from react_review.core.enums import CollectionOutcome, ReflectionDecision
 from react_review.llm.base import LLMBackend
 from react_review.schemas.evidence import ReviewDataItem
 from react_review.steps.data_extraction.schemas import PaperDocument
@@ -103,6 +103,7 @@ async def test_collector_produces_source_item():
     assert res.source_item.source_value == "6.60 ± 0.71"
     assert res.source_item.source_unit == "mm"
     assert res.source_item.study_id == "ahmad_2022"
+    assert res.source_item.collection_outcome == CollectionOutcome.FOUND
     assert backend.calls == 1  # found on first attempt, no retry
     # trajectory recorded: fetch + one extract
     assert [s.tool for s in res.record.steps] == ["fetch_fulltext", "extract_source_value"]
@@ -115,6 +116,8 @@ async def test_collector_retries_then_escalates_when_not_found():
     res = await collector.collect(_REVIEW, _REF)
     assert res.decision == ReflectionDecision.ESCALATE
     assert res.source_item.source_value is None
+    # retrieved the paper but never located the value → potential fabrication
+    assert res.source_item.collection_outcome == CollectionOutcome.MISSING_SOURCE
     assert backend.calls == 3  # tried max_attempts times
 
 
@@ -125,5 +128,7 @@ async def test_collector_escalates_when_paper_not_retrieved():
     res = await collector.collect(_REVIEW, _REF)
     assert res.decision == ReflectionDecision.RETRY or res.decision == ReflectionDecision.ESCALATE
     assert res.source_item.source_value is None
+    # never got the paper → access failure, NOT a fabrication signal
+    assert res.source_item.collection_outcome == CollectionOutcome.SOURCE_ACCESS_FAILED
     assert backend.calls == 0  # never reached extraction
     assert res.record.steps[0].observation["retrieved"] is False

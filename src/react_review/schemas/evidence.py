@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from react_review.core.enums import CollectionOutcome
+
 Value = str | int | float | None
 
 
@@ -45,6 +47,7 @@ class SourceEvidenceItem(BaseModel):
     source_unit: str = ""
     source_quote: str = ""
     source_location_in_paper: str = ""
+    collection_outcome: CollectionOutcome = CollectionOutcome.FOUND
 
 
 class IncludedStudy(BaseModel):
