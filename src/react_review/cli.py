@@ -535,13 +535,37 @@ def _run_main(argv: list[str] | None = None) -> None:
     _safe_print(f"\n[PACKAGE] {(args.out / run_id / 'package.json').resolve()}")
 
 
+def _report_main(argv: list[str] | None = None) -> None:
+    """Render a saved EvidencePackage into a standalone HTML report.
+
+    react-review report RUN_ID [--runs output/runs] [--out report.html]
+    """
+    from react_review.report import render_html_report
+    from react_review.store import EvidencePackageStore
+
+    ap = argparse.ArgumentParser(prog="react-review report",
+                                 description="Render an audit run to an HTML report.")
+    ap.add_argument("run_id", help="the run id (folder under --runs)")
+    ap.add_argument("--runs", type=Path, default=Path("output/runs"))
+    ap.add_argument("--out", type=Path, default=None, help="output .html (default: <run>/report.html)")
+    args = ap.parse_args(argv)
+
+    pkg = EvidencePackageStore(args.runs).load(args.run_id)
+    out = args.out or (args.runs / args.run_id / "report.html")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(render_html_report(pkg), encoding="utf-8")
+    _safe_print(f"[report] {out.resolve()}")
+
+
 def main() -> None:
-    """CLI entry point. Subcommands: ``run`` / ``audit`` (deterministic) / ``legacy``."""
+    """CLI entry point. Subcommands: ``run`` / ``report`` / ``audit`` / ``legacy``."""
     import sys
 
     argv = sys.argv[1:]
     if argv and argv[0] == "run":
         return _run_main(argv[1:])
+    if argv and argv[0] == "report":
+        return _report_main(argv[1:])
     if argv and argv[0] == "audit":
         return _audit_main(argv[1:])
     if argv and argv[0] == "legacy":
