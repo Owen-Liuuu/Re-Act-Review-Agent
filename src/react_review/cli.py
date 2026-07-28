@@ -397,7 +397,7 @@ def _audit_main(argv: list[str] | None = None) -> None:
     from react_review.audit import ToleranceTable
     from react_review.core.config import AppConfig
     from react_review.csv_io import load_review_items, load_source_items
-    from react_review.orchestrator import AuditOrchestrator
+    from react_review.orchestrator import AuditOrchestrator, Judge
     from react_review.schemas.package import EvidencePackage
     from react_review.store import EvidencePackageStore
     from react_review.tools import build_catalogue
@@ -430,10 +430,12 @@ def _audit_main(argv: list[str] | None = None) -> None:
 
     run_id = args.run_id or uuid.uuid4().hex[:12]
     report = asyncio.run(orch.run(review, source, run_id=run_id))
+    final = Judge().adjudicate(report, source)
 
     store = EvidencePackageStore(args.out)
     pkg_path = store.save(EvidencePackage(
         run_id=run_id, review_items=review, source_items=source, report=report,
+        final_verification=final,
     ))
 
     if args.json:

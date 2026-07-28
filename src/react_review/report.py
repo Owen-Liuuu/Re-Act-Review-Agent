@@ -45,8 +45,11 @@ def _pct(x: float | None) -> str:
 # --------------------------------------------------------------------------- #
 
 def render_html_report(pkg: EvidencePackage) -> str:
-    rep = pkg.report
-    fv = pkg.final_verification
+    from react_review.schemas.report import AuditReport, FinalVerification
+
+    rep = pkg.report or AuditReport(run_id=pkg.run_id)
+    fv = pkg.final_verification or FinalVerification(
+        run_id=pkg.run_id, verdict=rep.verdict, summary=rep.summary)
     v_text, v_cls = _VERDICT.get(rep.verdict.value, (rep.verdict.value, "muted"))
     src = {(s.study_id, s.group, s.field_type): s for s in pkg.source_items}
 
