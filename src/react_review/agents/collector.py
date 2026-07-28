@@ -105,7 +105,11 @@ class Collector:
             decision = self._decider.decide(
                 ReflectionSignals(retrieval_ok=result.found, attempt=attempt)
             ).decision
-            if result.found or decision != ReflectionDecision.RETRY:
+            # A wrong-cohort rejection is deterministic — retrying the same prompt
+            # just repeats it, so escalate immediately instead of burning attempts.
+            if result.wrong_group_rejected:
+                decision = ReflectionDecision.ESCALATE
+            if result.found or result.wrong_group_rejected or decision != ReflectionDecision.RETRY:
                 break
 
         # Retrieved but the value was never located → potential fabrication.

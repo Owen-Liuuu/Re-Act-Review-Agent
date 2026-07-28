@@ -28,17 +28,29 @@ Find the value of **{concept}** (field_type: {field_type}) for the **{group_desc
 Expected unit (hint, may differ in the paper): "{unit_hint}"
 
 ## RULES
-- Return the value EXACTLY as printed (keep "mean ± SD" / "median (IQR)" verbatim).
-- Return the unit EXACTLY as the paper prints it (this may reveal a unit error).
-- Give a verbatim quote (the sentence or table cell the value comes from).
-- If the paper does not report this value for this group, set found=false.
+- PREFER the data table (e.g. Table 1) over prose. A narrative sentence like
+  "Regarding diabetic children, the mean age was X" reports only ONE cohort —
+  NEVER reuse that number for another cohort, even if the paper says the groups
+  "did not differ significantly".
+- Tables list cohorts as COLUMNS in a fixed order — a row reads e.g.
+  "Age (years) | <diabetic value> | <control value> | <P value>". Identify which
+  column is the {group_desc} and read THAT column's cell in the target row.
+- First list every cohort/column the paper reports for this field in ``cohorts_seen``.
+- Set ``group_label_in_paper`` to the paper's own name for the cohort you took the
+  value from; it MUST be the {group_desc}. Your quote MUST be the {group_desc}'s
+  OWN cell or sentence — never another cohort's.
+- If the paper reports no value specifically for the {group_desc}, set found=false —
+  do NOT substitute or infer another cohort's value.
+- Return the value and unit EXACTLY as printed (keep "mean ± SD" / "median (IQR)").
 - Do NOT infer or compute; only report what is written.
 
 ## PAPER TEXT
 {paper_text}
 
 ## OUTPUT — one JSON object, nothing else:
-{{"found": true or false, "value": "verbatim value or null", "unit": "verbatim unit or empty",
+{{"cohorts_seen": ["each cohort/column label the paper reports for this field"],
+  "group_label_in_paper": "the paper's name for the cohort this value is taken from",
+  "found": true or false, "value": "verbatim value or null", "unit": "verbatim unit or empty",
   "quote": "verbatim supporting sentence/cell", "source_field_name": "the paper's own label for this field",
   "location": "where (e.g. Table 2, Results)"}}
 """
@@ -53,6 +65,28 @@ def _group_desc(group: str) -> str:
     if g in ("all", "-", ""):
         return "whole study cohort (no diabetes/control split)"
     return f"{group} group"
+
+
+# Keyword signals for a deterministic guard: reject an extracted value whose
+# reported cohort clearly contradicts the requested group (the model read the
+# wrong column). Kept conservative — only reject on an unambiguous contradiction.
+_T1DM_KW = ("diabet", "t1dm", "t1d", "dm group")
+_CONTROL_KW = ("control", "healthy", "non-diab", "nondiab")
+
+
+def _group_mismatch(target: str, label_in_paper: str) -> bool:
+    """True when the paper-reported cohort contradicts the target group."""
+    t = (target or "").strip().lower()
+    label = (label_in_paper or "").strip().lower()
+    if not label or t in ("all", "-", ""):
+        return False
+    has_t1dm = any(k in label for k in _T1DM_KW)
+    has_control = any(k in label for k in _CONTROL_KW)
+    if t == "control":
+        return has_t1dm and not has_control
+    if t == "t1dm":
+        return has_control and not has_t1dm
+    return False
 
 
 class ExtractSourceValueInput(BaseModel):
@@ -71,6 +105,8 @@ class SourceValueResult(BaseModel):
     quote: str = ""
     source_field_name: str = ""
     location: str = ""
+    group_label_in_paper: str = ""
+    wrong_group_rejected: bool = False
 
 
 class ExtractSourceValueTool(Tool):
@@ -104,6 +140,20 @@ class ExtractSourceValueTool(Tool):
         if isinstance(value, str) and value.strip().lower() in ("", "null", "none", "n/a"):
             value = None
         found = bool(data.get("found")) and value is not None
+        label_in_paper = (data.get("group_label_in_paper") or "").strip()
+        quote = (data.get("quote") or "").strip()
+
+        # Guard: reject a value whose supporting evidence contradicts the target
+        # group — either the claimed cohort label OR the quote itself names the
+        # WRONG cohort only (e.g. a "Regarding diabetic children …" sentence used
+        # for a Control ask). Better a flagged not-found than a false mismatch.
+        if found and (_group_mismatch(payload.group, label_in_paper)
+                      or _group_mismatch(payload.group, quote)):
+            logger.info("extract_source_group_mismatch", target=payload.group,
+                        got=label_in_paper, quote=quote[:80])
+            return SourceValueResult(found=False, group_label_in_paper=label_in_paper,
+                                     wrong_group_rejected=True)
+
         return SourceValueResult(
             found=found,
             value=value if found else None,
@@ -111,4 +161,5 @@ class ExtractSourceValueTool(Tool):
             quote=(data.get("quote") or "").strip(),
             source_field_name=(data.get("source_field_name") or "").strip(),
             location=(data.get("location") or "").strip(),
+            group_label_in_paper=label_in_paper,
         )

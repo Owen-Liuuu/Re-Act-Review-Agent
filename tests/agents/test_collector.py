@@ -16,6 +16,7 @@ from react_review.tools.extract import FetchFullTextTool
 from react_review.tools.extract_source import (
     ExtractSourceValueInput,
     ExtractSourceValueTool,
+    _group_mismatch,
 )
 from react_review.tools.registry import ToolRegistry
 
@@ -88,6 +89,60 @@ async def test_extract_tool_unparseable_is_not_found():
         ExtractSourceValueInput(document=PaperDocument(paper_id="x", reference=_REF),
                                 field_type="bmi"))
     assert out.found is False
+
+
+# --- group-confusion guard ---
+
+@pytest.mark.parametrize("target, label, mismatch", [
+    ("control", "Diabetic children", True),    # read the T1DM column for a control ask
+    ("control", "Controls", False),
+    ("control", "healthy controls", False),
+    ("control", "control patients", False),     # "control" wins over generic words
+    ("t1dm", "Control group", True),
+    ("t1dm", "T1DM patients", False),
+    ("t1dm", "Diabetic children", False),
+    ("control", "", False),                      # no reported label → no guard
+    ("all", "Diabetic children", False),         # non-split group → skip
+])
+def test_group_mismatch(target, label, mismatch):
+    assert _group_mismatch(target, label) is mismatch
+
+
+@pytest.mark.asyncio
+async def test_extract_tool_rejects_wrong_cohort_value():
+    backend = StubBackend({"found": True, "value": "12.90 ± 1.30", "unit": "years",
+                           "group_label_in_paper": "Diabetic children",
+                           "quote": "Age 12.90 ± 1.30", "location": "Table 1"})
+    out = await ExtractSourceValueTool(backend).run(ExtractSourceValueInput(
+        document=PaperDocument(paper_id="x", reference=_REF),
+        field_type="age", group="control"))
+    assert out.found is False and out.value is None      # rejected as wrong cohort
+    assert out.group_label_in_paper == "Diabetic children"
+
+
+@pytest.mark.asyncio
+async def test_extract_tool_accepts_matching_cohort():
+    backend = StubBackend({"found": True, "value": "12.96 ± 1.12", "unit": "years",
+                           "group_label_in_paper": "Healthy controls",
+                           "quote": "Controls 12.96 ± 1.12", "location": "Table 1"})
+    out = await ExtractSourceValueTool(backend).run(ExtractSourceValueInput(
+        document=PaperDocument(paper_id="x", reference=_REF),
+        field_type="age", group="control"))
+    assert out.found is True and out.value == "12.96 ± 1.12"
+
+
+@pytest.mark.asyncio
+async def test_extract_tool_rejects_when_quote_names_wrong_cohort():
+    # The model faked a matching label but its quote is a diabetic-only sentence
+    # (the real Ahmad failure: inferring control from "no significant difference").
+    backend = StubBackend({"found": True, "value": "12.90 ± 1.30", "unit": "years",
+                           "group_label_in_paper": "healthy controls",
+                           "quote": "Regarding diabetic children, the mean age was "
+                                    "12.90 ± 1.30 years.", "location": "Results"})
+    out = await ExtractSourceValueTool(backend).run(ExtractSourceValueInput(
+        document=PaperDocument(paper_id="x", reference=_REF),
+        field_type="age", group="control"))
+    assert out.found is False and out.value is None
 
 
 # --- Collector ---
