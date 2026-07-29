@@ -24,6 +24,7 @@ _LABEL = {
     "missing_source": ("Missing in source", "bad"),
     "source_access_failed": ("Source unavailable", "muted"),
     "unmatched": ("No source evidence", "muted"),
+    "provisional_concept": ("Provisional concept", "accent"),
 }
 
 

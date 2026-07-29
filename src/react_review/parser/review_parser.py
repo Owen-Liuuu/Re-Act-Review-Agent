@@ -167,12 +167,13 @@ class ReviewParser:
                 continue
             unit = str(r.get("unit") or "").strip()
             try:
-                ft = (await self._normalize.run(NormalizeInput(
+                nr = await self._normalize.run(NormalizeInput(
                     raw_field_name=raw_name, unit=unit,
                     research_context=research_context,
-                ))).field_type
+                ))
             except Exception:
                 continue  # unresolvable field name (no vocab hit, no backend) → skip
+            ft = nr.field_type
 
             study_id = _study_slug(str(r.get("study") or ""))
             group = normalize_group(str(r.get("group") or ""))
@@ -186,5 +187,6 @@ class ReviewParser:
             items.append(ReviewDataItem(
                 study_id=study_id, group=group, field_type=ft,
                 raw_field_name=raw_name, value=value, unit=unit,
+                provisional=nr.provisional,
             ))
         return items

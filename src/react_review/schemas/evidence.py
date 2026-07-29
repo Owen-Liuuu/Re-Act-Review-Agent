@@ -31,6 +31,7 @@ class ReviewDataItem(BaseModel):
     value: Value = None
     unit: str = ""
     source_location: str = ""
+    provisional: bool = False       # field_type came from a provisional DKB entry
 
 
 class SourceEvidenceItem(BaseModel):

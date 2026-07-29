@@ -48,3 +48,17 @@ def test_falls_back_to_not_comparable_without_source_outcome():
 def test_clean_match_produces_no_flag():
     fv = Judge().adjudicate(_report(AuditLabel.MATCH), [_source(CollectionOutcome.FOUND)])
     assert fv.human_review_flags == []
+
+
+def test_provisional_concept_is_flagged():
+    from react_review.schemas.evidence import ReviewDataItem
+    rep = AuditReport(run_id="r", verdict=ReportVerdict.PASS)
+    review = [
+        ReviewDataItem(study_id="ahmad_2022", group="t1dm", field_type="hba1c",
+                       raw_field_name="HbA1c", value="7.0", provisional=True),
+        ReviewDataItem(study_id="ahmad_2022", group="t1dm", field_type="bmi",
+                       value="24", provisional=False),
+    ]
+    flags = Judge().adjudicate(rep, None, review).human_review_flags
+    assert [f.label for f in flags] == ["provisional_concept"]   # only the provisional one
+    assert flags[0].field_type == "hba1c"

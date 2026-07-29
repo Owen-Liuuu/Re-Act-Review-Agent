@@ -11,7 +11,7 @@ genuinely ambiguous cases) can slot in later.
 from __future__ import annotations
 
 from react_review.core.enums import AuditLabel, CollectionOutcome
-from react_review.schemas.evidence import SourceEvidenceItem
+from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
 from react_review.schemas.report import AuditReport, FinalVerification, HumanReviewFlag
 
 # A missing source value means two very different things; label them apart so a
@@ -33,6 +33,7 @@ class Judge:
         self,
         report: AuditReport,
         source_items: list[SourceEvidenceItem] | None = None,
+        review_items: list["ReviewDataItem"] | None = None,
     ) -> FinalVerification:
         outcome_by_key = {
             (s.study_id, s.group, s.field_type): s.collection_outcome
@@ -66,6 +67,19 @@ class Judge:
                 study_id=study, group=group, field_type=field_type,
                 label=label, reason=reason,
             ))
+
+        # DKB guardrail: a field_type resolved via a PROVISIONAL (LLM-proposed,
+        # not-yet-authoritative) concept must be confirmed by a human — the
+        # classification itself is uncertain, independent of the value check.
+        for item in (review_items or []):
+            if getattr(item, "provisional", False):
+                flags.append(HumanReviewFlag(
+                    study_id=item.study_id, group=item.group, field_type=item.field_type,
+                    label="provisional_concept",
+                    reason=f"field '{item.raw_field_name or item.field_type}' was "
+                           f"auto-classified as {item.field_type} (provisional) — "
+                           "confirm the concept mapping",
+                ))
 
         summary = (
             f"[{report.verdict.value}] {report.n_match} match, {report.n_mismatch} "
