@@ -8,6 +8,8 @@ learning (DKB-4). See docs/known-limitations.md and the normalization design mem
 from react_review.dkb.agent import AgentClassification, KnowledgeAgent
 from react_review.dkb.base import KnowledgeBase
 from react_review.dkb.embedding import BackendEmbedder, Embedder, EmbeddingRetriever
+from react_review.dkb.ontology import import_ontology
+from react_review.dkb.promotion import PromotionTracker
 from react_review.dkb.retrieval import KeywordRetriever, Retriever
 from react_review.dkb.schema import KnowledgeEntry, Provenance
 
@@ -15,4 +17,5 @@ __all__ = [
     "KnowledgeBase", "KnowledgeEntry", "Provenance",
     "Retriever", "KeywordRetriever", "KnowledgeAgent", "AgentClassification",
     "Embedder", "BackendEmbedder", "EmbeddingRetriever",
+    "PromotionTracker", "import_ontology",
 ]

@@ -1,0 +1,26 @@
+{
+  "hba1c": {
+    "concept": "glycated haemoglobin",
+    "value_type": "numeric",
+    "default_unit": "%",
+    "domain": "endocrinology/lab",
+    "scope": "cohort",
+    "synonyms": ["HbA1c", "A1c", "glycated hemoglobin", "glycosylated haemoglobin", "hemoglobin a1c", "HbA1c (%)"]
+  },
+  "ldl_cholesterol": {
+    "concept": "low-density lipoprotein cholesterol",
+    "value_type": "numeric",
+    "default_unit": "mg/dl",
+    "domain": "lipidology/lab",
+    "scope": "cohort",
+    "synonyms": ["LDL", "LDL-C", "LDL cholesterol", "low density lipoprotein"]
+  },
+  "fasting_glucose": {
+    "concept": "fasting plasma glucose",
+    "value_type": "numeric",
+    "default_unit": "mg/dl",
+    "domain": "endocrinology/lab",
+    "scope": "cohort",
+    "synonyms": ["fasting glucose", "FPG", "fasting blood glucose", "fasting plasma glucose"]
+  }
+}
