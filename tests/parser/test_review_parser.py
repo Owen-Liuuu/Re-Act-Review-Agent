@@ -6,10 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from react_review.dkb import KnowledgeBase
+from react_review.dkb import FieldResolver, KnowledgeBase
 from react_review.llm.base import LLMBackend
 from react_review.parser.review_parser import ReviewParser, _study_slug
-from react_review.tools.normalize import NormalizeFieldTool
 
 SEED = Path(__file__).resolve().parents[2] / "configs" / "knowledge.seed.json"
 
@@ -27,9 +26,9 @@ class QueueBackend(LLMBackend):
         return self._responses.pop(0) if self._responses else "{}"
 
 
-def _normalize_tool() -> NormalizeFieldTool:
-    # backend=None → deterministic KB resolution only; unknown names raise.
-    return NormalizeFieldTool(KnowledgeBase.from_json(SEED), backend=None)
+def _resolver() -> FieldResolver:
+    # backend=None → deterministic KB resolution only; unknown names → unresolved.
+    return FieldResolver(KnowledgeBase.from_json(SEED))
 
 
 def test_study_slug():
@@ -53,22 +52,25 @@ async def test_parse_produces_normalized_long_items(monkeypatch):
             {"study": "Ahmad et al. [2022]", "group": "",
              "raw_field_name": "N", "value": "100", "unit": ""},
             {"study": "Ahmad et al. [2022]", "group": "T1DM",
-             "raw_field_name": "Some Novel Column", "value": "5", "unit": ""},  # unknown → skipped
+             "raw_field_name": "Some Novel Column", "value": "5", "unit": ""},  # unknown → KEPT unresolved
             {"study": "Ahmad et al. [2022]", "group": "T1DM",
              "raw_field_name": "Age", "value": "N/A", "unit": "years"},          # placeholder → skipped
         ]},
     ])
-    parser = ReviewParser(backend, _normalize_tool())
+    parser = ReviewParser(backend, _resolver())
     parsed = await parser.parse("dummy.pdf", research_context="EAT in T1DM")
 
     got = {(i.study_id, i.group, i.field_type, i.value, i.unit) for i in parsed.items}
     assert got == {
         ("ahmad_2022", "t1dm", "eat_thickness", "6.60 ± 0.71", "mm"),
         ("ahmad_2022", "control", "eat_thickness", "3.83 ± 0.35", "mm"),
-        ("ahmad_2022", "-", "sample_size", "100", ""),   # study-level → group "-"
+        ("ahmad_2022", "-", "sample_size", "100", ""),          # study-level → group "-"
+        ("ahmad_2022", "t1dm", "", "5", ""),                    # unknown → KEPT, field_type null
     }
-    # unknown field + placeholder value were dropped
-    assert len(parsed.items) == 3
+    # placeholder value dropped; the UNKNOWN column is kept as unresolved (not dropped)
+    assert len(parsed.items) == 4
+    unresolved = [i for i in parsed.items if i.resolution_status == "unresolved"]
+    assert len(unresolved) == 1 and unresolved[0].raw_field_name == "Some Novel Column"
     assert parsed.record.agent == "parser"
     assert [s.tool for s in parsed.record.steps] == ["llm:stage1_structure", "llm:stage2_unpivot"]
 
@@ -88,7 +90,7 @@ async def test_study_level_field_collapses_to_one_row(monkeypatch):
             {"study": "Ahmad et al. [2022]", "group": "Control", "raw_field_name": "EFT/ EAT", "value": "3.8", "unit": "mm"},
         ]},
     ])
-    parsed = await ReviewParser(backend, _normalize_tool()).parse("d.pdf")
+    parsed = await ReviewParser(backend, _resolver()).parse("d.pdf")
     ss = [i for i in parsed.items if i.field_type == "sample_size"]
     assert len(ss) == 1 and ss[0].group == "-"                      # collapsed
     eat_groups = {i.group for i in parsed.items if i.field_type == "eat_thickness"}
@@ -101,7 +103,7 @@ async def test_parse_survives_stage_failure(monkeypatch):
         "react_review.parser.review_parser._pdf_text", lambda p: "text"
     )
     # both stages return non-JSON → empty structure/rows → no items, no crash
-    parser = ReviewParser(QueueBackend(["oops", "also oops"]), _normalize_tool())
+    parser = ReviewParser(QueueBackend(["oops", "also oops"]), _resolver())
     parsed = await parser.parse("dummy.pdf")
     assert parsed.items == []
     assert parsed.record.status == "finished"

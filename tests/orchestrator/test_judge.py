@@ -50,15 +50,17 @@ def test_clean_match_produces_no_flag():
     assert fv.human_review_flags == []
 
 
-def test_provisional_concept_is_flagged():
+def test_concept_status_flags_candidate_and_unresolved():
     from react_review.schemas.evidence import ReviewDataItem
     rep = AuditReport(run_id="r", verdict=ReportVerdict.PASS)
     review = [
         ReviewDataItem(study_id="ahmad_2022", group="t1dm", field_type="hba1c",
-                       raw_field_name="HbA1c", value="7.0", provisional=True),
+                       raw_field_name="HbA1c", value="7.0", resolution_status="candidate"),
+        ReviewDataItem(study_id="ahmad_2022", group="t1dm", field_type="",
+                       raw_field_name="Novel Score", value="9", resolution_status="unresolved"),
         ReviewDataItem(study_id="ahmad_2022", group="t1dm", field_type="bmi",
-                       value="24", provisional=False),
+                       value="24"),                                      # resolved → no flag
     ]
     flags = Judge().adjudicate(rep, None, review).human_review_flags
-    assert [f.label for f in flags] == ["provisional_concept"]   # only the provisional one
-    assert flags[0].field_type == "hba1c"
+    assert [f.label for f in flags] == ["provisional_concept", "needs_review"]
+    assert flags[1].field_type == "Novel Score"        # unresolved shows the raw name

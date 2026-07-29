@@ -31,7 +31,9 @@ class ReviewDataItem(BaseModel):
     value: Value = None
     unit: str = ""
     source_location: str = ""
-    provisional: bool = False       # field_type came from a provisional DKB entry
+    # DKB resolution: "resolved" (authoritative) | "candidate" (provisional, tentative)
+    # | "unresolved" (field_type unknown — kept, but not comparable / needs review).
+    resolution_status: str = "resolved"
 
 
 class SourceEvidenceItem(BaseModel):

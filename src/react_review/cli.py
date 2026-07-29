@@ -460,7 +460,7 @@ def _run_main(argv: list[str] | None = None) -> None:
     from react_review.agents.collector import Collector
     from react_review.audit import ToleranceTable
     from react_review.csv_io import load_included_studies
-    from react_review.dkb import KnowledgeBase
+    from react_review.dkb import FieldResolver, KnowledgeBase
     from react_review.orchestrator import AuditOrchestrator, AuditPipeline, Judge
     from react_review.parser.review_parser import ReviewParser
     from react_review.pipeline.factory import _create_llm_backend
@@ -474,7 +474,6 @@ def _run_main(argv: list[str] | None = None) -> None:
     from react_review.tools.compare import CompareValuesTool
     from react_review.tools.extract import FetchFullTextTool
     from react_review.tools.extract_source import ExtractSourceValueTool
-    from react_review.tools.normalize import NormalizeFieldTool
     from react_review.tools.registry import ToolRegistry
 
     ap = argparse.ArgumentParser(
@@ -502,7 +501,8 @@ def _run_main(argv: list[str] | None = None) -> None:
 
     seed = Path(__file__).resolve().parents[2] / "configs" / "knowledge.seed.json"
     kb = KnowledgeBase.from_json(seed)
-    review_parser = ReviewParser(backend, NormalizeFieldTool(kb, backend))
+    # audit mode: KB is read-only — candidates become proposals, not KB writes.
+    review_parser = ReviewParser(backend, FieldResolver(kb, backend=backend, write_back=False))
 
     _safe_print(f"Parsing review PDF: {args.pdf}")
     parsed = asyncio.run(review_parser.parse(args.pdf, research_context=args.context))

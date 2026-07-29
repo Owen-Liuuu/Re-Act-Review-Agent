@@ -13,8 +13,7 @@ from react_review.llm.base import LLMBackend, parse_llm_response
 from react_review.normalize.groups import normalize_group
 from react_review.schemas.agent import AgentRun, StepRecord
 from react_review.schemas.evidence import ReviewDataItem
-from react_review.tools.models import NormalizeInput
-from react_review.tools.normalize import NormalizeFieldTool
+from react_review.dkb import FieldResolver, ResolvedField
 
 logger = structlog.get_logger(__name__)
 
@@ -105,12 +104,12 @@ class ReviewParser:
     def __init__(
         self,
         backend: LLMBackend,
-        normalize_field: NormalizeFieldTool,
+        resolver: FieldResolver,
         *,
         max_chars: int = 50000,
     ) -> None:
         self._backend = backend
-        self._normalize = normalize_field
+        self._resolver = resolver          # the parser holds NO domain knowledge itself
         self._max_chars = max_chars
 
     async def parse(
@@ -166,20 +165,30 @@ class ReviewParser:
             if isinstance(value, str) and value.strip().lower() in _PLACEHOLDER:
                 continue
             unit = str(r.get("unit") or "").strip()
+            # Parser applies NO domain knowledge — it asks the DKB Resolver.
             try:
-                nr = await self._normalize.run(NormalizeInput(
-                    raw_field_name=raw_name, unit=unit,
-                    research_context=research_context,
-                ))
-            except Exception:
-                continue  # unresolvable field name (no vocab hit, no backend) → skip
-            ft = nr.field_type
+                rf = await self._resolver.resolve(
+                    raw_name, unit=unit, research_context=research_context)
+            except Exception as exc:               # never drop on a resolver error
+                logger.warning("resolve_failed", raw=raw_name, error=str(exc)[:120])
+                rf = ResolvedField(raw_field_name=raw_name)   # → unresolved
 
             study_id = _study_slug(str(r.get("study") or ""))
             group = normalize_group(str(r.get("group") or ""))
-            if self._normalize.kb.scope_of(ft) == "study":
-                # study-level concept (DKB scope): collapse to one row — reviews
-                # repeat these (country/N/tool/quality) in every cohort row.
+
+            # UNRESOLVED: keep the raw item (field_type null) — the audit marks it
+            # not_comparable / needs_review; the concept goes to proposals to learn.
+            if rf.status == "unresolved":
+                items.append(ReviewDataItem(
+                    study_id=study_id, group=group, field_type="",
+                    raw_field_name=raw_name, value=value, unit=unit,
+                    resolution_status="unresolved",
+                ))
+                continue
+
+            ft = rf.field_type
+            # Parser APPLIES scope, using the knowledge the Resolver provided.
+            if rf.scope == "study":
                 group = "-"
                 if (study_id, ft) in seen_study_level:
                     continue
@@ -187,6 +196,6 @@ class ReviewParser:
             items.append(ReviewDataItem(
                 study_id=study_id, group=group, field_type=ft,
                 raw_field_name=raw_name, value=value, unit=unit,
-                provisional=nr.provisional,
+                resolution_status=("resolved" if rf.status == "authoritative" else rf.status),
             ))
         return items

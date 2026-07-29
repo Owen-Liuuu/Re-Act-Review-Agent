@@ -25,6 +25,7 @@ _LABEL = {
     "source_access_failed": ("Source unavailable", "muted"),
     "unmatched": ("No source evidence", "muted"),
     "provisional_concept": ("Provisional concept", "accent"),
+    "needs_review": ("Unresolved — needs review", "warn"),
 }
 
 

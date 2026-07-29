@@ -68,17 +68,26 @@ class Judge:
                 label=label, reason=reason,
             ))
 
-        # DKB guardrail: a field_type resolved via a PROVISIONAL (LLM-proposed,
-        # not-yet-authoritative) concept must be confirmed by a human — the
-        # classification itself is uncertain, independent of the value check.
+        # DKB guardrail: the concept mapping's own certainty, independent of the
+        # value check. A CANDIDATE (LLM-proposed, not-yet-authoritative) must be
+        # confirmed; an UNRESOLVED field (no concept found) is kept but flagged.
         for item in (review_items or []):
-            if getattr(item, "provisional", False):
+            status = getattr(item, "resolution_status", "resolved")
+            if status == "candidate":
                 flags.append(HumanReviewFlag(
                     study_id=item.study_id, group=item.group, field_type=item.field_type,
                     label="provisional_concept",
                     reason=f"field '{item.raw_field_name or item.field_type}' was "
                            f"auto-classified as {item.field_type} (provisional) — "
                            "confirm the concept mapping",
+                ))
+            elif status == "unresolved":
+                flags.append(HumanReviewFlag(
+                    study_id=item.study_id, group=item.group,
+                    field_type=item.field_type or item.raw_field_name,
+                    label="needs_review",
+                    reason=f"field '{item.raw_field_name}' could not be mapped to a known "
+                           "concept — not comparable, needs human review",
                 ))
 
         summary = (
