@@ -18,6 +18,7 @@
 | **L2** | **表格结构被拍平** —— `get_text()` 把表格线性化成一维文字流,列对齐丢失 | 模型分不清"哪个值属于哪一列/队列" → **group 串列**(拿糖尿病组的值当对照组) | 同上 | 版面感知的结构化表格抽取(PyMuPDF table detection / layout parser) |
 | **L3** | **`[:50000]` 截断** | 超 5 万字符的后半部分被切;Table 1 通常在前面所以目前没踩到 | `ReviewParser.max_chars` | 定位相关表格区域后再喂,或按需调大 |
 | **L11** | **Stage-2 单次吐全表 → 输出 token 上限** —— 9 篇 ≈12k 字符 JSON;`max_tokens<8192` 直接截断→JSON 失败→**0 项**;综述再大(几十篇)连 8192 也会爆 | parser 整段失败 | `parser/review_parser.py` `_STAGE2` | **运行时 `max_tokens≥8192` 必需**;根治=Stage-2 按研究/分节**分块抽取**(输出有界,不受综述规模限制) |
+| **L12** | **子组样本量 `subgroup_n` 未抽** —— parser 把总 N 复读进两队列,没读每队列的 50/50 分组数 | 15 个 subgroup_n 全漏(占 parser 漏项一半) | `parser/review_parser.py` Stage-2 | 提示 Stage-2 显式抽每队列 N;或和 sample_size 一起做"研究级 vs 队列级"scope 建模 |
 
 ### B. 相关性 / 上下文
 
@@ -66,4 +67,11 @@
 
 ## 三、这一轮已解决(对照,别重复踩)
 
-控制字符 `\x01`→`±`(L2 相关的 JSON 崩溃根因)· 单位逐分量归一(部分 L8)· study_id 连字符匹配 · 标识列泄漏(部分 L5)· 循环 import · 检索结果双标签(`source_access_failed` / `missing_source`)。详见 commit `f932e1d`→`4650baa`。
+控制字符 `\x01`→`±`(L2 相关的 JSON 崩溃根因)· 单位逐分量归一(部分 L8)· study_id 连字符匹配 · 标识列泄漏(部分 L5)· 循环 import · 检索结果双标签(`source_access_failed` / `missing_source`)· **研究级字段被按队列复读**(country/N/tool/quality 收敛到 group `-` + 去重,parser 覆盖 40%→75%、精度 36%→90%,`03bb641`)。详见 commit `f932e1d`→`03bb641`。
+
+## 四、评测能力(现有脚本)
+三档 + parser,全可出英文 HTML 报告(打印即 PDF):
+- **审计核心**(确定性)`eval/run_benchmark.py` → 52/1/4
+- **全流程准确率**(Collector+审计)`eval/run_full_accuracy.py --html` → label 82-84% / 召回 100%
+- **Parser 准确率** `eval/run_parser_accuracy.py --html --out` → 覆盖 75% / 精度 90% / 值匹配 84%
+- 单篇审计报告:`react-review run`→`report` 或 `audit CSV CSV`→`report`
