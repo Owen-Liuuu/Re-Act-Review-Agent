@@ -76,7 +76,9 @@ async def _run(args) -> None:
             review_unit=it.unit, source_unit=g.get("unit") or "",
             rel_tolerance=tol.rel_tolerance(it.field_type),
             sd_rel_tolerance=tol.sd_rel_tolerance(it.field_type)).label
-        if lab == AuditLabel.MATCH:
+        # numeric match OR (for text fields the numeric compare can't judge) exact string
+        text_eq = str(it.value).strip().lower() == str(g.get("value") or "").strip().lower()
+        if lab == AuditLabel.MATCH or text_eq:
             vmatch += 1
         else:
             mismatched.append({"study": k[0], "group": k[1], "field": k[2],
@@ -90,6 +92,9 @@ async def _run(args) -> None:
         "missed": dict(Counter(k[2] for k in fn)),
         "spurious": dict(Counter(k[2] for k in fp)),
         "mismatched_values": mismatched,
+        "parser_rows": [{"study_id": it.study_id, "group": it.group,
+                         "field_type": it.field_type, "raw_field_name": it.raw_field_name,
+                         "value": it.value, "unit": it.unit} for it in items],
     }
 
     print("\n================ PARSER accuracy vs review_ground_truth ================")

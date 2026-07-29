@@ -65,12 +65,34 @@ async def test_parse_produces_normalized_long_items(monkeypatch):
     assert got == {
         ("ahmad_2022", "t1dm", "eat_thickness", "6.60 ± 0.71", "mm"),
         ("ahmad_2022", "control", "eat_thickness", "3.83 ± 0.35", "mm"),
-        ("ahmad_2022", "all", "sample_size", "100", ""),
+        ("ahmad_2022", "-", "sample_size", "100", ""),   # study-level → group "-"
     }
     # unknown field + placeholder value were dropped
     assert len(parsed.items) == 3
     assert parsed.record.agent == "parser"
     assert [s.tool for s in parsed.record.steps] == ["llm:stage1_structure", "llm:stage2_unpivot"]
+
+
+@pytest.mark.asyncio
+async def test_study_level_field_collapses_to_one_row(monkeypatch):
+    monkeypatch.setattr("react_review.parser.review_parser._pdf_text", lambda p: "t")
+    # the review repeats N in BOTH cohort rows; it must collapse to one study-level
+    # row (group "-"), while a genuine per-cohort field stays split.
+    backend = QueueBackend([
+        {"table_name": "Table 1", "columns": ["N", "EFT/ EAT"],
+         "group_handling": "", "notes": ""},
+        {"rows": [
+            {"study": "Ahmad et al. [2022]", "group": "T1DM", "raw_field_name": "N", "value": "100", "unit": ""},
+            {"study": "Ahmad et al. [2022]", "group": "Control", "raw_field_name": "N", "value": "100", "unit": ""},
+            {"study": "Ahmad et al. [2022]", "group": "T1DM", "raw_field_name": "EFT/ EAT", "value": "6.6", "unit": "mm"},
+            {"study": "Ahmad et al. [2022]", "group": "Control", "raw_field_name": "EFT/ EAT", "value": "3.8", "unit": "mm"},
+        ]},
+    ])
+    parsed = await ReviewParser(backend, _normalize_tool()).parse("d.pdf")
+    ss = [i for i in parsed.items if i.field_type == "sample_size"]
+    assert len(ss) == 1 and ss[0].group == "-"                      # collapsed
+    eat_groups = {i.group for i in parsed.items if i.field_type == "eat_thickness"}
+    assert eat_groups == {"t1dm", "control"}                        # cohort-level stays split
 
 
 @pytest.mark.asyncio
