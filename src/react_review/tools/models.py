@@ -73,4 +73,5 @@ class NormalizeResult(BaseModel):
     field_type: str
     source: str = "vocabulary"
     is_new: bool = False
+    provisional: bool = False       # True when an LLM/provisional entry decided it
 

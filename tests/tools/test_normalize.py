@@ -86,6 +86,7 @@ async def test_tool_resolves_via_vocabulary_without_llm(vocab):
     out = await tool.run(NormalizeInput(raw_field_name="N"))
     assert out.field_type == "sample_size"
     assert out.source == "vocabulary"
+    assert out.provisional is False        # authoritative seed entry
     assert backend.calls == 0  # LLM never touched
 
 
@@ -112,9 +113,10 @@ async def test_tool_llm_fallback_extends_vocabulary(vocab):
     assert out.field_type == "hba1c"
     assert out.source == "llm"
     assert out.is_new is True
+    assert out.provisional is True         # LLM-proposed → flagged for human review
     assert backend.calls == 1
-    # The new concept is now in the vocabulary for next time.
-    assert "hba1c" in vocab.entries
+    # The new concept is now in the knowledge base (provisional) for next time.
+    assert "hba1c" in vocab.entries and vocab.entries["hba1c"].status == "provisional"
 
 
 @pytest.mark.asyncio
