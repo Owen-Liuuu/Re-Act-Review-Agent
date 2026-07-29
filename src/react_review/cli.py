@@ -460,13 +460,17 @@ def _run_main(argv: list[str] | None = None) -> None:
     from react_review.agents.collector import Collector
     from react_review.audit import ToleranceTable
     from react_review.csv_io import load_included_studies
-    from react_review.normalize.vocabulary import Vocabulary
+    from react_review.dkb import KnowledgeBase
     from react_review.orchestrator import AuditOrchestrator, AuditPipeline, Judge
     from react_review.parser.review_parser import ReviewParser
     from react_review.pipeline.factory import _create_llm_backend
     from react_review.retrieval.local_pdf import LocalPdfRetriever
     from react_review.store import EvidencePackageStore
-    from react_review.study_match import build_reference_resolver, resolve_studies
+    from react_review.study_match import (
+        apply_modality_disambiguation,
+        build_reference_resolver,
+        resolve_studies,
+    )
     from react_review.tools.compare import CompareValuesTool
     from react_review.tools.extract import FetchFullTextTool
     from react_review.tools.extract_source import ExtractSourceValueTool
@@ -496,9 +500,9 @@ def _run_main(argv: list[str] | None = None) -> None:
     setup_logging(log_file=config.paths.log_file)
     backend = _create_llm_backend(config)
 
-    seed = Path(__file__).resolve().parents[2] / "configs" / "vocabulary.seed.json"
-    vocab = Vocabulary.from_json(seed)
-    review_parser = ReviewParser(backend, NormalizeFieldTool(vocab, backend))
+    seed = Path(__file__).resolve().parents[2] / "configs" / "knowledge.seed.json"
+    kb = KnowledgeBase.from_json(seed)
+    review_parser = ReviewParser(backend, NormalizeFieldTool(kb, backend))
 
     _safe_print(f"Parsing review PDF: {args.pdf}")
     parsed = asyncio.run(review_parser.parse(args.pdf, research_context=args.context))
@@ -506,6 +510,7 @@ def _run_main(argv: list[str] | None = None) -> None:
 
     studies = load_included_studies(args.studies)
     review_items, sid_map = resolve_studies(parsed.items, studies)
+    review_items = apply_modality_disambiguation(review_items, sid_map, kb)
     if args.limit:
         review_items = review_items[: args.limit]
 
@@ -519,7 +524,7 @@ def _run_main(argv: list[str] | None = None) -> None:
     reg.register(ExtractSourceValueTool(backend))
     reg.register(CompareValuesTool(tol))
     pipeline = AuditPipeline(
-        Collector(reg, vocabulary=vocab), AuditOrchestrator(reg), Judge(),
+        Collector(reg, knowledge=kb), AuditOrchestrator(reg), Judge(),
         store=EvidencePackageStore(args.out),
     )
 

@@ -73,3 +73,26 @@ def build_reference_resolver(sid_to_study: dict[str, IncludedStudy]):
             return ReferenceEntry(title=study_id)
         return ReferenceEntry(title=s.review_citation or study_id, doi=s.doi or None)
     return resolver
+
+
+def apply_modality_disambiguation(review_items, sid_to_study, kb):
+    """Relabel a field_type using the study's modality + the DKB disambiguation rule.
+
+    The parser can't tell eat_thickness (echo) from eat_volume (CT) at parse time
+    (it lacks the study's modality). Now that studies are resolved to
+    included_studies, use each study's modality against the concept's
+    ``disambiguation`` (e.g. CT → eat_volume) — the A2 fix, driven by KB DATA.
+    """
+    out = []
+    for item in review_items:
+        study = sid_to_study.get(item.study_id)
+        entry = kb.entries.get(item.field_type)
+        rule = entry.disambiguation.get("modality", {}) if entry else {}
+        if study and study.modality and rule:
+            m = study.modality.strip().lower()
+            for signal, target in rule.items():
+                if signal in m and target in kb.entries and target != item.field_type:
+                    item = item.model_copy(update={"field_type": target})
+                    break
+        out.append(item)
+    return out

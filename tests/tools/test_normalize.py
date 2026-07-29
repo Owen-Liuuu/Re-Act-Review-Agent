@@ -11,17 +11,17 @@ from pathlib import Path
 
 import pytest
 
+from react_review.dkb import KnowledgeBase
 from react_review.llm.base import LLMBackend
-from react_review.normalize.vocabulary import Vocabulary
 from react_review.tools.normalize import NormalizeFieldTool
 from react_review.tools.models import NormalizeInput
 
-SEED = Path(__file__).resolve().parents[2] / "configs" / "vocabulary.seed.json"
+SEED = Path(__file__).resolve().parents[2] / "configs" / "knowledge.seed.json"
 
 
 @pytest.fixture
-def vocab() -> Vocabulary:
-    return Vocabulary.from_json(SEED)
+def vocab() -> KnowledgeBase:
+    return KnowledgeBase.from_json(SEED)
 
 
 # --- Vocabulary (deterministic resolution) ---
@@ -56,7 +56,7 @@ def test_unknown_name_returns_none(vocab):
 def test_vocabulary_json_round_trip(tmp_path, vocab):
     p = tmp_path / "v.json"
     vocab.save(p)
-    reloaded = Vocabulary.from_json(p)
+    reloaded = KnowledgeBase.from_json(p)
     assert reloaded.field_types() == vocab.field_types()
 
 

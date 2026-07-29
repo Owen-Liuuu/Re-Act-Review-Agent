@@ -4,20 +4,20 @@ Maps a raw review column name to a canonical ``field_type`` via a three-step
 cascade so most calls are deterministic and cheap:
 
     1. cache      : (raw_name + research_context) seen before  -> deterministic
-    2. vocabulary : known synonym (+ unit disambiguation)      -> deterministic
-    3. LLM        : unknown -> map into an existing field_type or add a new one,
-                    then write it back to the vocabulary and cache
+    2. knowledge  : known synonym (+ unit / modality disambiguation) -> deterministic
+    3. LLM        : unknown -> map into an existing field_type or add a NEW one
+                    (marked provisional), then write it back to the KB + cache
 
 The LLM step is what lets this generalise across medical domains where a static
 dictionary cannot; the cache turns each unique name into a one-time cost and the
-vocabulary is the living dictionary that grows.
+knowledge base (DKB) is the living dictionary that grows.
 """
 from __future__ import annotations
 
 import structlog
 
+from react_review.dkb import KnowledgeBase, KnowledgeEntry, Provenance
 from react_review.llm.base import LLMBackend, parse_llm_response
-from react_review.normalize.vocabulary import FieldTypeEntry, Vocabulary
 from react_review.tools.base import Tool, ToolStage
 from react_review.tools.models import NormalizeInput, NormalizeResult
 
@@ -51,7 +51,7 @@ def _cache_key(raw_field_name: str, unit: str, research_context: str) -> str:
 
 
 class NormalizeFieldTool(Tool):
-    """Resolve a raw column name to a canonical field_type (cache→vocab→LLM)."""
+    """Resolve a raw column name to a canonical field_type (cache→knowledge→LLM)."""
 
     name = "normalize_field"
     stage = ToolStage.EXTRACT
@@ -60,13 +60,18 @@ class NormalizeFieldTool(Tool):
 
     def __init__(
         self,
-        vocabulary: Vocabulary,
+        knowledge: KnowledgeBase,
         backend: LLMBackend | None = None,
         cache: dict[str, str] | None = None,
     ) -> None:
-        self._vocab = vocabulary
+        self._kb = knowledge
         self._backend = backend
         self._cache: dict[str, str] = cache if cache is not None else {}
+
+    @property
+    def kb(self) -> KnowledgeBase:
+        """The knowledge base (callers use it for e.g. ``scope_of``)."""
+        return self._kb
 
     async def run(self, payload: NormalizeInput) -> NormalizeResult:
         key = _cache_key(payload.raw_field_name, payload.unit, payload.research_context)
@@ -75,8 +80,8 @@ class NormalizeFieldTool(Tool):
         if key in self._cache:
             return NormalizeResult(field_type=self._cache[key], source="cache")
 
-        # 2. vocabulary (synonym + unit disambiguation)
-        ft = self._vocab.resolve(payload.raw_field_name, payload.unit)
+        # 2. knowledge base (synonym + unit/modality disambiguation)
+        ft = self._kb.resolve(payload.raw_field_name, payload.unit, payload.modality)
         if ft:
             self._cache[key] = ft
             return NormalizeResult(field_type=ft, source="vocabulary")
@@ -85,21 +90,21 @@ class NormalizeFieldTool(Tool):
         if self._backend is None:
             raise ValueError(
                 f"cannot resolve field name {payload.raw_field_name!r}: not in the "
-                "vocabulary and no LLM backend configured"
+                "knowledge base and no LLM backend configured"
             )
         ft, entry, is_new = await self._llm_resolve(payload)
         if is_new:
-            self._vocab.add(entry)
+            self._kb.add(entry)          # provisional; promoted later (DKB-3)
         self._cache[key] = ft
         return NormalizeResult(field_type=ft, source="llm", is_new=is_new)
 
     async def _llm_resolve(
         self, payload: NormalizeInput
-    ) -> tuple[str, FieldTypeEntry, bool]:
+    ) -> tuple[str, KnowledgeEntry, bool]:
         vocab_list = "\n".join(
             f"- {e.field_type}: {e.concept}"
             + (f" (unit {e.default_unit})" if e.default_unit else "")
-            for e in self._vocab.entries.values()
+            for e in self._kb.entries.values()
         ) or "- (none yet)"
         prompt = _PROMPT.format(
             context=payload.research_context or "a systematic review",
@@ -115,13 +120,15 @@ class NormalizeFieldTool(Tool):
             raise ValueError(
                 f"LLM returned no field_type for {payload.raw_field_name!r}"
             )
-        is_new = ft not in self._vocab.entries
-        entry = FieldTypeEntry(
+        is_new = ft not in self._kb.entries
+        entry = KnowledgeEntry(
             field_type=ft,
             concept=(data.get("concept") or "").strip(),
             value_type=(data.get("value_type") or "numeric").strip().lower(),
             default_unit=(data.get("default_unit") or "").strip(),
             synonyms=[payload.raw_field_name] if is_new else [],
+            provenance=Provenance(source="llm"),   # LLM-proposed = provisional
+            status="provisional",
         )
         logger.info(
             "normalize_field_llm",

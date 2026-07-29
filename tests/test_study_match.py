@@ -56,6 +56,24 @@ def test_resolve_studies_relabels_and_maps():
     assert ref.doi == "10.1007/s12020-011-9478-x"
 
 
+def test_apply_modality_disambiguation():
+    # DKB A2 fix: a CT study's eat_thickness becomes eat_volume; echo stays.
+    from react_review.dkb import KnowledgeBase
+    from react_review.study_match import apply_modality_disambiguation
+
+    kb = KnowledgeBase.from_json(BENCH.parent.parent / "configs" / "knowledge.seed.json")
+    sid_map = {s.study_id: s for s in STUDIES}
+    items = [
+        ReviewDataItem(study_id="svanteson_2019", group="t1dm",   # modality ct
+                       field_type="eat_thickness", value="40"),
+        ReviewDataItem(study_id="ahmad_2022", group="t1dm",       # modality echo
+                       field_type="eat_thickness", value="6.6", unit="mm"),
+    ]
+    out = apply_modality_disambiguation(items, sid_map, kb)
+    assert out[0].field_type == "eat_volume"        # CT → volume
+    assert out[1].field_type == "eat_thickness"     # echo → unchanged
+
+
 # --- LocalPdfRetriever ---
 
 @pytest.mark.asyncio

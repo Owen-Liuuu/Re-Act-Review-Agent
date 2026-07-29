@@ -17,7 +17,7 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 from react_review.core.enums import CollectionOutcome, ReflectionDecision
-from react_review.normalize.vocabulary import Vocabulary
+from react_review.dkb import KnowledgeBase
 from react_review.orchestrator.reflection import ReflectionDecider, ReflectionSignals
 from react_review.schemas.agent import AgentRun, StepRecord
 from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
@@ -39,19 +39,19 @@ class Collector:
         self,
         catalogue: ToolRegistry,
         *,
-        vocabulary: Vocabulary | None = None,
+        knowledge: KnowledgeBase | None = None,
         decider: ReflectionDecider | None = None,
         max_attempts: int = 3,
     ) -> None:
         self._fetch = catalogue.get("fetch_fulltext")
         self._extract = catalogue.get("extract_source_value")
-        self._vocab = vocabulary
+        self._kb = knowledge
         self._max_attempts = max(1, max_attempts)
         self._decider = decider or ReflectionDecider(max_attempts=self._max_attempts)
 
     def _concept_for(self, field_type: str) -> str:
-        if self._vocab and field_type in self._vocab.entries:
-            return self._vocab.entries[field_type].concept
+        if self._kb and field_type in self._kb.entries:
+            return self._kb.entries[field_type].concept
         return ""
 
     async def collect(

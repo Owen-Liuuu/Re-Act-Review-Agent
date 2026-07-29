@@ -15,7 +15,7 @@ from pathlib import Path
 
 from react_review.audit import ToleranceTable
 from react_review.core.config import AppConfig
-from react_review.normalize.vocabulary import Vocabulary
+from react_review.dkb import KnowledgeBase
 from react_review.steps.search_validation.multi_db_count import IdentificationCounter
 from react_review.tools.base import Tool
 from react_review.tools.compare import CompareValuesTool
@@ -26,16 +26,16 @@ from react_review.tools.registry import ToolRegistry
 from react_review.tools.search import CountResultsTool, SearchPubMedTool
 from react_review.tools.verify import VerifyReferenceTool
 
-_SEED_VOCAB = Path(__file__).resolve().parents[3] / "configs" / "vocabulary.seed.json"
+_SEED_KB = Path(__file__).resolve().parents[3] / "configs" / "knowledge.seed.json"
 
 
-def _load_seed_vocabulary() -> Vocabulary:
+def _load_seed_vocabulary() -> KnowledgeBase:
     try:
-        if _SEED_VOCAB.exists():
-            return Vocabulary.from_json(_SEED_VOCAB)
+        if _SEED_KB.exists():
+            return KnowledgeBase.from_json(_SEED_KB)
     except Exception:
         pass
-    return Vocabulary()
+    return KnowledgeBase()
 
 
 class _StubCounter(IdentificationCounter):

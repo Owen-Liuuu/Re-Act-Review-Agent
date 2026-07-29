@@ -15,12 +15,12 @@ import csv
 from collections import Counter
 from pathlib import Path
 
-from react_review.normalize.vocabulary import Vocabulary
+from react_review.dkb import KnowledgeBase
 from react_review.tools.models import NormalizeInput
 from react_review.tools.normalize import NormalizeFieldTool
 
 ROOT = Path(__file__).resolve().parents[1]
-SEED = ROOT / "configs" / "vocabulary.seed.json"
+SEED = ROOT / "configs" / "knowledge.seed.json"
 BENCH = ROOT / "eval" / "benchmark" / "review_ground_truth.csv"
 CONTEXT = "EAT thickness/volume in type 1 diabetes vs healthy controls"
 
@@ -29,7 +29,7 @@ async def main() -> int:
     with BENCH.open(encoding="utf-8-sig") as f:
         rows = [r for r in csv.DictReader(f) if r["source_location"] == "Table 1"]
 
-    tool = NormalizeFieldTool(Vocabulary.from_json(SEED), backend=None)
+    tool = NormalizeFieldTool(KnowledgeBase.from_json(SEED), backend=None)
     correct = 0
     sources: Counter[str] = Counter()
     wrong: list[tuple[str, str, str, str]] = []

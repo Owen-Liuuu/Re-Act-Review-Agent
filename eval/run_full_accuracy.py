@@ -29,7 +29,7 @@ from react_review.audit import ToleranceTable
 from react_review.core.config import load_config
 from react_review.csv_io import load_included_studies
 from react_review.eval_accuracy import format_report, run_rows, score_rows
-from react_review.normalize.vocabulary import Vocabulary
+from react_review.dkb import KnowledgeBase
 from react_review.pipeline.factory import _create_llm_backend
 from react_review.retrieval.local_pdf import LocalPdfRetriever
 from react_review.steps.paper_verification.schemas import ReferenceEntry
@@ -86,8 +86,8 @@ def main(argv: list[str] | None = None) -> None:
     reg = ToolRegistry()
     reg.register(FetchFullTextTool(retriever))
     reg.register(ExtractSourceValueTool(backend))
-    vocab = Vocabulary.from_json(ROOT / "configs" / "vocabulary.seed.json")
-    collector = Collector(reg, vocabulary=vocab)
+    kb = KnowledgeBase.from_json(ROOT / "configs" / "knowledge.seed.json")
+    collector = Collector(reg, knowledge=kb)
 
     def reference_for(study_id: str) -> ReferenceEntry:
         s = by_id.get(study_id)

@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pytest
 
+from react_review.dkb import KnowledgeBase
 from react_review.llm.base import LLMBackend
-from react_review.normalize.vocabulary import Vocabulary
 from react_review.parser.review_parser import ReviewParser, _study_slug
 from react_review.tools.normalize import NormalizeFieldTool
 
-SEED = Path(__file__).resolve().parents[2] / "configs" / "vocabulary.seed.json"
+SEED = Path(__file__).resolve().parents[2] / "configs" / "knowledge.seed.json"
 
 
 class QueueBackend(LLMBackend):
@@ -28,8 +28,8 @@ class QueueBackend(LLMBackend):
 
 
 def _normalize_tool() -> NormalizeFieldTool:
-    # backend=None → deterministic vocab resolution only; unknown names raise.
-    return NormalizeFieldTool(Vocabulary.from_json(SEED), backend=None)
+    # backend=None → deterministic KB resolution only; unknown names raise.
+    return NormalizeFieldTool(KnowledgeBase.from_json(SEED), backend=None)
 
 
 def test_study_slug():

@@ -99,14 +99,6 @@ def _norm_col(name: str) -> str:
     return re.sub(r"[^a-z0-9 ]", "", name.lower()).strip()
 
 
-# Study-level characteristics: one value per STUDY, not per cohort. Reviews often
-# repeat these in every cohort row; collapse them to a single study-level row
-# (group "-") so they aren't duplicated across t1dm/control. (DKB should
-# eventually own a per-concept study-vs-cohort "scope" attribute.)
-_STUDY_LEVEL_FIELDS = {"country", "measurement_tool", "overall_quality",
-                       "modality", "sample_size"}
-
-
 class ReviewParser:
     """Parse a review PDF into a long table of ReviewDataItem."""
 
@@ -184,8 +176,9 @@ class ReviewParser:
 
             study_id = _study_slug(str(r.get("study") or ""))
             group = normalize_group(str(r.get("group") or ""))
-            if ft in _STUDY_LEVEL_FIELDS:
-                # collapse to one study-level row; reviews repeat these per cohort
+            if self._normalize.kb.scope_of(ft) == "study":
+                # study-level concept (DKB scope): collapse to one row — reviews
+                # repeat these (country/N/tool/quality) in every cohort row.
                 group = "-"
                 if (study_id, ft) in seen_study_level:
                     continue

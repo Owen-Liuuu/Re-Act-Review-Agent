@@ -59,6 +59,7 @@ class NormalizeInput(BaseModel):
 
     raw_field_name: str
     unit: str = ""
+    modality: str = ""          # optional signal for DKB disambiguation (CT/echo)
     research_context: str = ""
 
 
