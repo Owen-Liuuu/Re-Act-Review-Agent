@@ -1,0 +1,70 @@
+{
+  "sample_size": {
+    "concept": "total number of participants in the study",
+    "value_type": "numeric",
+    "default_unit": "count",
+    "scope": "study",
+    "synonyms": ["N", "n", "sample size", "no. of patients", "number of participants", "number of subjects", "total n"]
+  },
+  "subgroup_n": {
+    "concept": "number of participants in one cohort / arm",
+    "value_type": "numeric",
+    "default_unit": "count",
+    "scope": "cohort",
+    "synonyms": ["subgroup n", "group size", "n per group", "cohort size", "number in group", "arm size", "n (group)"]
+  },
+  "age": {
+    "concept": "participant age",
+    "value_type": "numeric",
+    "default_unit": "years",
+    "scope": "cohort",
+    "synonyms": ["age", "mean age", "age (years)", "age [years]", "age yrs"]
+  },
+  "bmi": {
+    "concept": "body mass index",
+    "value_type": "numeric",
+    "default_unit": "kg/m2",
+    "scope": "cohort",
+    "synonyms": ["BMI", "BMI Kg/m2", "body mass index"]
+  },
+  "country": {
+    "concept": "country where the study was conducted",
+    "value_type": "text",
+    "default_unit": "",
+    "scope": "study",
+    "synonyms": ["country", "region", "location"]
+  },
+  "measurement_tool": {
+    "concept": "imaging or measurement modality",
+    "value_type": "categorical",
+    "default_unit": "",
+    "scope": "study",
+    "synonyms": ["measurement tool", "imaging modality", "modality", "method", "technique"]
+  },
+  "overall_quality": {
+    "concept": "study quality rating",
+    "value_type": "categorical",
+    "default_unit": "",
+    "scope": "study",
+    "synonyms": ["overall quality", "quality", "study quality", "NOS", "risk of bias"]
+  },
+  "eat_thickness": {
+    "concept": "epicardial adipose tissue thickness (linear, echocardiography)",
+    "value_type": "numeric",
+    "default_unit": "mm",
+    "scope": "cohort",
+    "domain": "cardiology/imaging",
+    "disambiguation": {"modality": {"echo": "eat_thickness", "echocardiograph": "eat_thickness", "ct": "eat_volume", "computed tomography": "eat_volume"}},
+    "synonyms": ["EFT", "EAT", "EFT/ EAT", "EFT/EAT", "epicardial fat thickness", "EAT thickness", "EAT thickness average", "epicardial adipose tissue thickness"]
+  },
+  "eat_volume": {
+    "concept": "epicardial adipose tissue volume (CT)",
+    "value_type": "numeric",
+    "default_unit": "cm3",
+    "scope": "cohort",
+    "domain": "cardiology/imaging",
+    "unit_equivalences": ["ml", "cc"],
+    "disambiguation": {"modality": {"echo": "eat_thickness", "echocardiograph": "eat_thickness", "ct": "eat_volume", "computed tomography": "eat_volume"}},
+    "synonyms": ["EFT/ EAT", "EFT/EAT", "epicardial fat volume", "EAT volume", "epicardial adipose tissue volume", "iEAT"]
+  }
+}
