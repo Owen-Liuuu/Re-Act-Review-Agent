@@ -19,9 +19,13 @@ def _tokens(s: str) -> set[str]:
 
 
 class Retriever(Protocol):
-    """Return the KB entries most relevant to a query, best-first."""
+    """Return the KB entries most relevant to a query, best-first.
 
-    def retrieve(self, query: str, k: int = 8) -> list[KnowledgeEntry]: ...
+    Async because an embedding retriever calls out to a model (DKB-2b); the
+    keyword retriever is sync work wrapped in an ``async def``.
+    """
+
+    async def retrieve(self, query: str, k: int = 8) -> list[KnowledgeEntry]: ...
 
 
 class KeywordRetriever:
@@ -34,7 +38,7 @@ class KeywordRetriever:
     def __init__(self, kb: KnowledgeBase) -> None:
         self._kb = kb
 
-    def retrieve(self, query: str, k: int = 8) -> list[KnowledgeEntry]:
+    async def retrieve(self, query: str, k: int = 8) -> list[KnowledgeEntry]:
         q = _tokens(query)
         scored: list[tuple[int, str, KnowledgeEntry]] = []
         for ft, e in self._kb.entries.items():

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import structlog
 
-from react_review.dkb import KeywordRetriever, KnowledgeAgent, KnowledgeBase
+from react_review.dkb import KeywordRetriever, KnowledgeAgent, KnowledgeBase, Retriever
 from react_review.llm.base import LLMBackend
 from react_review.tools.base import Tool, ToolStage
 from react_review.tools.models import NormalizeInput, NormalizeResult
@@ -49,9 +49,15 @@ class NormalizeFieldTool(Tool):
         knowledge: KnowledgeBase,
         backend: LLMBackend | None = None,
         cache: dict[str, str] | None = None,
+        retriever: Retriever | None = None,
     ) -> None:
         self._kb = knowledge
-        self._agent = KnowledgeAgent(backend, KeywordRetriever(knowledge)) if backend else None
+        # default retriever is keyword (offline, deterministic); pass an
+        # EmbeddingRetriever for vector search (DKB-2b) at scale.
+        self._agent = (
+            KnowledgeAgent(backend, retriever or KeywordRetriever(knowledge))
+            if backend else None
+        )
         self._cache: dict[str, str] = cache if cache is not None else {}
 
     @property

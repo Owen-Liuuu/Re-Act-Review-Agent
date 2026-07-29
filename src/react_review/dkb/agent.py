@@ -56,7 +56,7 @@ class KnowledgeAgent:
         self, raw_name: str, unit: str = "",
         research_context: str = "", modality: str = "",
     ) -> AgentClassification:
-        cands = self._retriever.retrieve(f"{raw_name} {unit} {research_context}".strip())
+        cands = await self._retriever.retrieve(f"{raw_name} {unit} {research_context}".strip())
         cand_list = "\n".join(
             f"- {e.field_type}: {e.concept}"
             + (f" (unit {e.default_unit})" if e.default_unit else "")

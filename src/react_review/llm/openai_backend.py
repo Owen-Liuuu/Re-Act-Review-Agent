@@ -51,6 +51,32 @@ class OpenAIBackend(LLMBackend):
     def model_id(self) -> str:
         return self._model
 
+    async def embed(self, texts: list[str], *, model: str = "embedding-3") -> list[list[float]]:
+        """Embed texts via POST ``{base_url}/embeddings`` (OpenAI-compatible).
+
+        GLM/Zhipu default model is ``embedding-3``; pass ``model`` for others
+        (e.g. OpenAI ``text-embedding-3-small``). Used by the DKB vector retriever.
+        """
+        url = f"{self._base_url}/embeddings"
+        headers = {
+            "Authorization": f"Bearer {self._settings.api_key}",
+            "Content-Type": "application/json",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=30.0)) as client:
+                async with self._sem:
+                    resp = await client.post(
+                        url, headers=headers, json={"model": model, "input": texts})
+                resp.raise_for_status()
+                data = resp.json()
+        except httpx.HTTPStatusError as exc:
+            raise LLMError(
+                f"embeddings error (HTTP {exc.response.status_code}): {exc.response.text[:300]}"
+            ) from exc
+        except httpx.RequestError as exc:
+            raise LLMError(f"embeddings network error: {exc!r}") from exc
+        return [d["embedding"] for d in data.get("data", [])]
+
     async def complete(self, prompt: str, *, seed: int = 42) -> str:
         """Send a prompt and return the response text.
 

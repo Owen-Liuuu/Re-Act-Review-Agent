@@ -32,13 +32,17 @@ class _Stub(LLMBackend):
         return json.dumps(self._payload)
 
 
-def test_keyword_retriever_ranks_relevant_first(kb):
-    assert KeywordRetriever(kb).retrieve("body mass index")[0].field_type == "bmi"
+@pytest.mark.asyncio
+async def test_keyword_retriever_ranks_relevant_first(kb):
+    hits = await KeywordRetriever(kb).retrieve("body mass index")
+    assert hits[0].field_type == "bmi"
 
 
-def test_keyword_retriever_falls_back_to_all(kb):
+@pytest.mark.asyncio
+async def test_keyword_retriever_falls_back_to_all(kb):
     # nothing overlaps → the agent still gets the whole (small) KB to choose from
-    assert len(KeywordRetriever(kb).retrieve("zzz nonsense", k=50)) == len(kb.entries)
+    hits = await KeywordRetriever(kb).retrieve("zzz nonsense", k=50)
+    assert len(hits) == len(kb.entries)
 
 
 @pytest.mark.asyncio
