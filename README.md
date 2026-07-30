@@ -16,7 +16,7 @@ and a source table are joined on `(study, group, timepoint, field_type)`, each
 pair is compared with a dual-band tolerance (mean 1% + SD 3%; unit as a separate
 axis), and the result is aggregated into an audit report. Done: schemas,
 syntax-normalize, audit compare, the typed tool catalogue, and the thin
-orchestrator. Remaining: the LLM `normalize_field` tool (Tier-2 semantic) and the
+orchestrator. Remaining: the DKB Tier-2 semantic resolver and the
 ReAct agents / real parser (P2). Migrated from the `lit_inspector` prototype in
 P0 (lifted, renamed, dead code dropped, test baseline restored).
 

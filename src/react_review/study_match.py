@@ -27,23 +27,35 @@ def _parts(study_id: str) -> tuple[str, str]:
     return surname, (year_m.group(0) if year_m else "")
 
 
-def resolve_study(parser_study_id: str, studies: list[IncludedStudy]) -> IncludedStudy | None:
-    """Best canonical match for a parser study id, or None if ambiguous/none."""
-    p_sur, p_year = _parts(parser_study_id)
+def _best_match(query_sid: str, candidate_ids: list[str]) -> str | None:
+    """Best study_id among candidates for query_sid, or None if none/ambiguous.
+
+    Matches by publication year (when both carry one) + surname-prefix
+    compatibility; an ambiguous tie returns None so callers never guess a wrong
+    study. Shared by the CSV path (resolve_study) and the parser path.
+    """
+    p_sur, p_year = _parts(query_sid)
     if not p_sur:
         return None
-    candidates = []
-    for s in studies:
-        c_sur, c_year = _parts(s.study_id)
+    matches = []
+    for cid in candidate_ids:
+        c_sur, c_year = _parts(cid)
         if p_year and c_year and p_year != c_year:
             continue
         if c_sur == p_sur or c_sur.startswith(p_sur) or p_sur.startswith(c_sur):
-            candidates.append(s)
-    if len(candidates) == 1:
-        return candidates[0]
+            matches.append(cid)
+    if len(matches) == 1:
+        return matches[0]
     # Tie-break on an exact surname match if the year narrowed to several.
-    exact = [s for s in candidates if _parts(s.study_id)[0] == p_sur]
+    exact = [cid for cid in matches if _parts(cid)[0] == p_sur]
     return exact[0] if len(exact) == 1 else None
+
+
+def resolve_study(parser_study_id: str, studies: list[IncludedStudy]) -> IncludedStudy | None:
+    """Best canonical match for a parser study id, or None if ambiguous/none."""
+    by_id = {s.study_id: s for s in studies}
+    best = _best_match(parser_study_id, list(by_id))
+    return by_id.get(best) if best else None
 
 
 def resolve_studies(
@@ -75,9 +87,15 @@ def build_reference_resolver_from_parsed(studies: "list[ParsedStudy]"):
     DOI is carried; a missing DOI is later reconciled online by the Collector.
     """
     by_id = {s.study_id: s for s in studies}
+    ids = list(by_id)
 
     def resolver(study_id: str) -> ReferenceEntry:
+        # exact id first (fast path), then fuzzy year+surname; ambiguous → minimal
+        # entry so the Collector flags it (unresolved_source) rather than mis-pairing.
         s = by_id.get(study_id)
+        if s is None:
+            best = _best_match(study_id, ids)
+            s = by_id.get(best) if best else None
         if s is None:
             return ReferenceEntry(title=study_id)
         return ReferenceEntry(title=s.citation or study_id, doi=(s.doi or None))

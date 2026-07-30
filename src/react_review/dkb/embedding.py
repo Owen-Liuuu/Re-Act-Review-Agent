@@ -7,7 +7,7 @@ off as the KB grows past keyword matching. Kept pure-Python (no numpy dep); the
 concept vectors are tiny and computed once.
 
 Reproducibility note: embedding drift only reorders CANDIDATES — the final
-field_type mapping is still cached deterministically in NormalizeFieldTool, so an
+field_type mapping is still cached deterministically by the FieldResolver, so an
 API embedder is acceptable here.
 """
 from __future__ import annotations

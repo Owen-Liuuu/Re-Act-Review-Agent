@@ -1,12 +1,12 @@
 """Build the typed tool catalogue (a ToolRegistry) from configuration.
 
 Mirrors the old pipeline factory's mock/real split, but produces a registry of
-typed tools instead of a monolithic orchestrator. Registers the Proposal's nine
-tools across the four stages:
+typed tools instead of a monolithic orchestrator. Registers the tools across the
+four stages (field_type mapping is the Parser's FieldResolver, not a tool):
 
-    Search : search_pubmed, count_pubmed, count_europepmc, count_openalex
+    Search : search_pubmed, count_pubmed, count_europepmc, count_openalex, resolve_reference
     Verify : verify_reference
-    Extract: fetch_fulltext, extract_fields, extract_source_value, normalize_field
+    Extract: fetch_fulltext, extract_fields, extract_source_value
     Compare: compare_values
 """
 from __future__ import annotations
@@ -15,13 +15,11 @@ from pathlib import Path
 
 from react_review.audit import ToleranceTable
 from react_review.core.config import AppConfig
-from react_review.dkb import KnowledgeBase
 from react_review.steps.search_validation.multi_db_count import IdentificationCounter
 from react_review.tools.base import Tool
 from react_review.tools.compare import CompareValuesTool
 from react_review.tools.extract import ExtractFieldsTool, FetchFullTextTool
 from react_review.tools.extract_source import ExtractSourceValueTool
-from react_review.tools.normalize import NormalizeFieldTool
 from react_review.tools.registry import ToolRegistry
 from react_review.tools.search import (
     CountResultsTool,
@@ -34,18 +32,6 @@ from react_review.tools.search import (
     StaticResolver,
 )
 from react_review.tools.verify import VerifyReferenceTool
-
-_SEED_KB = Path(__file__).resolve().parents[3] / "configs" / "knowledge.seed.json"
-
-
-def _load_seed_vocabulary() -> KnowledgeBase:
-    try:
-        if _SEED_KB.exists():
-            return KnowledgeBase.from_json(_SEED_KB)
-    except Exception:
-        pass
-    return KnowledgeBase()
-
 
 class _StubCounter(IdentificationCounter):
     """A deterministic count provider for mock mode (no network)."""
@@ -150,7 +136,6 @@ def build_catalogue(
         FetchFullTextTool(retriever),
         ExtractFieldsTool(extractor),
         ExtractSourceValueTool(norm_backend),
-        NormalizeFieldTool(_load_seed_vocabulary(), norm_backend),
         ResolveReferenceTool(reconciler),
         CompareValuesTool(tol),
     ]

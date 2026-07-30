@@ -1,10 +1,11 @@
-"""Grade the normalize_field tool's field_type mapping against the benchmark.
+"""Grade the DKB FieldResolver's field_type mapping against the benchmark.
 
-Runs normalize_field over the review's Table-1 column headers in
+Runs the resolver over the review's Table-1 column headers in
 ``review_ground_truth.csv`` and reports how many resolve to the ground-truth
-field_type, and by which path (cache / vocabulary / llm). Deterministic by
-default (no LLM backend) — the seed vocabulary should cover the benchmark; any
-row that would need the LLM is reported rather than silently guessed.
+field_type, and by which path (cache / deterministic / retrieval_llm).
+Deterministic by default (no LLM backend) — the seed KB should cover the
+benchmark; any header that would need the LLM is reported as unresolved rather
+than silently guessed.
 
 Usage:  python eval/grade_normalize.py
 """
@@ -15,9 +16,7 @@ import csv
 from collections import Counter
 from pathlib import Path
 
-from react_review.dkb import KnowledgeBase
-from react_review.tools.models import NormalizeInput
-from react_review.tools.normalize import NormalizeFieldTool
+from react_review.dkb import FieldResolver, KnowledgeBase
 
 ROOT = Path(__file__).resolve().parents[1]
 SEED = ROOT / "configs" / "knowledge.seed.json"
@@ -29,29 +28,27 @@ async def main() -> int:
     with BENCH.open(encoding="utf-8-sig") as f:
         rows = [r for r in csv.DictReader(f) if r["source_location"] == "Table 1"]
 
-    tool = NormalizeFieldTool(KnowledgeBase.from_json(SEED), backend=None)
+    # backend=None → deterministic KB resolution only; a miss stays unresolved.
+    resolver = FieldResolver(KnowledgeBase.from_json(SEED))
     correct = 0
     sources: Counter[str] = Counter()
     wrong: list[tuple[str, str, str, str]] = []
     unresolved: list[tuple[str, str]] = []
 
     for r in rows:
-        try:
-            out = await tool.run(NormalizeInput(
-                raw_field_name=r["raw_field_name"], unit=r["unit"],
-                research_context=CONTEXT,
-            ))
-        except ValueError:
+        rf = await resolver.resolve(
+            r["raw_field_name"], unit=r["unit"], research_context=CONTEXT)
+        if rf.field_type is None:
             unresolved.append((r["raw_field_name"], r["unit"]))
             continue
-        sources[out.source] += 1
-        if out.field_type == r["field_type"]:
+        sources[rf.source] += 1
+        if rf.field_type == r["field_type"]:
             correct += 1
         else:
-            wrong.append((r["raw_field_name"], r["unit"], r["field_type"], out.field_type))
+            wrong.append((r["raw_field_name"], r["unit"], r["field_type"], rf.field_type))
 
     n = len(rows)
-    print(f"normalize_field on {n} Table-1 columns")
+    print(f"FieldResolver on {n} Table-1 columns")
     print(f"  correct: {correct}/{n} ({correct / n:.0%})")
     print(f"  by path: {dict(sources)}")
     for raw, unit, exp, got in wrong:

@@ -92,6 +92,29 @@ def test_build_reference_resolver_from_parsed():
     assert missing.title == "not_a_study_2000" and missing.doi is None
 
 
+def test_reference_resolver_from_parsed_fuzzy_matches_slug_variants():
+    # The data-table slug and the reference-list slug rarely align byte-for-byte;
+    # a year + surname-prefix match still pairs them.
+    studies = [
+        ParsedStudy(study_id="yazici_2011", citation="Yazıcı D et al. 2011.", doi="10.9/y"),
+        ParsedStudy(study_id="ahmad_2022", citation="Ahmad A et al. 2022.", doi="10.1/x"),
+    ]
+    resolve = build_reference_resolver_from_parsed(studies)
+    assert resolve("yaz_2011").doi == "10.9/y"          # table slug 'yaz_2011' → 'yazici_2011'
+    assert resolve("ahmad_2022").doi == "10.1/x"        # exact still works
+
+
+def test_reference_resolver_from_parsed_ambiguous_does_not_guess():
+    # Two 2020 studies whose surnames both start with the query prefix → ambiguous.
+    studies = [
+        ParsedStudy(study_id="smith_2020", citation="Smith A. 2020.", doi="10.1/a"),
+        ParsedStudy(study_id="smithson_2020", citation="Smithson B. 2020.", doi="10.2/b"),
+    ]
+    resolve = build_reference_resolver_from_parsed(studies)
+    ref = resolve("smit_2020")                          # prefix of BOTH → ambiguous
+    assert ref.title == "smit_2020" and ref.doi is None  # minimal fallback, no wrong guess
+
+
 # --- LocalPdfRetriever ---
 
 @pytest.mark.asyncio

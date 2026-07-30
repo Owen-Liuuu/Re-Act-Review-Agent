@@ -18,6 +18,13 @@ from react_review.tools.search.models import CandidateWork, ReferenceQuery, Reso
 logger = structlog.get_logger(__name__)
 
 
+def _query_key(q: ReferenceQuery) -> str:
+    """Normalized identity of a citation — collapses repeat lookups of the same study."""
+    base = (q.title or q.citation or "").strip().lower()
+    authors = "|".join(sorted(a.strip().lower() for a in q.authors))
+    return f"{base}||{q.year or ''}||{authors}||{q.journal.strip().lower()}"
+
+
 class ReferenceReconciler:
     """Resolve a citation to a trusted DOI across citation resolvers."""
 
@@ -31,8 +38,18 @@ class ReferenceReconciler:
         self._resolvers = resolvers
         self._threshold = threshold
         self._agreement_bonus = agreement_bonus
+        self._cache: dict[str, ResolvedReference] = {}     # per-run: one lookup per study
 
     async def resolve(self, query: ReferenceQuery) -> ResolvedReference:
+        key = _query_key(query)
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        result = await self._resolve_uncached(query)
+        self._cache[key] = result
+        return result
+
+    async def _resolve_uncached(self, query: ReferenceQuery) -> ResolvedReference:
         # 1. gather scored candidates from every service (one failing service
         #    must not sink the rest).
         scored: list[tuple[float, str, CandidateWork]] = []
