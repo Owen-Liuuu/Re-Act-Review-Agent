@@ -9,8 +9,10 @@ from react_review.csv_io import load_included_studies
 from react_review.retrieval.local_pdf import LocalPdfRetriever
 from react_review.schemas.evidence import ReviewDataItem
 from react_review.steps.paper_verification.schemas import ReferenceEntry
+from react_review.parser.review_parser import ParsedStudy
 from react_review.study_match import (
     build_reference_resolver,
+    build_reference_resolver_from_parsed,
     resolve_studies,
     resolve_study,
 )
@@ -72,6 +74,22 @@ def test_apply_modality_disambiguation():
     out = apply_modality_disambiguation(items, sid_map, kb)
     assert out[0].field_type == "eat_volume"        # CT → volume
     assert out[1].field_type == "eat_thickness"     # echo → unchanged
+
+
+def test_build_reference_resolver_from_parsed():
+    studies = [
+        ParsedStudy(study_id="ahmad_2022",
+                    citation="Ahmad A. Epicardial fat in T1DM. J Cardiol. 2022.", doi="10.1/x"),
+        ParsedStudy(study_id="aslan_2015",
+                    citation="Aslan B. EFT and endothelial dysfunction. 2015.", doi=""),
+    ]
+    resolve = build_reference_resolver_from_parsed(studies)
+    ahmad = resolve("ahmad_2022")
+    assert ahmad.title.startswith("Ahmad A.") and ahmad.doi == "10.1/x"
+    aslan = resolve("aslan_2015")
+    assert aslan.doi is None                       # no printed DOI → reconciled online later
+    missing = resolve("not_a_study_2000")
+    assert missing.title == "not_a_study_2000" and missing.doi is None
 
 
 # --- LocalPdfRetriever ---

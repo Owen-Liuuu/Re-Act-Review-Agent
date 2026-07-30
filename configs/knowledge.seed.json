@@ -17,6 +17,7 @@
     "concept": "participant age",
     "value_type": "numeric",
     "default_unit": "years",
+    "plausible_range": [0, 120],
     "scope": "cohort",
     "synonyms": ["age", "mean age", "age (years)", "age [years]", "age yrs"]
   },
@@ -24,6 +25,7 @@
     "concept": "body mass index",
     "value_type": "numeric",
     "default_unit": "kg/m2",
+    "plausible_range": [8, 100],
     "scope": "cohort",
     "synonyms": ["BMI", "BMI Kg/m2", "body mass index"]
   },
@@ -52,6 +54,7 @@
     "concept": "epicardial adipose tissue thickness (linear, echocardiography)",
     "value_type": "numeric",
     "default_unit": "mm",
+    "plausible_range": [0, 30],
     "scope": "cohort",
     "domain": "cardiology/imaging",
     "disambiguation": {"modality": {"echo": "eat_thickness", "echocardiograph": "eat_thickness", "ct": "eat_volume", "computed tomography": "eat_volume"}},
@@ -61,6 +64,7 @@
     "concept": "epicardial adipose tissue volume (CT)",
     "value_type": "numeric",
     "default_unit": "cm3",
+    "plausible_range": [0, 1000],
     "scope": "cohort",
     "domain": "cardiology/imaging",
     "unit_equivalences": ["ml", "cc"],

@@ -212,6 +212,63 @@ async def test_collector_no_back_check_for_resolved_items():
     assert res.source_item.concept_mismatch is False
 
 
+def _catalogue_with_resolve(retriever, extract_backend, candidates):
+    from react_review.tools.search import (
+        ReferenceReconciler, ResolveReferenceTool, StaticResolver)
+    reg = _catalogue(retriever, extract_backend)
+    reg.register(ResolveReferenceTool(
+        ReferenceReconciler([StaticResolver("crossref", candidates)])))
+    return reg
+
+
+@pytest.mark.asyncio
+async def test_collector_resolves_missing_doi_then_fetches():
+    from react_review.tools.search import CandidateWork
+    backend = StubBackend({"found": True, "value": "6.60 ± 0.71", "unit": "mm",
+                           "quote": "EFT of 6.60 ± 0.71 mm", "location": "Table 2"})
+    cand = CandidateWork(doi="10.1/x", title="Ahmad 2022 EAT study", authors=["Ahmad A"],
+                         year=2022, journal="J Cardiol", source="crossref")
+    ref = ReferenceEntry(title="Ahmad 2022 EAT study", authors=["Ahmad A"],
+                         year=2022, journal="J Cardiol")               # NO doi
+    reg = _catalogue_with_resolve(_DocRetriever(), backend, [cand])
+    res = await Collector(reg).collect(_REVIEW, ref)
+    assert res.source_item.source_value == "6.60 ± 0.71"
+    assert res.record.steps[0].tool == "resolve_reference"            # resolved before fetch
+
+
+@pytest.mark.asyncio
+async def test_collector_unresolved_source_when_citation_cannot_resolve():
+    backend = StubBackend({"found": True, "value": "x"})
+    ref = ReferenceEntry(title="An uncited grey-literature report", year=2010)   # NO doi
+    reg = _catalogue_with_resolve(_DocRetriever(), backend, [])        # resolver finds nothing
+    res = await Collector(reg).collect(_REVIEW, ref)
+    assert res.source_item.collection_outcome == CollectionOutcome.UNRESOLVED_SOURCE
+    assert res.source_item.source_value is None and backend.calls == 0   # never fetched/extracted
+
+
+@pytest.mark.asyncio
+async def test_chain_parsed_study_to_collector_resolves_and_fetches():
+    # End-to-end (offline): the parser's DOI-less reference list → a ReferenceEntry
+    # → the Collector reconciles its DOI from the citation → fetches → extracts.
+    from react_review.parser.review_parser import ParsedStudy
+    from react_review.study_match import build_reference_resolver_from_parsed
+    from react_review.tools.search import CandidateWork
+
+    citation = "Ahmad A. Epicardial fat thickness in type 1 diabetes. J Cardiol. 2022."
+    resolve_ref = build_reference_resolver_from_parsed(
+        [ParsedStudy(study_id="ahmad_2022", citation=citation, doi="")])   # NO printed DOI
+    ref = resolve_ref("ahmad_2022")
+    assert ref.doi is None
+
+    backend = StubBackend({"found": True, "value": "6.60 ± 0.71", "unit": "mm",
+                           "quote": "EFT of 6.60 ± 0.71 mm", "location": "Table 2"})
+    cand = CandidateWork(doi="10.1/x", title=citation, source="crossref")   # matches the citation
+    reg = _catalogue_with_resolve(_DocRetriever(), backend, [cand])
+    res = await Collector(reg).collect(_REVIEW, ref)
+    assert res.record.steps[0].tool == "resolve_reference"       # DOI reconciled first
+    assert res.source_item.source_value == "6.60 ± 0.71"         # then fetched + extracted
+
+
 @pytest.mark.asyncio
 async def test_collector_escalates_when_paper_not_retrieved():
     backend = StubBackend({"found": True, "value": "x"})

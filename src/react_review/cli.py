@@ -465,24 +465,35 @@ def _run_main(argv: list[str] | None = None) -> None:
     from react_review.parser.review_parser import ReviewParser
     from react_review.pipeline.factory import _create_llm_backend
     from react_review.retrieval.local_pdf import LocalPdfRetriever
+    from react_review.steps.paper_verification.fulltext_retriever import FullTextRetriever
     from react_review.store import EvidencePackageStore
     from react_review.study_match import (
         apply_modality_disambiguation,
         build_reference_resolver,
+        build_reference_resolver_from_parsed,
         resolve_studies,
     )
     from react_review.tools.compare import CompareValuesTool
     from react_review.tools.extract import FetchFullTextTool
     from react_review.tools.extract_source import ExtractSourceValueTool
     from react_review.tools.registry import ToolRegistry
+    from react_review.tools.search import (
+        CrossRefResolver,
+        EuropePMCResolver,
+        OpenAlexResolver,
+        ReferenceReconciler,
+        ResolveReferenceTool,
+    )
 
     ap = argparse.ArgumentParser(
         prog="react-review run",
         description="Full audit: review PDF → Collector → Auditor → Judge.",
     )
     ap.add_argument("--pdf", type=Path, required=True, help="the systematic review PDF")
-    ap.add_argument("--studies", type=Path, required=True,
-                    help="included_studies.csv (study_id, doi, source_pdf)")
+    ap.add_argument("--studies", type=Path, default=None,
+                    help="included_studies.csv (study_id, doi, source_pdf) for LOCAL source "
+                         "PDFs. Omit for ONLINE mode: references come from the review's own "
+                         "reference list and full text is fetched online (DOIs reconciled).")
     ap.add_argument("--config", type=Path, default=Path("configs/config.local.yaml"),
                     help="LLM config with an api_key (default: configs/config.local.yaml)")
     ap.add_argument("--pdf-dir", type=Path, default=None,
@@ -509,20 +520,40 @@ def _run_main(argv: list[str] | None = None) -> None:
     parsed = asyncio.run(review_parser.parse(args.pdf, research_context=args.context))
     _safe_print(f"  parsed {len(parsed.items)} review items")
 
-    studies = load_included_studies(args.studies)
-    review_items, sid_map = resolve_studies(parsed.items, studies)
-    review_items = apply_modality_disambiguation(review_items, sid_map, kb)
+    # References + retriever: LOCAL (included_studies.csv → local source PDFs) or
+    # ONLINE (references from the review's own reference list → online full text).
+    if args.studies:
+        studies = load_included_studies(args.studies)
+        review_items, sid_map = resolve_studies(parsed.items, studies)
+        review_items = apply_modality_disambiguation(review_items, sid_map, kb)
+        base_dir = args.pdf_dir or args.studies.parent
+        doi_to_path = {s.doi: s.source_pdf for s in studies if s.doi and s.source_pdf}
+        retriever = LocalPdfRetriever(doi_to_path, base_dir=base_dir)
+        reference_resolver = build_reference_resolver(sid_map)
+    else:
+        _safe_print(f"  online mode: references from the review's {len(parsed.studies)} "
+                    "extracted citations; full text fetched online")
+        review_items = parsed.items
+        retriever = FullTextRetriever(
+            pubmed_settings=config.pubmed,
+            unpaywall_email=config.unpaywall.email or config.pubmed.email,
+        )
+        reference_resolver = build_reference_resolver_from_parsed(parsed.studies)
     if args.limit:
         review_items = review_items[: args.limit]
 
-    base_dir = args.pdf_dir or args.studies.parent
-    doi_to_path = {s.doi: s.source_pdf for s in studies if s.doi and s.source_pdf}
-    retriever = LocalPdfRetriever(doi_to_path, base_dir=base_dir)
-
     tol = ToleranceTable.from_yaml(args.tolerances) if args.tolerances else ToleranceTable()
+    mailto = config.unpaywall.email or config.pubmed.email or config.crossref.mailto
+    reconciler = ReferenceReconciler([
+        CrossRefResolver(base_url=config.crossref.base_url, mailto=mailto,
+                         timeout=config.crossref.timeout),
+        OpenAlexResolver(mailto=mailto, timeout=config.crossref.timeout),
+        EuropePMCResolver(timeout=config.crossref.timeout),
+    ])
     reg = ToolRegistry()
     reg.register(FetchFullTextTool(retriever))
     reg.register(ExtractSourceValueTool(backend))
+    reg.register(ResolveReferenceTool(reconciler))          # no-DOI refs → gated online DOI
     reg.register(CompareValuesTool(tol))
     pipeline = AuditPipeline(
         Collector(reg, knowledge=kb), AuditOrchestrator(reg), Judge(),
@@ -532,7 +563,7 @@ def _run_main(argv: list[str] | None = None) -> None:
     run_id = args.run_id or uuid.uuid4().hex[:12]
     _safe_print(f"Auditing {len(review_items)} items (run {run_id}) …")
     pkg = asyncio.run(pipeline.run(
-        review_items, build_reference_resolver(sid_map),
+        review_items, reference_resolver,
         research_context=args.context, run_id=run_id, parser_record=parsed.record,
     ))
 

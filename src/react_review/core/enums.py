@@ -123,8 +123,11 @@ class CollectionOutcome(str, Enum):
                             (an access/coverage gap — NOT the review's fault).
     - MISSING_SOURCE:       the paper WAS retrieved but the value is not stated
                             in it — a potential fabrication in the review.
+    - UNRESOLVED_SOURCE:    the source paper could not even be identified from its
+                            citation (no DOI printed and no confident online match).
     """
 
     FOUND = "found"
     SOURCE_ACCESS_FAILED = "source_access_failed"
     MISSING_SOURCE = "missing_source"
+    UNRESOLVED_SOURCE = "unresolved_source"

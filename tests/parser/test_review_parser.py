@@ -72,7 +72,8 @@ async def test_parse_produces_normalized_long_items(monkeypatch):
     unresolved = [i for i in parsed.items if i.resolution_status == "unresolved"]
     assert len(unresolved) == 1 and unresolved[0].raw_field_name == "Some Novel Column"
     assert parsed.record.agent == "parser"
-    assert [s.tool for s in parsed.record.steps] == ["llm:stage1_structure", "llm:stage2_unpivot"]
+    assert [s.tool for s in parsed.record.steps] == [
+        "llm:stage1_structure", "llm:stage2_unpivot", "llm:stage_refs"]
 
 
 @pytest.mark.asyncio
@@ -95,6 +96,45 @@ async def test_study_level_field_collapses_to_one_row(monkeypatch):
     assert len(ss) == 1 and ss[0].group == "-"                      # collapsed
     eat_groups = {i.group for i in parsed.items if i.field_type == "eat_thickness"}
     assert eat_groups == {"t1dm", "control"}                        # cohort-level stays split
+
+
+@pytest.mark.asyncio
+async def test_parse_extracts_research_context_and_dois(monkeypatch):
+    monkeypatch.setattr(
+        "react_review.parser.review_parser._pdf_text",
+        lambda p: "body text …\n\nReferences\n1. Ahmad A. 2022. J Cardiol. doi:10.1/x\n"
+                  "2. Aslan B. 2015. Echocardiography.",
+    )
+    backend = QueueBackend([
+        {"table_name": "Table 1", "columns": ["N"], "group_handling": "", "notes": "",
+         "research_context": "epicardial adipose tissue in T1DM vs healthy controls"},
+        {"rows": [{"study": "Ahmad et al. [2022]", "group": "T1DM",
+                   "raw_field_name": "N", "value": "100", "unit": ""}]},
+        {"studies": [
+            {"citation": "Ahmad A et al. 2022. J Cardiol.", "doi": "https://doi.org/10.1/X"},
+            {"citation": "Aslan B et al. 2015. Echocardiography.", "doi": ""}]},
+    ])
+    parsed = await ReviewParser(backend, _resolver()).parse("d.pdf", research_context="fallback")
+
+    # LLM-extracted research context wins over the passed-in fallback
+    assert parsed.research_context == "epicardial adipose tissue in T1DM vs healthy controls"
+    # DOIs normalized; study_id slugged from the citation; empty DOI kept as ""
+    assert [(s.study_id, s.doi) for s in parsed.studies] == [
+        ("ahmad_2022", "10.1/x"), ("aslan_2015", "")]
+    assert parsed.record.steps[-1].tool == "llm:stage_refs"
+
+
+@pytest.mark.asyncio
+async def test_research_context_falls_back_to_arg_when_not_extracted(monkeypatch):
+    monkeypatch.setattr("react_review.parser.review_parser._pdf_text", lambda p: "t")
+    backend = QueueBackend([
+        {"table_name": "T", "columns": [], "group_handling": "", "notes": ""},  # no research_context
+        {"rows": []},
+        {"studies": []},
+    ])
+    parsed = await ReviewParser(backend, _resolver()).parse("d.pdf", research_context="my ctx")
+    assert parsed.research_context == "my ctx"
+    assert parsed.studies == []
 
 
 @pytest.mark.asyncio

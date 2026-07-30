@@ -9,9 +9,13 @@ is by publication year + surname prefix (year disambiguates same-surname-prefix)
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
 
 from react_review.schemas.evidence import IncludedStudy, ReviewDataItem
 from react_review.steps.paper_verification.schemas import ReferenceEntry
+
+if TYPE_CHECKING:
+    from react_review.parser.review_parser import ParsedStudy
 
 
 def _parts(study_id: str) -> tuple[str, str]:
@@ -63,6 +67,21 @@ def resolve_studies(
         else:
             relabelled.append(item)
     return relabelled, sid_to_study
+
+
+def build_reference_resolver_from_parsed(studies: "list[ParsedStudy]"):
+    """A study_id -> ReferenceEntry resolver built from the PARSER's own reference
+    list (no included_studies.csv). The citation becomes the title and any printed
+    DOI is carried; a missing DOI is later reconciled online by the Collector.
+    """
+    by_id = {s.study_id: s for s in studies}
+
+    def resolver(study_id: str) -> ReferenceEntry:
+        s = by_id.get(study_id)
+        if s is None:
+            return ReferenceEntry(title=study_id)
+        return ReferenceEntry(title=s.citation or study_id, doi=(s.doi or None))
+    return resolver
 
 
 def build_reference_resolver(sid_to_study: dict[str, IncludedStudy]):

@@ -40,11 +40,12 @@ def test_catalogue_registers_expected_tools(catalogue):
         "extract_fields",
         "extract_source_value",
         "normalize_field",
+        "resolve_reference",
         "compare_values",
     }
-    assert len(catalogue) == 10
+    assert len(catalogue) == 11
     # Stage grouping is correct.
-    assert len(catalogue.by_stage(ToolStage.SEARCH)) == 4
+    assert len(catalogue.by_stage(ToolStage.SEARCH)) == 5   # + resolve_reference
     assert len(catalogue.by_stage(ToolStage.VERIFY)) == 1
     assert len(catalogue.by_stage(ToolStage.EXTRACT)) == 4
     assert len(catalogue.by_stage(ToolStage.COMPARE)) == 1
@@ -96,10 +97,11 @@ async def test_fetch_then_extract(catalogue):
 def test_real_mode_catalogue_builds():
     # Constructs the real impls (no calls made) — just ensures wiring imports OK.
     reg = build_catalogue(AppConfig(mock_mode=False))
-    assert len(reg) == 10
+    assert len(reg) == 11
     assert "fetch_fulltext" in reg
     assert "normalize_field" in reg
     assert "extract_source_value" in reg
+    assert "resolve_reference" in reg
 
 
 @pytest.mark.asyncio

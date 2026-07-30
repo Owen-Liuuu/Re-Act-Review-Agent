@@ -1,4 +1,10 @@
-"""Search stage tools: PubMed reproducibility + per-database result counts."""
+"""Search-strategy validation tools: PubMed reproducibility + per-database counts.
+
+These reproduce a review's literature search (legacy Step 1) — verifying the
+reported hit counts, NOT fetching source papers. Reference reconciliation (a
+citation → a gated DOI) lives alongside in this package but is a separate
+operation; see ``reconciler`` / ``resolve_reference``.
+"""
 from __future__ import annotations
 
 from react_review.steps.search_validation.interfaces import SearchProvider

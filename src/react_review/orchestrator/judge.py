@@ -23,6 +23,10 @@ _OUTCOME_FLAG = {
         "missing_source",
         "source paper retrieved but this value is not stated in it "
         "(possible fabrication)"),
+    CollectionOutcome.UNRESOLVED_SOURCE: (
+        "unresolved_source",
+        "could not identify the source paper from its citation "
+        "(no DOI and no confident online match)"),
 }
 
 

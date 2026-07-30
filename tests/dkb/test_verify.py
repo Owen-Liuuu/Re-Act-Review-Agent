@@ -1,6 +1,8 @@
 """Deterministic verification of LLM-proposed field_type mappings (the gate)."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from react_review.dkb import (
@@ -10,6 +12,8 @@ from react_review.dkb import (
     verify_candidate,
 )
 from react_review.normalize.units import unit_kind
+
+SEED = Path(__file__).resolve().parents[2] / "configs" / "knowledge.seed.json"
 
 
 def _kb() -> KnowledgeBase:
@@ -132,3 +136,19 @@ def test_evidence_contradicts_on_range():
 
 def test_evidence_unknown_field_type_never_contradicts():
     assert evidence_contradicts("not_a_concept", kb=_kb(), unit="cm3", value="1") == ""
+
+
+# --- the SHIPPED seed's plausible ranges are actually wired ---
+
+def test_seed_ranges_reject_implausible_values():
+    kb = KnowledgeBase.from_json(SEED)
+    assert kb.entries["bmi"].plausible_range == [8, 100]          # bmi's only value gate
+    # an impossible BMI mapped by the LLM is rejected by the range gate
+    assert not verify_candidate("bmi", kb=kb, value="300", is_new=False,
+                                confidence=0.9, grounded_on=["bmi"]).ok
+    # a real benchmark BMI passes
+    assert verify_candidate("bmi", kb=kb, value="20.57 ± 1.7", is_new=False,
+                            confidence=0.9, grounded_on=["bmi"]).ok
+    # an EAT volume (52 cm3) mislabelled as thickness is out of [0, 30] mm
+    assert not verify_candidate("eat_thickness", kb=kb, value="52.3", is_new=False,
+                                confidence=0.9, grounded_on=["eat_thickness"]).ok

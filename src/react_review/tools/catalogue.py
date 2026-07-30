@@ -23,7 +23,16 @@ from react_review.tools.extract import ExtractFieldsTool, FetchFullTextTool
 from react_review.tools.extract_source import ExtractSourceValueTool
 from react_review.tools.normalize import NormalizeFieldTool
 from react_review.tools.registry import ToolRegistry
-from react_review.tools.search import CountResultsTool, SearchPubMedTool
+from react_review.tools.search import (
+    CountResultsTool,
+    CrossRefResolver,
+    EuropePMCResolver,
+    OpenAlexResolver,
+    ReferenceReconciler,
+    ResolveReferenceTool,
+    SearchPubMedTool,
+    StaticResolver,
+)
 from react_review.tools.verify import VerifyReferenceTool
 
 _SEED_KB = Path(__file__).resolve().parents[3] / "configs" / "knowledge.seed.json"
@@ -93,6 +102,7 @@ def build_catalogue(
             _StubCounter("Europe PMC"),
             _StubCounter("OpenAlex"),
         ]
+        reconciler = ReferenceReconciler([StaticResolver("mock", [])])  # offline: no network
     else:
         from react_review.steps.search_validation.pubmed_impl import PubMedSearchProvider
         from react_review.steps.search_validation.multi_db_count import (
@@ -116,6 +126,12 @@ def build_catalogue(
             EuropePMCCountProvider(),
             OpenAlexCountProvider(mailto=openalex_mailto),
         ]
+        reconciler = ReferenceReconciler([
+            CrossRefResolver(base_url=config.crossref.base_url, mailto=openalex_mailto,
+                             timeout=config.crossref.timeout),
+            OpenAlexResolver(mailto=openalex_mailto, timeout=config.crossref.timeout),
+            EuropePMCResolver(timeout=config.crossref.timeout),
+        ])
         verifier = CrossRefVerifier(settings=config.crossref, thresholds=config.thresholds)
         retriever = FullTextRetriever(
             pubmed_settings=config.pubmed,
@@ -135,6 +151,7 @@ def build_catalogue(
         ExtractFieldsTool(extractor),
         ExtractSourceValueTool(norm_backend),
         NormalizeFieldTool(_load_seed_vocabulary(), norm_backend),
+        ResolveReferenceTool(reconciler),
         CompareValuesTool(tol),
     ]
     for t in tools:

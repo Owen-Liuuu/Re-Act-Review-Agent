@@ -10,6 +10,7 @@ import structlog
 from pydantic import BaseModel, Field
 
 from react_review.llm.base import LLMBackend, parse_llm_response
+from react_review.normalize.doi import normalize_doi
 from react_review.normalize.groups import normalize_group
 from react_review.schemas.agent import AgentRun, StepRecord
 from react_review.schemas.evidence import ReviewDataItem
@@ -21,13 +22,34 @@ logger = structlog.get_logger(__name__)
 _STAGE1 = """You are reading a systematic review. Find its main DATA-EXTRACTION table
 (often "Table 1" / "Characteristics of included studies").
 
-Describe its structure as JSON — do NOT extract values yet:
+Also state the review's research question in ONE line — population + exposure/intervention
++ outcome — from the title / abstract / objective.
+
+Describe as JSON — do NOT extract table values yet:
 {{"table_name": "...", "columns": ["Author", "N", ...],
   "group_handling": "how per-cohort values are shown (e.g. 'each study has a T1DM row and a Control row', or 'single row, no split')",
-  "notes": "any footnotes that define groups/units/timepoints"}}
+  "notes": "any footnotes that define groups/units/timepoints",
+  "research_context": "one-line research question, e.g. 'epicardial adipose tissue in type 1 diabetes vs healthy controls'"}}
 
 ## REVIEW TEXT
 {text}
+
+Return JSON only."""
+
+
+_STAGE_REFS = """You are reading the REFERENCE LIST / included-studies list of a systematic review.
+For each INCLUDED primary study, return its citation and DOI when the reference prints one.
+
+{{"studies": [
+  {{"citation": "First-author Year, journal …", "doi": "10.xxxx/… or empty string"}}
+]}}
+
+Rules:
+- One entry per study reference (author + year + journal). Skip editorials / guidelines / non-studies.
+- Copy the DOI EXACTLY as printed; use "" when the reference has no DOI. Do NOT invent or guess a DOI.
+
+## REFERENCE TEXT
+{refs}
 
 Return JSON only."""
 
@@ -56,10 +78,19 @@ Rules:
 Return JSON only."""
 
 
+class ParsedStudy(BaseModel):
+    """An included-study reference extracted from the review's reference list."""
+
+    study_id: str                       # slug, e.g. "ahmad_2022"
+    citation: str = ""                  # verbatim reference text
+    doi: str = ""                       # normalized DOI, "" when the reference prints none
+
+
 class ParsedReview(BaseModel):
     items: list[ReviewDataItem] = Field(default_factory=list)
     record: AgentRun
-    research_context: str = ""
+    research_context: str = ""          # LLM-extracted from the review (falls back to the arg)
+    studies: list[ParsedStudy] = Field(default_factory=list)   # included-study DOIs
 
 
 def _pdf_text(pdf_path: Path | str) -> str:
@@ -81,6 +112,20 @@ def _study_slug(raw: str) -> str:
     year = re.search(r"(19|20)\d{2}", s)
     parts = [p for p in (word.group(0).lower() if word else "", year.group(0) if year else "") if p]
     return "_".join(parts) or re.sub(r"[^a-z0-9]+", "_", s.lower()).strip("_") or "study"
+
+
+def _refs_window(text: str, tail: int = 20000) -> str:
+    """Slice the reference-list region — DOIs live at the END, past the 50k body window.
+
+    Anchors on the LAST 'References'/'Bibliography' heading; falls back to the last
+    ``tail`` characters so the DOI pass never runs on the (truncated) front matter.
+    """
+    last = -1
+    for m in re.finditer(r"\b(references|bibliography|reference list)\b", text, re.I):
+        last = m.start()
+    if last >= 0 and len(text) - last >= 200:
+        return text[last:]
+    return text[-tail:]
 
 
 _PLACEHOLDER = {"", "null", "none", "n/a", "na", "-", "—", "nr", "not reported"}
@@ -115,30 +160,40 @@ class ReviewParser:
     async def parse(
         self, pdf_path: Path | str, *, research_context: str = ""
     ) -> ParsedReview:
-        text = _pdf_text(pdf_path)[: self._max_chars]
+        full_text = _pdf_text(pdf_path)
+        text = full_text[: self._max_chars]
         logger.info("review_parse_start", chars=len(text))
 
         structure = await self._call(_STAGE1.format(text=text))
+        # research_context: prefer the LLM-extracted question, fall back to the arg.
+        ctx = str(structure.get("research_context") or "").strip() or research_context
+
         raw_rows = (await self._call(_STAGE2.format(
             structure=json.dumps(structure, ensure_ascii=False), text=text,
         ))).get("rows", [])
+        items = await self._postprocess(raw_rows, ctx)
 
-        items = await self._postprocess(raw_rows, research_context)
+        # included-study DOIs, extracted from the reference window (doc tail).
+        studies = await self._extract_studies(_refs_window(full_text))
+
         record = AgentRun(
             agent="parser",
             task={"pdf": str(pdf_path)},
             steps=[
-                StepRecord(index=0, thought="identify table structure",
+                StepRecord(index=0, thought="identify table structure + research context",
                            tool="llm:stage1_structure", observation=structure),
                 StepRecord(index=1, thought="unpivot to long rows",
                            tool="llm:stage2_unpivot",
                            observation={"n_rows": len(raw_rows)}),
+                StepRecord(index=2, thought="extract included-study DOIs",
+                           tool="llm:stage_refs", observation={"n_studies": len(studies)}),
             ],
             status="finished",
-            final={"n_items": len(items)},
+            final={"n_items": len(items), "n_studies": len(studies)},
         )
-        logger.info("review_parse_done", n_rows=len(raw_rows), n_items=len(items))
-        return ParsedReview(items=items, record=record, research_context=research_context)
+        logger.info("review_parse_done", n_rows=len(raw_rows),
+                    n_items=len(items), n_studies=len(studies))
+        return ParsedReview(items=items, record=record, research_context=ctx, studies=studies)
 
     async def _call(self, prompt: str) -> dict[str, Any]:
         try:
@@ -147,6 +202,28 @@ class ReviewParser:
         except Exception as exc:
             logger.warning("review_parse_stage_failed", error=str(exc)[:160])
             return {}
+
+    async def _extract_studies(self, refs_text: str) -> list[ParsedStudy]:
+        """LLM-extract included-study {citation, doi} from the reference window.
+
+        Raw extraction only: study_id is the deterministic slug of the citation and
+        the DOI is normalized; matching these to the data rows is a downstream step.
+        """
+        if not refs_text.strip():
+            return []
+        data = await self._call(_STAGE_REFS.format(refs=refs_text))
+        studies: list[ParsedStudy] = []
+        for r in data.get("studies", []):
+            if not isinstance(r, dict):
+                continue
+            citation = str(r.get("citation") or "").strip()
+            if not citation:
+                continue
+            studies.append(ParsedStudy(
+                study_id=_study_slug(citation), citation=citation,
+                doi=normalize_doi(r.get("doi")),
+            ))
+        return studies
 
     async def _postprocess(
         self, raw_rows: list[dict[str, Any]], research_context: str

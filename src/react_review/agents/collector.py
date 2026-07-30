@@ -24,6 +24,7 @@ from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
 from react_review.steps.paper_verification.schemas import ReferenceEntry
 from react_review.tools.extract_source import ExtractSourceValueInput, SourceValueResult
 from react_review.tools.registry import ToolRegistry
+from react_review.tools.search import ResolveReferenceInput
 
 
 class CollectResult(BaseModel):
@@ -45,6 +46,8 @@ class Collector:
     ) -> None:
         self._fetch = catalogue.get("fetch_fulltext")
         self._extract = catalogue.get("extract_source_value")
+        # Optional: resolve a citation with no printed DOI to a gated DOI (online).
+        self._resolve = catalogue.get("resolve_reference") if "resolve_reference" in catalogue else None
         self._kb = knowledge
         self._max_attempts = max(1, max_attempts)
         self._decider = decider or ReflectionDecider(max_attempts=self._max_attempts)
@@ -62,6 +65,26 @@ class Collector:
         research_context: str = "",
     ) -> CollectResult:
         steps: list[StepRecord] = []
+
+        # 0. No printed DOI → resolve the citation to a GATED DOI online before
+        # fetching. A low-confidence / no match is UNRESOLVED_SOURCE (we refuse
+        # to fetch a wrong paper). References that already carry a DOI skip this.
+        if self._resolve is not None and not (reference.doi or "").strip():
+            rr = await self._resolve.run(ResolveReferenceInput(
+                title=reference.title, authors=reference.authors,
+                year=reference.year, journal=reference.journal))
+            steps.append(StepRecord(
+                index=len(steps), thought="resolve DOI from citation",
+                tool="resolve_reference",
+                observation={"status": rr.status, "doi": rr.doi,
+                             "confidence": round(rr.confidence, 3), "source": rr.source},
+            ))
+            if rr.status == "resolved" and rr.doi:
+                reference = reference.model_copy(update={"doi": rr.doi})
+            else:
+                return self._result(review_item, SourceValueResult(found=False), steps,
+                                    ReflectionDecision.ESCALATE,
+                                    CollectionOutcome.UNRESOLVED_SOURCE)
 
         # 1. Fetch the source paper (deterministic; document held in Python).
         fetched = await self._fetch.run(reference)
