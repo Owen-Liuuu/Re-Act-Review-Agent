@@ -39,6 +39,11 @@ class Judge:
             (s.study_id, s.group, s.field_type): s.collection_outcome
             for s in (source_items or [])
         }
+        # Source evidence that refutes a candidate translation (unit/range).
+        mismatch_by_key = {
+            (s.study_id, s.group, s.field_type): s.concept_mismatch_reason
+            for s in (source_items or []) if s.concept_mismatch
+        }
         flags: list[HumanReviewFlag] = []
 
         for r in report.results:
@@ -74,12 +79,21 @@ class Judge:
         for item in (review_items or []):
             status = getattr(item, "resolution_status", "resolved")
             if status == "candidate":
+                contradiction = mismatch_by_key.get(
+                    (item.study_id, item.group, item.field_type))
+                if contradiction:
+                    label, reason = "concept_contradicted", (
+                        f"field '{item.raw_field_name or item.field_type}' was "
+                        f"auto-classified as {item.field_type}, but the source "
+                        f"evidence contradicts it: {contradiction}")
+                else:
+                    label, reason = "provisional_concept", (
+                        f"field '{item.raw_field_name or item.field_type}' was "
+                        f"auto-classified as {item.field_type} (provisional) — "
+                        "confirm the concept mapping")
                 flags.append(HumanReviewFlag(
                     study_id=item.study_id, group=item.group, field_type=item.field_type,
-                    label="provisional_concept",
-                    reason=f"field '{item.raw_field_name or item.field_type}' was "
-                           f"auto-classified as {item.field_type} (provisional) — "
-                           "confirm the concept mapping",
+                    label=label, reason=reason,
                 ))
             elif status == "unresolved":
                 flags.append(HumanReviewFlag(

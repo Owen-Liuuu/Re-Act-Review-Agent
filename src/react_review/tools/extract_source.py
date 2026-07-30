@@ -24,7 +24,8 @@ _PROMPT = """You are extracting ONE specific value from a source paper for an au
 {context}
 
 ## TARGET
-Find the value of **{concept}** (field_type: {field_type}) for the **{group_desc}**.
+Find the value of **{concept}** for the **{group_desc}**.
+(The review's column was labelled "{raw_label}"; internal field_type: {field_type}.)
 Expected unit (hint, may differ in the paper): "{unit_hint}"
 
 ## RULES
@@ -94,6 +95,7 @@ class ExtractSourceValueInput(BaseModel):
     field_type: str
     group: str = "-"
     concept: str = ""
+    raw_field_name: str = ""      # the review's own column label — the extraction target
     unit_hint: str = ""
     research_context: str = ""
 
@@ -121,10 +123,15 @@ class ExtractSourceValueTool(Tool):
         self._backend = backend
 
     async def run(self, payload: ExtractSourceValueInput) -> SourceValueResult:
+        # The target description prefers the canonical concept, but falls back to
+        # the review's RAW column label — so an UNRESOLVED field (no field_type)
+        # is still extractable: the raw name itself says what to look for.
+        target = payload.concept or payload.raw_field_name or payload.field_type
         prompt = _PROMPT.format(
             context=payload.research_context or "a systematic review",
-            concept=payload.concept or payload.field_type,
-            field_type=payload.field_type,
+            concept=target,
+            raw_label=payload.raw_field_name or target,
+            field_type=payload.field_type or "(unresolved)",
             group_desc=_group_desc(payload.group),
             unit_hint=payload.unit_hint,
             paper_text=(payload.document.full_text or "")[:_MAX_TEXT],

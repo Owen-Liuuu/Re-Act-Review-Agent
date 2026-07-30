@@ -7,6 +7,7 @@ import pytest
 
 from react_review.agents.collector import Collector
 from react_review.core.enums import CollectionOutcome, ReflectionDecision
+from react_review.dkb import KnowledgeBase, KnowledgeEntry
 from react_review.llm.base import LLMBackend
 from react_review.schemas.evidence import ReviewDataItem
 from react_review.steps.data_extraction.schemas import PaperDocument
@@ -174,6 +175,41 @@ async def test_collector_retries_then_escalates_when_not_found():
     # retrieved the paper but never located the value → potential fabrication
     assert res.source_item.collection_outcome == CollectionOutcome.MISSING_SOURCE
     assert backend.calls == 3  # tried max_attempts times
+
+
+def _kb_thickness() -> KnowledgeBase:
+    kb = KnowledgeBase()
+    kb.add(KnowledgeEntry(field_type="eat_thickness",
+                          concept="epicardial fat thickness", default_unit="mm"))
+    return kb
+
+
+@pytest.mark.asyncio
+async def test_collector_back_check_flags_contradicting_concept():
+    # A CANDIDATE mapping (eat_thickness, expects mm) but the source reports a
+    # volume (cm3) → the source evidence refutes the parse-time translation.
+    backend = StubBackend({"found": True, "value": "52.3", "unit": "cm3",
+                           "quote": "EAT volume 52.3 cm3", "location": "Table 1"})
+    review = ReviewDataItem(study_id="ahmad_2022", group="t1dm",
+                            field_type="eat_thickness", raw_field_name="EAT",
+                            value="52.3", unit="cm3", resolution_status="candidate")
+    collector = Collector(_catalogue(_DocRetriever(), backend), knowledge=_kb_thickness())
+    res = await collector.collect(review, _REF)
+    assert res.source_item.concept_mismatch is True
+    assert "different kind" in res.source_item.concept_mismatch_reason
+
+
+@pytest.mark.asyncio
+async def test_collector_no_back_check_for_resolved_items():
+    # A trusted (resolved) concept is never second-guessed by the back-check.
+    backend = StubBackend({"found": True, "value": "52.3", "unit": "cm3",
+                           "quote": "x", "location": "y"})
+    review = ReviewDataItem(study_id="ahmad_2022", group="t1dm",
+                            field_type="eat_thickness", value="52.3", unit="cm3",
+                            resolution_status="resolved")
+    collector = Collector(_catalogue(_DocRetriever(), backend), knowledge=_kb_thickness())
+    res = await collector.collect(review, _REF)
+    assert res.source_item.concept_mismatch is False
 
 
 @pytest.mark.asyncio

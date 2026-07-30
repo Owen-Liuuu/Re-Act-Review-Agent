@@ -502,7 +502,8 @@ def _run_main(argv: list[str] | None = None) -> None:
     seed = Path(__file__).resolve().parents[2] / "configs" / "knowledge.seed.json"
     kb = KnowledgeBase.from_json(seed)
     # audit mode: KB is read-only — candidates become proposals, not KB writes.
-    review_parser = ReviewParser(backend, FieldResolver(kb, backend=backend, write_back=False))
+    resolver = FieldResolver(kb, backend=backend, write_back=False)
+    review_parser = ReviewParser(backend, resolver)
 
     _safe_print(f"Parsing review PDF: {args.pdf}")
     parsed = asyncio.run(review_parser.parse(args.pdf, research_context=args.context))
@@ -541,6 +542,15 @@ def _run_main(argv: list[str] | None = None) -> None:
         _safe_print(f"  [{f.label}] {f.study_id}/{f.group}/{f.field_type}: {f.reason}")
     _safe_print(f"\n[PACKAGE] {(args.out / run_id / 'package.json').resolve()}")
 
+    # The audit itself never writes the KB. It only COLLECTS candidate concepts as
+    # proposals; a developer later curates them with `react-review learn`.
+    if resolver.proposals:
+        from react_review.dkb import save_proposals
+        prop_path = args.out / run_id / "proposals.json"
+        save_proposals(resolver.proposals, prop_path)
+        _safe_print(f"\n[PROPOSALS] {len(resolver.proposals)} candidate concept(s) → {prop_path.resolve()}")
+        _safe_print("            curate with:  react-review learn " + str(prop_path))
+
 
 def _report_main(argv: list[str] | None = None) -> None:
     """Render a saved EvidencePackage into a standalone HTML report.
@@ -564,8 +574,76 @@ def _report_main(argv: list[str] | None = None) -> None:
     _safe_print(f"[report] {out.resolve()}")
 
 
+def _learn_main(argv: list[str] | None = None) -> None:
+    """Developer LEARN mode (DKB-4) — curate audit proposals into the KB.
+
+    This is deliberately OUTSIDE the client audit path (which is read-only). It
+    takes one or more proposals JSON files saved by ``react-review run`` — each
+    file is treated as ONE run's batch — ingests them, and promotes a concept to
+    authoritative only after repeated agreement across runs (``--threshold``) or
+    an explicit ``--confirm``. The result is a new curated KB written to ``--out``.
+
+        react-review learn output/runs/*/proposals.json \\
+            --kb configs/knowledge.seed.json --out configs/knowledge.learned.json \\
+            --threshold 3 --confirm hba1c
+    """
+    from react_review.dkb import KnowledgeBase, LearningSession, load_proposals
+
+    ap = argparse.ArgumentParser(
+        prog="react-review learn",
+        description="Developer mode: curate audit proposals into trusted KB knowledge.",
+    )
+    ap.add_argument("proposals", type=Path, nargs="*",
+                    help="proposals JSON file(s); each file counts as one run's batch")
+    ap.add_argument("--kb", type=Path, default=None,
+                    help="base KB to grow (default: shipped configs/knowledge.seed.json)")
+    ap.add_argument("--out", type=Path, default=None,
+                    help="write the curated KB here (default: overwrite --kb; requires --kb or this)")
+    ap.add_argument("--threshold", type=int, default=3,
+                    help="agreements ACROSS runs needed to auto-promote (default: 3)")
+    ap.add_argument("--confirm", action="append", default=[], metavar="FIELD_TYPE",
+                    help="force-promote a provisional concept (repeatable)")
+    ap.add_argument("--list", action="store_true",
+                    help="only list pending provisional concepts, then exit")
+    args = ap.parse_args(argv)
+
+    setup_logging()
+
+    kb_path = args.kb or (Path(__file__).resolve().parents[2] / "configs" / "knowledge.seed.json")
+    out_path = args.out or args.kb
+    kb = KnowledgeBase.from_json(kb_path)
+    session = LearningSession(kb, threshold=args.threshold)
+
+    total = 0
+    for pf in args.proposals:
+        batch = load_proposals(pf)
+        total += len(batch)
+        promoted = session.ingest(batch)                 # one file == one run's agreement
+        tag = f" → promoted {promoted}" if promoted else ""
+        _safe_print(f"[ingest] {pf} : {len(batch)} proposal(s){tag}")
+
+    for ft in args.confirm:
+        ok = session.confirm(ft)
+        _safe_print(f"[confirm] {ft} : {'promoted → authoritative' if ok else 'not a pending concept'}")
+
+    pending = session.pending()
+    _safe_print(f"\nPending provisional concepts ({len(pending)}):")
+    for ft in pending:
+        _safe_print(f"  - {ft}")
+
+    if args.list:
+        return
+    if out_path is None:
+        _safe_print("\n[skip] no --out and no --kb given; not writing. "
+                    "Pass --out to persist the curated KB.")
+        return
+    session.save(out_path)
+    _safe_print(f"\n[KB] curated knowledge base ({len(kb.entries)} concepts) → {out_path.resolve()}")
+    _safe_print(f"     ingested {total} proposal(s) across {len(args.proposals)} run batch(es).")
+
+
 def main() -> None:
-    """CLI entry point. Subcommands: ``run`` / ``report`` / ``audit`` / ``legacy``."""
+    """CLI entry point. Subcommands: ``run`` / ``report`` / ``audit`` / ``learn`` / ``legacy``."""
     import sys
 
     argv = sys.argv[1:]
@@ -575,6 +653,8 @@ def main() -> None:
         return _report_main(argv[1:])
     if argv and argv[0] == "audit":
         return _audit_main(argv[1:])
+    if argv and argv[0] == "learn":
+        return _learn_main(argv[1:])
     if argv and argv[0] == "legacy":
         return _legacy_main(argv[1:])
     # Back-compat: no recognised subcommand falls through to the legacy pipeline.

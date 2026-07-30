@@ -51,6 +51,10 @@ class SourceEvidenceItem(BaseModel):
     source_quote: str = ""
     source_location_in_paper: str = ""
     collection_outcome: CollectionOutcome = CollectionOutcome.FOUND
+    # Back-check: source evidence (unit/value) contradicts a CANDIDATE translation
+    # → the auto-classified field_type is likely wrong. Set only for candidates.
+    concept_mismatch: bool = False
+    concept_mismatch_reason: str = ""
 
 
 class IncludedStudy(BaseModel):

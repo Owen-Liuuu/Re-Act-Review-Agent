@@ -43,3 +43,35 @@ def units_differ(a: str | None, b: str | None) -> bool:
     if not na or not nb:
         return False
     return na != nb
+
+
+# Coarse physical KIND of a simple unit — used to catch a CONCEPT confusion (a
+# length reported where a volume is expected), which is different from a mere
+# scale mismatch (mm vs cm, both length). Compound units (kg/m2, mg/dl, cm3/m2)
+# are deliberately left "unknown": too varied to classify safely, and callers
+# treat unknown as "cannot judge" rather than a conflict.
+_UNIT_KIND = {
+    "mm": "length", "cm": "length", "m": "length", "um": "length",
+    "µm": "length", "nm": "length",
+    "ml": "volume", "l": "volume", "dl": "volume",          # cm3/cc fold to ml
+    "kg": "mass", "g": "mass", "mg": "mass", "ug": "mass", "µg": "mass",
+    "yr": "time", "mo": "time", "month": "time", "months": "time",
+    "wk": "time", "week": "time", "weeks": "time",
+    "day": "time", "days": "time", "d": "time",
+    "h": "time", "hr": "time", "min": "time", "s": "time", "sec": "time",
+    "%": "percent", "percent": "percent",
+    "n": "count", "count": "count",
+    "mmhg": "pressure", "bpm": "rate",
+}
+
+
+def unit_kind(unit: str | None) -> str:
+    """Coarse physical kind of a unit (length / volume / mass / time / …).
+
+    Returns ``"unknown"`` for blank, compound, or unrecognised units. Callers
+    should treat ``"unknown"`` as "cannot judge" and NOT infer a conflict.
+    """
+    u = normalize_unit(unit)
+    if not u or "/" in u:
+        return "unknown"
+    return _UNIT_KIND.get(u, "unknown")

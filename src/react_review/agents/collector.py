@@ -17,7 +17,7 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 from react_review.core.enums import CollectionOutcome, ReflectionDecision
-from react_review.dkb import KnowledgeBase
+from react_review.dkb import KnowledgeBase, evidence_contradicts
 from react_review.orchestrator.reflection import ReflectionDecider, ReflectionSignals
 from react_review.schemas.agent import AgentRun, StepRecord
 from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
@@ -90,6 +90,7 @@ class Collector:
                 field_type=review_item.field_type,
                 group=review_item.group,
                 concept=concept,
+                raw_field_name=review_item.raw_field_name,
                 unit_hint=review_item.unit,
                 research_context=research_context,
             ))
@@ -115,7 +116,19 @@ class Collector:
         # Retrieved but the value was never located → potential fabrication.
         outcome = (CollectionOutcome.FOUND if result.found
                    else CollectionOutcome.MISSING_SOURCE)
-        return self._result(review_item, result, steps, decision, outcome)
+
+        # Back-check: for a CANDIDATE (LLM-guessed) concept, let the SOURCE
+        # evidence validate the translation — if the extracted unit/value is a
+        # different kind or out of range for the guessed field_type, the guess
+        # was likely wrong (extraction refutes the parse-time hypothesis).
+        mismatch_reason = ""
+        if (result.found and self._kb is not None
+                and getattr(review_item, "resolution_status", "resolved") == "candidate"):
+            mismatch_reason = evidence_contradicts(
+                review_item.field_type, kb=self._kb,
+                unit=result.unit, value=result.value)
+        return self._result(review_item, result, steps, decision, outcome,
+                            mismatch_reason=mismatch_reason)
 
     def _result(
         self,
@@ -124,6 +137,7 @@ class Collector:
         steps: list[StepRecord],
         decision: ReflectionDecision,
         outcome: CollectionOutcome = CollectionOutcome.FOUND,
+        mismatch_reason: str = "",
     ) -> CollectResult:
         source_item = SourceEvidenceItem(
             study_id=review_item.study_id,
@@ -135,6 +149,8 @@ class Collector:
             source_quote=result.quote,
             source_location_in_paper=result.location,
             collection_outcome=outcome,
+            concept_mismatch=bool(mismatch_reason),
+            concept_mismatch_reason=mismatch_reason,
         )
         record = AgentRun(
             agent="collector",

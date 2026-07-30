@@ -18,12 +18,16 @@ from __future__ import annotations
 
 import re
 
+import structlog
 from pydantic import BaseModel, Field
 
 from react_review.dkb.agent import KnowledgeAgent
 from react_review.dkb.base import KnowledgeBase
 from react_review.dkb.retrieval import KeywordRetriever
 from react_review.dkb.schema import KnowledgeEntry
+from react_review.dkb.verify import verify_candidate
+
+logger = structlog.get_logger(__name__)
 
 
 class ResolvedField(BaseModel):
@@ -88,13 +92,15 @@ class FieldResolver:
 
     async def resolve(
         self, raw_field_name: str, unit: str = "",
-        modality: str = "", research_context: str = "",
+        modality: str = "", research_context: str = "", value: object = None,
     ) -> ResolvedField:
         key = _cache_key(raw_field_name, unit, research_context)
 
         # 1. cache (per-run; dedupes repeat names without re-hitting the LLM)
         if key in self._cache:
             ft = self._cache[key]
+            if not ft:                              # cached miss / rejected candidate
+                return ResolvedField(raw_field_name=raw_field_name)
             return ResolvedField(raw_field_name=raw_field_name, field_type=ft,
                                  status=self._status_of(ft), scope=self._scope_of(ft),
                                  source="cache")
@@ -111,6 +117,22 @@ class FieldResolver:
         if self._agent is None:
             return ResolvedField(raw_field_name=raw_field_name)     # unresolved (kept upstream)
         c = await self._agent.classify(raw_field_name, unit, research_context, modality)
+
+        # The LLM mapping is a hypothesis — accept it as a candidate only if it
+        # survives deterministic verification (grounding + unit-kind + range);
+        # otherwise keep the field UNRESOLVED so it goes to human review.
+        verdict = verify_candidate(
+            c.field_type, kb=self._kb, unit=unit, value=value,
+            is_new=(c.entry is not None), confidence=c.confidence,
+            grounded_on=c.grounded_on,
+        )
+        if not verdict.ok:
+            logger.info("dkb_candidate_rejected", raw=raw_field_name,
+                        field_type=c.field_type, reason=verdict.reason)
+            if verdict.checks.get("range", True):   # unit/grounding fail is stable → cache;
+                self._cache[key] = ""               # a range fail is value-dependent → don't
+            return ResolvedField(raw_field_name=raw_field_name)
+
         if c.entry is not None:
             self.proposals.append(c.entry)          # collect the proposal for the learn step
             if self._write_back:                    # only the developer/learn path mutates the KB

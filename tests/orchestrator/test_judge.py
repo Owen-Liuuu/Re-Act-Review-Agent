@@ -64,3 +64,18 @@ def test_concept_status_flags_candidate_and_unresolved():
     flags = Judge().adjudicate(rep, None, review).human_review_flags
     assert [f.label for f in flags] == ["provisional_concept", "needs_review"]
     assert flags[1].field_type == "Novel Score"        # unresolved shows the raw name
+
+
+def test_candidate_contradicted_by_source_evidence_escalates_flag():
+    from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
+    rep = AuditReport(run_id="r", verdict=ReportVerdict.PASS)
+    review = [ReviewDataItem(study_id="ahmad_2022", group="t1dm", field_type="eat_thickness",
+                             raw_field_name="Weird fat", value="52",
+                             resolution_status="candidate")]
+    source = [SourceEvidenceItem(study_id="ahmad_2022", group="t1dm",
+                                 field_type="eat_thickness", source_value="52",
+                                 source_unit="cm3", concept_mismatch=True,
+                                 concept_mismatch_reason="source unit 'cm3' is a different kind")]
+    flags = Judge().adjudicate(rep, source, review).human_review_flags
+    assert [f.label for f in flags] == ["concept_contradicted"]
+    assert "contradicts" in flags[0].reason

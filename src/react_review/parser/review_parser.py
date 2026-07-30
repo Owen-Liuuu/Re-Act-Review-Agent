@@ -166,9 +166,10 @@ class ReviewParser:
                 continue
             unit = str(r.get("unit") or "").strip()
             # Parser applies NO domain knowledge — it asks the DKB Resolver.
+            # The value is passed so the resolver can range-check a candidate.
             try:
                 rf = await self._resolver.resolve(
-                    raw_name, unit=unit, research_context=research_context)
+                    raw_name, unit=unit, research_context=research_context, value=value)
             except Exception as exc:               # never drop on a resolver error
                 logger.warning("resolve_failed", raw=raw_name, error=str(exc)[:120])
                 rf = ResolvedField(raw_field_name=raw_name)   # → unresolved
