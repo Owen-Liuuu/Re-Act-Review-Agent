@@ -188,14 +188,10 @@ def _build_demo_input() -> StudentReviewInput:
     )
 
 
-def _safe_print(text: str) -> None:
-    """Print text safely, replacing unencodable characters (e.g. emoji on Windows GBK)."""
-    import sys
-    try:
-        print(text)
-    except UnicodeEncodeError:
-        encoding = sys.stdout.encoding or "utf-8"
-        print(text.encode(encoding, errors="replace").decode(encoding))
+# Printing that survives a console whose encoding can't carry every character
+# (Windows GBK + emoji). The implementation lives with the other rendering
+# helpers; re-exported here because every subcommand already calls this name.
+from react_review.hitl.render import safe_print as _safe_print  # noqa: E402
 
 
 def _print_result(result: PipelineRunResult) -> None:
@@ -455,35 +451,21 @@ def _run_main(argv: list[str] | None = None) -> None:
     reads the LOCAL source PDFs, extracts + audits + adjudicates, and persists the
     EvidencePackage. Requires ``--config`` with an LLM api_key (GLM etc.).
     """
+    import sys
     import uuid
 
-    from react_review.agents.collector import Collector
-    from react_review.audit import ToleranceTable
-    from react_review.csv_io import load_included_studies
+    from react_review.core.exceptions import RunStopped
     from react_review.dkb import FieldResolver, KnowledgeBase
-    from react_review.orchestrator import AuditOrchestrator, AuditPipeline, Judge
+    from react_review.hitl import (
+        AutoContinue,
+        CheckpointPolicy,
+        ConsoleCheckpoint,
+        RunJournal,
+        StepReporter,
+    )
     from react_review.parser.review_parser import ReviewParser
     from react_review.pipeline.factory import _create_llm_backend
-    from react_review.retrieval.local_pdf import LocalPdfRetriever
-    from react_review.steps.paper_verification.fulltext_retriever import FullTextRetriever
     from react_review.store import EvidencePackageStore
-    from react_review.study_match import (
-        apply_modality_disambiguation,
-        build_reference_resolver,
-        build_reference_resolver_from_parsed,
-        resolve_studies,
-    )
-    from react_review.tools.compare import CompareValuesTool
-    from react_review.tools.extract import FetchFullTextTool
-    from react_review.tools.extract_source import ExtractSourceValueTool
-    from react_review.tools.registry import ToolRegistry
-    from react_review.tools.search import (
-        CrossRefResolver,
-        EuropePMCResolver,
-        OpenAlexResolver,
-        ReferenceReconciler,
-        ResolveReferenceTool,
-    )
 
     ap = argparse.ArgumentParser(
         prog="react-review run",
@@ -504,17 +486,116 @@ def _run_main(argv: list[str] | None = None) -> None:
     ap.add_argument("--run-id", default=None)
     ap.add_argument("--limit", type=int, default=0,
                     help="audit only the first N review items (0 = all)")
+    ap.add_argument("--checkpoints", choices=("key", "all", "none"), default="key",
+                    help="how much to pause: key = gate each stage (default), "
+                         "all = also gate every source paper, none = never pause")
+    ap.add_argument("--non-interactive", action="store_true",
+                    help="never pause, even on a terminal (the journal is still written)")
+    ap.add_argument("--allow-skip", action="store_true",
+                    help="offer 'skip the remaining checkpoints' at a prompt")
+    ap.add_argument("--journal-dir", type=Path, default=None,
+                    help="where to write per-step artifacts (default: <out>/<run_id>)")
+    ap.add_argument("--tables", default="",
+                    help="only process these captured tables, e.g. table_1,table_2 "
+                         "(default: all of them; the checkpoint can also drop one)")
+    ap.add_argument("--drop-tables", default="",
+                    help="exclude these captured tables, e.g. table_s1")
     args = ap.parse_args(argv)
+
+    # Prefer real UTF-8 output; safe_print still covers consoles that refuse.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:                                          # noqa: BLE001
+        pass
 
     config = load_config(args.config)
     setup_logging(log_file=config.paths.log_file)
     backend = _create_llm_backend(config)
 
+    # The run id is needed BEFORE parsing: the parser's first checkpoint already
+    # writes into this run's journal directory.
+    run_id = args.run_id or uuid.uuid4().hex[:12]
+    journal = RunJournal(args.journal_dir or (args.out / run_id))
+    interactive = sys.stdin.isatty() and not args.non_interactive
+    policy = CheckpointPolicy.from_name(args.checkpoints if interactive else "none")
+    gate = (ConsoleCheckpoint(policy, journal=journal, allow_skip=args.allow_skip)
+            if interactive else AutoContinue())
+    reporter = StepReporter(run_id, gate=gate, journal=journal)
+    store = EvidencePackageStore(args.out)
+    if not interactive:
+        _safe_print("[unattended] no one is gating this run; every step is still "
+                    f"journalled to {journal.run_dir}")
+
     seed = Path(__file__).resolve().parents[2] / "configs" / "knowledge.seed.json"
     kb = KnowledgeBase.from_json(seed)
     # audit mode: KB is read-only — candidates become proposals, not KB writes.
     resolver = FieldResolver(kb, backend=backend, write_back=False)
-    review_parser = ReviewParser(backend, resolver)
+    review_parser = ReviewParser(
+        backend, resolver, reporter=reporter,
+        keep_tables=_id_set(args.tables), drop_tables=_id_set(args.drop_tables),
+    )
+
+    try:
+        return _run_audit(args, config, backend, kb, resolver, review_parser,
+                          reporter, store, run_id)
+    except RunStopped as exc:
+        _finalize_partial(store, run_id, "stopped_by_user", exc.stage, exc.reason)
+        raise SystemExit(2)
+    except KeyboardInterrupt:
+        _finalize_partial(store, run_id, "interrupted", "", "interrupted (Ctrl-C)")
+        raise SystemExit(130)
+
+
+def _id_set(raw: str) -> set[str] | None:
+    """Parse a comma-separated id list; None when the flag was not used."""
+    ids = {part.strip() for part in (raw or "").split(",") if part.strip()}
+    return ids or None
+
+
+def _finalize_partial(store, run_id: str, status: str, stage: str, reason: str) -> None:
+    """Record why a run ended early and point at the evidence it did collect."""
+    run_dir = store.run_dir(run_id)
+    partial = run_dir / "package.partial.json"
+    if partial.is_file():
+        try:
+            data = json.loads(partial.read_text(encoding="utf-8-sig"))
+            data["status"], data["stopped_at_stage"] = status, stage
+            partial.write_text(json.dumps(data, indent=2, ensure_ascii=False),
+                               encoding="utf-8")
+        except Exception:                                      # noqa: BLE001
+            pass
+    _safe_print(f"\n[{status}] {reason}")
+    _safe_print(f"[ARTIFACTS] {run_dir.resolve()}")
+    if partial.is_file():
+        _safe_print(f"[PARTIAL]   {partial.resolve()} — evidence collected so far")
+
+
+def _run_audit(args, config, backend, kb, resolver, review_parser,
+               reporter, store, run_id: str) -> None:
+    """The audit itself, wrapped so a stop/interrupt can finalise cleanly."""
+    from react_review.agents.collector import Collector
+    from react_review.audit import ToleranceTable
+    from react_review.csv_io import load_included_studies
+    from react_review.orchestrator import AuditOrchestrator, AuditPipeline, Judge
+    from react_review.retrieval.local_pdf import LocalPdfRetriever
+    from react_review.steps.paper_verification.fulltext_retriever import FullTextRetriever
+    from react_review.study_match import (
+        apply_modality_disambiguation,
+        build_reference_resolver,
+        build_reference_resolver_from_parsed,
+        resolve_studies,
+    )
+    from react_review.tools.compare import CompareValuesTool
+    from react_review.tools.extract import FetchFullTextTool
+    from react_review.tools.extract_source import ExtractSourceValueTool
+    from react_review.tools.registry import ToolRegistry
+    from react_review.tools.search import (
+        CrossRefResolver,
+        EuropePMCResolver,
+        OpenAlexResolver,
+        ReferenceReconciler,
+        ResolveReferenceTool,
+    )
 
     _safe_print(f"Parsing review PDF: {args.pdf}")
     parsed = asyncio.run(review_parser.parse(args.pdf, research_context=args.context))
@@ -557,14 +638,14 @@ def _run_main(argv: list[str] | None = None) -> None:
     reg.register(CompareValuesTool(tol))
     pipeline = AuditPipeline(
         Collector(reg, knowledge=kb), AuditOrchestrator(reg), Judge(),
-        store=EvidencePackageStore(args.out),
+        store=store, reporter=reporter,
     )
 
-    run_id = args.run_id or uuid.uuid4().hex[:12]
     _safe_print(f"Auditing {len(review_items)} items (run {run_id}) …")
     pkg = asyncio.run(pipeline.run(
         review_items, reference_resolver,
         research_context=args.context, run_id=run_id, parser_record=parsed.record,
+        captured_tables=parsed.tables,
     ))
 
     fv = pkg.final_verification

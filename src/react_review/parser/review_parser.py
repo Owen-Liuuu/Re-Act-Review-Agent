@@ -9,32 +9,19 @@ from typing import Any
 import structlog
 from pydantic import BaseModel, Field
 
+from react_review.hitl.events import StepStage, SubjectKind
+from react_review.hitl.reporter import StepReporter
 from react_review.llm.base import LLMBackend, parse_llm_response
 from react_review.normalize.doi import normalize_doi
 from react_review.normalize.groups import normalize_group
+from react_review.parser.table_capture import TableCapturer
 from react_review.schemas.agent import AgentRun, StepRecord
 from react_review.schemas.evidence import ReviewDataItem
+from react_review.schemas.reason import ReasonRecord
+from react_review.schemas.table import CapturedTable, CapturedTableSet
 from react_review.dkb import FieldResolver, ResolvedField
 
 logger = structlog.get_logger(__name__)
-
-
-_STAGE1 = """You are reading a systematic review. Find its main DATA-EXTRACTION table
-(often "Table 1" / "Characteristics of included studies").
-
-Also state the review's research question in ONE line — population + exposure/intervention
-+ outcome — from the title / abstract / objective.
-
-Describe as JSON — do NOT extract table values yet:
-{{"table_name": "...", "columns": ["Author", "N", ...],
-  "group_handling": "how per-cohort values are shown (e.g. 'each study has a T1DM row and a Control row', or 'single row, no split')",
-  "notes": "any footnotes that define groups/units/timepoints",
-  "research_context": "one-line research question, e.g. 'epicardial adipose tissue in type 1 diabetes vs healthy controls'"}}
-
-## REVIEW TEXT
-{text}
-
-Return JSON only."""
 
 
 _STAGE_REFS = """You are reading the REFERENCE LIST / included-studies list of a systematic review.
@@ -54,26 +41,38 @@ Rules:
 Return JSON only."""
 
 
-_STAGE2 = """You are extracting the data-extraction table of a systematic review into LONG format.
+# Unpivot works from the ALREADY CAPTURED table, not from the raw PDF text, and
+# in row chunks — so a 60-study review cannot silently lose rows to an output
+# token ceiling. Note there is no cohort vocabulary here: whatever the table
+# calls its arms is what gets recorded.
+_UNPIVOT = """You are converting one table of a systematic review into long format.
 
-Table structure (from a prior pass):
-{structure}
+Table {table_id} — {caption}
+Column labels, by index:
+{columns}
+Row-identifying columns: {row_axis}
 
-Emit ONE row per data cell. For a study with T1DM and Control cohorts, emit
-separate rows per cohort. Copy values EXACTLY as printed (keep "mean ± SD").
+Rows to convert, as [row_index, cells]:
+{rows}
+
+Emit ONE entry for EVERY non-empty cell, in EVERY column except {row_axis}.
+Country, N, sample size, quality ratings and so on are DATA — do not skip them.
 
 {{"rows": [
-  {{"study": "First-author Year", "group": "T1DM|Control|all",
-    "raw_field_name": "the column header verbatim", "value": "raw cell value", "unit": "unit if any"}}
+  {{"row": 0, "col": 3,
+    "column_header": "the column label from the list above, copied verbatim",
+    "cohort_label": "which arm/cohort this cell belongs to, IN THE TABLE'S OWN WORDS; empty if the table does not split by cohort",
+    "timepoint_label": "the timepoint in the table's own words; empty if none",
+    "value": "the cell EXACTLY as printed",
+    "unit": "the unit, taken from the column header, the cell text, or a footnote; empty if none is stated"}}
 ]}}
 
 Rules:
-- ``group`` = the cohort the value belongs to; use "all" when the study reports a single combined value.
-- Do NOT emit rows for IDENTIFIER/label columns (Author, Study, Reference, Group, Cohort, Subgroup). Those identify the row — "Group" only sets ``group`` — they are not measurements.
-- Do NOT invent studies, columns, or values. Skip blank cells.
-
-## REVIEW TEXT
-{text}
+- Copy values verbatim: keep "mean ± SD", "median (IQR)", ranges, "NR", "—", "not reported".
+- Take cohort_label and timepoint_label from the header path or the row itself, in the
+  table's own wording. Do NOT map them onto any standard vocabulary of your own.
+- If a value carries its unit inline (e.g. "80.2 ± 49.0 cm3"), still report that unit.
+- Do NOT invent rows, columns or values.
 
 Return JSON only."""
 
@@ -91,6 +90,9 @@ class ParsedReview(BaseModel):
     record: AgentRun
     research_context: str = ""          # LLM-extracted from the review (falls back to the arg)
     studies: list[ParsedStudy] = Field(default_factory=list)   # included-study DOIs
+    # The verbatim tables everything above was derived from — kept so a reader can
+    # check any extracted value back against the table a human approved.
+    tables: CapturedTableSet = Field(default_factory=CapturedTableSet)
 
 
 def _pdf_text(pdf_path: Path | str) -> str:
@@ -143,6 +145,39 @@ def _norm_col(name: str) -> str:
     return re.sub(r"[^a-z0-9 ]", "", name.lower()).strip()
 
 
+def _row_key_label(row_key: Any) -> str:
+    """The study name from a row's identifying columns ("Ahmad 2022")."""
+    if isinstance(row_key, dict):
+        for value in row_key.values():
+            text = str(value or "").strip()
+            if text:
+                return text
+        return ""
+    return str(row_key or "").strip()
+
+
+# A unit printed inside the cell itself ("80.2 ± 49.0 cm3"). Recovering it is
+# what lets an ambiguous header like "EFT/ EAT" — which holds thicknesses in one
+# study and volumes in another — resolve to the right concept per row.
+_INLINE_UNIT = re.compile(
+    r"(?<![A-Za-z])(cm\s*3|cm³|mm\s*3|mm³|ml|cc|kg/m\s*2|kg/m²|mm\s*hg|mmol/l|mg/dl|"
+    r"cm|mm|kg|g|%|years?|yrs?|months?|days?)\s*$", re.I)
+
+
+def _inline_unit(value: object) -> str:
+    """The unit trailing a cell's text, if it prints one; "" otherwise."""
+    m = _INLINE_UNIT.search(str(value or "").strip().rstrip(",;"))
+    return m.group(1).replace(" ", "") if m else ""
+
+
+def _cell_ref(row: dict[str, Any]) -> tuple[int, int] | None:
+    """(row, column) coordinates in the captured table, when the model gave them."""
+    try:
+        return int(row["row"]), int(row["col"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 class ReviewParser:
     """Parse a review PDF into a long table of ReviewDataItem."""
 
@@ -152,10 +187,21 @@ class ReviewParser:
         resolver: FieldResolver,
         *,
         max_chars: int = 50000,
+        reporter: StepReporter | None = None,
+        chunk_rows: int = 8,
+        keep_tables: set[str] | None = None,
+        drop_tables: set[str] | None = None,
+        alt_backend: LLMBackend | None = None,
     ) -> None:
         self._backend = backend
         self._resolver = resolver          # the parser holds NO domain knowledge itself
         self._max_chars = max_chars
+        # Default reporter never blocks and never writes (library/CI behaviour).
+        self._reporter = reporter or StepReporter()
+        self._chunk_rows = max(1, chunk_rows)
+        self._keep_tables = keep_tables
+        self._drop_tables = drop_tables
+        self._capturer = TableCapturer(backend, alt_backend=alt_backend)
 
     async def parse(
         self, pdf_path: Path | str, *, research_context: str = ""
@@ -164,36 +210,106 @@ class ReviewParser:
         text = full_text[: self._max_chars]
         logger.info("review_parse_start", chars=len(text))
 
-        structure = await self._call(_STAGE1.format(text=text))
-        # research_context: prefer the LLM-extracted question, fall back to the arg.
-        ctx = str(structure.get("research_context") or "").strip() or research_context
+        await self._reporter.step_or_stop(
+            StepStage.REVIEW_PDF_LOADED,
+            title="Review PDF loaded",
+            subject=str(Path(pdf_path).resolve()),
+            subject_kind=SubjectKind.REVIEW_PDF,
+            payload={"chars_total": len(full_text), "chars_used": len(text),
+                     "truncated": len(full_text) > self._max_chars},
+            render_blocks=[f"  {len(full_text):,} characters extracted"
+                           f" (using the first {len(text):,})"],
+            warnings=([f"text truncated to {self._max_chars:,} chars — the data table "
+                       "may sit past the cut"] if len(full_text) > self._max_chars else []),
+        )
 
-        raw_rows = (await self._call(_STAGE2.format(
-            structure=json.dumps(structure, ensure_ascii=False), text=text,
-        ))).get("rows", [])
+        # 1. Capture the review's tables verbatim and hold the run until a human
+        #    has looked at them: nothing downstream means anything if this is wrong.
+        table_set, captured_ctx = await self._capturer.capture(
+            text, reporter=self._reporter, pdf_path=str(Path(pdf_path).resolve()),
+            keep=self._keep_tables, drop=self._drop_tables,
+        )
+        ctx = captured_ctx or research_context
+
+        # 2. Unpivot each approved table, in row chunks.
+        raw_rows: list[dict[str, Any]] = []
+        for table in table_set.tables:
+            raw_rows.extend(await self._unpivot(table))
         items = await self._postprocess(raw_rows, ctx)
 
-        # included-study DOIs, extracted from the reference window (doc tail).
+        await self._reporter.step_or_stop(
+            StepStage.LONG_FORMAT_ROWS,
+            title="Table converted to long format",
+            payload={"rows": raw_rows,
+                     "items": [i.model_dump(mode="json") for i in items]},
+            render_blocks=[self._render_items(items)],
+            warnings=self._unpivot_warnings(table_set, raw_rows, items),
+        )
+
+        # 3. included-study references, extracted from the reference window (doc tail).
         studies = await self._extract_studies(_refs_window(full_text))
 
         record = AgentRun(
             agent="parser",
             task={"pdf": str(pdf_path)},
             steps=[
-                StepRecord(index=0, thought="identify table structure + research context",
-                           tool="llm:stage1_structure", observation=structure),
-                StepRecord(index=1, thought="unpivot to long rows",
-                           tool="llm:stage2_unpivot",
-                           observation={"n_rows": len(raw_rows)}),
-                StepRecord(index=2, thought="extract included-study DOIs",
+                StepRecord(index=0, thought="capture the review's tables verbatim",
+                           tool="llm:table_capture",
+                           observation={"tables": [t.table_id for t in table_set.tables],
+                                        "dropped": table_set.dropped}),
+                StepRecord(index=1, thought="unpivot the captured tables to long rows",
+                           tool="llm:unpivot", observation={"n_rows": len(raw_rows)}),
+                StepRecord(index=2, thought="extract included-study references",
                            tool="llm:stage_refs", observation={"n_studies": len(studies)}),
             ],
             status="finished",
             final={"n_items": len(items), "n_studies": len(studies)},
         )
         logger.info("review_parse_done", n_rows=len(raw_rows),
-                    n_items=len(items), n_studies=len(studies))
-        return ParsedReview(items=items, record=record, research_context=ctx, studies=studies)
+                    n_items=len(items), n_studies=len(studies),
+                    n_tables=len(table_set.tables))
+        return ParsedReview(items=items, record=record, research_context=ctx,
+                            studies=studies, tables=table_set)
+
+    async def _unpivot(self, table: CapturedTable) -> list[dict[str, Any]]:
+        """Convert one captured table to long rows, a chunk of rows at a time.
+
+        Chunking is what lets a 40-80 study review work at all: one shot at the
+        whole table overruns the model's output budget and silently truncates.
+        """
+        paths = table.column_paths()
+        columns = "\n".join(f"  {j}: {p}" for j, p in enumerate(paths))
+        row_axis = ", ".join(table.row_axis_columns) or "(none)"
+        # Which study a row belongs to is read off the table, not asked of the
+        # model: merged study cells make it a deterministic fill-down, and a
+        # wrong answer here would silently attribute values to another paper.
+        labels = table.row_labels()
+        out: list[dict[str, Any]] = []
+        for start in range(0, len(table.rows), self._chunk_rows):
+            chunk = table.rows[start: start + self._chunk_rows]
+            payload = json.dumps(
+                [[start + i, row] for i, row in enumerate(chunk)], ensure_ascii=False)
+            data = await self._call(_UNPIVOT.format(
+                table_id=table.table_id, caption=table.caption or "(no caption)",
+                columns=columns, row_axis=row_axis, rows=payload,
+            ))
+            for r in data.get("rows", []):
+                if not isinstance(r, dict):
+                    continue
+                r["table_id"] = table.table_id
+                try:
+                    idx = int(r["row"])
+                    r["row_key"] = {"study": labels[idx]}
+                    # The rest of the row, verbatim, as context for the Resolver.
+                    # The parser does not interpret it — a column like "EFT/ EAT"
+                    # is ambiguous on its own, and the knowledge base's own rules
+                    # decide what a neighbouring "Echocardiography" or "CT" means.
+                    r["row_context"] = " ".join(
+                        c.strip() for c in table.rows[idx] if c and c.strip())
+                except (KeyError, TypeError, ValueError, IndexError):
+                    r.setdefault("row_key", {})
+                out.append(r)
+        return out
 
     async def _call(self, prompt: str) -> dict[str, Any]:
         try:
@@ -233,34 +349,64 @@ class ReviewParser:
         for r in raw_rows:
             if not isinstance(r, dict):
                 continue
-            raw_name = str(r.get("raw_field_name") or "").strip()
+            raw_name = str(r.get("column_header") or "").strip()
             value = r.get("value")
             if not raw_name or value is None:
                 continue
             if _norm_col(raw_name) in _IDENTIFIER_COLUMNS:
                 continue  # identifier/dimension column, not a measurement
-            if isinstance(value, str) and value.strip().lower() in _PLACEHOLDER:
+
+            unit = str(r.get("unit") or "").strip() or _inline_unit(value)
+            cohort_label = str(r.get("cohort_label") or "").strip()
+            timepoint_label = str(r.get("timepoint_label") or "").strip()
+            table_id = str(r.get("table_id") or "")
+            cell_ref = _cell_ref(r)
+            study_id = _study_slug(_row_key_label(r.get("row_key")))
+            group = normalize_group(cohort_label)
+            common = dict(
+                study_id=study_id, raw_field_name=raw_name, unit=unit,
+                table_id=table_id, cell_ref=cell_ref, column_header=raw_name,
+                cohort_label=cohort_label, timepoint_label=timepoint_label,
+            )
+
+            # A written placeholder is REPORTED, not dropped: "NR" in an oncology
+            # table may mean "median not reached" — a result, not an absence — and
+            # deleting the row hides it from the audit entirely. An EMPTY cell is
+            # different: in a table whose rows continue a merged study block it is
+            # layout, not a statement, so it is skipped as before.
+            text = value.strip() if isinstance(value, str) else value
+            if isinstance(text, str) and not text:
                 continue
-            unit = str(r.get("unit") or "").strip()
+            if isinstance(text, str) and text.lower() in _PLACEHOLDER:
+                items.append(ReviewDataItem(
+                    **common, group=group, field_type="", value=None,
+                    resolution_status="unresolved",
+                    reasons=[ReasonRecord(
+                        code="placeholder_cell", stage="parser",
+                        message=f"the table cell reads {value.strip()!r}; "
+                                "no value was reported here")],
+                ))
+                continue
+
             # Parser applies NO domain knowledge — it asks the DKB Resolver.
             # The value is passed so the resolver can range-check a candidate.
             try:
                 rf = await self._resolver.resolve(
-                    raw_name, unit=unit, research_context=research_context, value=value)
+                    raw_name, unit=unit, modality=str(r.get("row_context") or ""),
+                    research_context=research_context, value=value)
             except Exception as exc:               # never drop on a resolver error
                 logger.warning("resolve_failed", raw=raw_name, error=str(exc)[:120])
                 rf = ResolvedField(raw_field_name=raw_name)   # → unresolved
-
-            study_id = _study_slug(str(r.get("study") or ""))
-            group = normalize_group(str(r.get("group") or ""))
 
             # UNRESOLVED: keep the raw item (field_type null) — the audit marks it
             # not_comparable / needs_review; the concept goes to proposals to learn.
             if rf.status == "unresolved":
                 items.append(ReviewDataItem(
-                    study_id=study_id, group=group, field_type="",
-                    raw_field_name=raw_name, value=value, unit=unit,
+                    **common, group=group, field_type="", value=value,
                     resolution_status="unresolved",
+                    reasons=[ReasonRecord(
+                        code="concept_unresolved", stage="parser",
+                        message=f"column {raw_name!r} did not map to a known concept")],
                 ))
                 continue
 
@@ -272,8 +418,36 @@ class ReviewParser:
                     continue
                 seen_study_level.add((study_id, ft))
             items.append(ReviewDataItem(
-                study_id=study_id, group=group, field_type=ft,
-                raw_field_name=raw_name, value=value, unit=unit,
+                **common, group=group, field_type=ft, value=value,
                 resolution_status=("resolved" if rf.status == "authoritative" else rf.status),
             ))
         return items
+
+    # --- rendering + warnings for the long-format checkpoint ---
+
+    @staticmethod
+    def _render_items(items: list[ReviewDataItem], limit: int = 25) -> str:
+        if not items:
+            return "  (no rows produced)"
+        lines = [f"  {len(items)} row(s)"]
+        for i in items[:limit]:
+            concept = i.field_type or f"UNRESOLVED «{i.raw_field_name}»"
+            cohort = i.cohort_label or i.group
+            lines.append(f"    {i.study_id:<24} {cohort:<12} {concept:<18} {i.value!r}")
+        if len(items) > limit:
+            lines.append(f"    … {len(items) - limit} more")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _unpivot_warnings(table_set, raw_rows: list[dict], items: list) -> list[str]:
+        out: list[str] = []
+        if table_set.tables and not raw_rows:
+            out.append("the captured table produced no long rows")
+        n_unresolved = sum(1 for i in items if i.resolution_status == "unresolved")
+        if n_unresolved:
+            out.append(f"{n_unresolved} row(s) have no known concept and cannot be "
+                       "compared automatically")
+        labels = sorted({i.cohort_label for i in items if i.cohort_label})
+        if labels:
+            out.append("cohort labels found in the table: " + ", ".join(labels))
+        return out

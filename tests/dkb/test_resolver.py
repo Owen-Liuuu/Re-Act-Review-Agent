@@ -82,6 +82,18 @@ async def test_write_back_mode_merges_into_kb():
 
 
 @pytest.mark.asyncio
+async def test_cache_does_not_leak_one_rows_modality_to_the_next():
+    # "EFT/ EAT" is a thickness in an echo study and a volume in a CT one. The
+    # per-run cache must key on the modality too, or every later row silently
+    # inherits the first row's answer.
+    r = FieldResolver(_kb())
+    echo = await r.resolve("EFT/ EAT", modality="Echocardiography (Echo)")
+    ct = await r.resolve("EFT/ EAT", modality="Coronary computed tomography (CT)")
+    assert echo.field_type == "eat_thickness"
+    assert ct.field_type == "eat_volume"
+
+
+@pytest.mark.asyncio
 async def test_cache_dedupes_without_second_llm_call():
     kb = _kb()
     agent = _agent(kb, {"field_type": "hba1c", "is_new": True, "confidence": 0.5})

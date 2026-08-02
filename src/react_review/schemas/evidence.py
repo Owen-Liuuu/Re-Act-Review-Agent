@@ -12,6 +12,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from react_review.core.enums import CollectionOutcome
+from react_review.schemas.reason import ReasonRecord
 
 Value = str | int | float | None
 
@@ -34,6 +35,15 @@ class ReviewDataItem(BaseModel):
     # DKB resolution: "resolved" (authoritative) | "candidate" (provisional, tentative)
     # | "unresolved" (field_type unknown — kept, but not comparable / needs review).
     resolution_status: str = "resolved"
+    # --- provenance back to the captured table (all optional: CSV-loaded items
+    # and hand-built test items keep working unchanged) ---
+    table_id: str = ""
+    cell_ref: tuple[int, int] | None = None    # (row, column) in the captured table
+    column_header: str = ""                    # the header path, verbatim
+    cohort_label: str = ""                     # the review's OWN word for the cohort
+    timepoint_label: str = ""                  # the review's OWN word, "" if none
+    origin: str = "review_table"               # review_table | checklist
+    reasons: list[ReasonRecord] = Field(default_factory=list)
 
 
 class SourceEvidenceItem(BaseModel):

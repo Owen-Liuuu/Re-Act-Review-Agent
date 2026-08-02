@@ -41,10 +41,19 @@ class EvidencePackageStore:
 
     def save(self, package: EvidencePackage) -> Path:
         """Write ``package`` atomically; returns the package.json path."""
-        run_dir = self.run_dir(package.run_id)
-        run_dir.mkdir(parents=True, exist_ok=True)
-        path = self._package_path(package.run_id)
-        tmp = path.with_suffix(".json.tmp")
+        return self._write(package, self._package_path(package.run_id))
+
+    def save_partial(self, package: EvidencePackage) -> Path:
+        """Write progress so far to ``package.partial.json``.
+
+        Called after each study group so an interrupted run still leaves the
+        evidence it had already collected, instead of losing the whole run.
+        """
+        return self._write(package, self.run_dir(package.run_id) / "package.partial.json")
+
+    def _write(self, package: EvidencePackage, path: Path) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
         payload = json.dumps(
             package.model_dump(mode="json"), indent=2, ensure_ascii=False
         )

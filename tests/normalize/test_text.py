@@ -19,6 +19,20 @@ def test_clean_pdf_text_empty():
     assert clean_pdf_text("") == ""
 
 
+def test_folds_typesetting_spaces_to_ordinary_ones():
+    # Journals set "12.90 ± 1.30" with a THIN SPACE. It is invisible, so a value
+    # transcribed faithfully from the PDF compares unequal to the same value
+    # typed by a person — a phantom mismatch with no visible cause.
+    assert clean_pdf_text("12.90 ± 1.30") == "12.90 ± 1.30"
+    assert clean_pdf_text("6.60 ± 0.71") == "6.60 ± 0.71"   # NBSP
+    assert clean_pdf_text("20 ± 1") == "20 ± 1"             # narrow NBSP
+    assert clean_pdf_text("5 ± 1") == "5 ± 1"               # em space
+
+
+def test_ordinary_spacing_is_untouched():
+    assert clean_pdf_text("12.90 ± 1.30") == "12.90 ± 1.30"
+
+
 def test_parser_tolerates_control_char_in_string():
     # Defense in depth: even an un-sanitised control char must not hard-fail.
     raw = '```json\n{"found": true, "value": "30.6 \x01 10.3"}\n```'

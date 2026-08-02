@@ -36,26 +36,39 @@ def test_study_slug():
     assert _study_slug("de Gonzalo-Calvo et al. (2018)") == "de_2018"
 
 
+def _capture(rows, columns=("Study", "N", "EFT/ EAT")) -> dict:
+    """A Stage-1 capture payload: the table verbatim, in its own shape."""
+    return {"research_context": "",
+            "tables": [{"table_id": "table_1", "caption": "Table 1",
+                        "header_rows": [list(columns)], "rows": rows,
+                        "row_axis_columns": ["Study"]}]}
+
+
+def _cell(row, col, study, header, value, unit="", cohort="") -> dict:
+    return {"row": row, "col": col, "row_key": {"Study": study},
+            "column_header": header, "cohort_label": cohort,
+            "timepoint_label": "", "value": value, "unit": unit}
+
+
 @pytest.mark.asyncio
 async def test_parse_produces_normalized_long_items(monkeypatch):
     monkeypatch.setattr(
         "react_review.parser.review_parser._pdf_text", lambda p: "review text"
     )
     backend = QueueBackend([
-        {"table_name": "Table 1", "columns": ["Author", "N", "EFT/ EAT"],
-         "group_handling": "T1DM row + Control row", "notes": ""},
+        _capture([["Ahmad et al. [2022]", "100", "6.60 ± 0.71"]]),
         {"rows": [
-            {"study": "Ahmad et al. [2022]", "group": "T1DM",
-             "raw_field_name": "EFT/ EAT", "value": "6.60 ± 0.71", "unit": "mm"},
-            {"study": "Ahmad et al. [2022]", "group": "Control",
-             "raw_field_name": "EFT/ EAT", "value": "3.83 ± 0.35", "unit": "mm"},
-            {"study": "Ahmad et al. [2022]", "group": "",
-             "raw_field_name": "N", "value": "100", "unit": ""},
-            {"study": "Ahmad et al. [2022]", "group": "T1DM",
-             "raw_field_name": "Some Novel Column", "value": "5", "unit": ""},  # unknown → KEPT unresolved
-            {"study": "Ahmad et al. [2022]", "group": "T1DM",
-             "raw_field_name": "Age", "value": "N/A", "unit": "years"},          # placeholder → skipped
+            _cell(0, 2, "Ahmad et al. [2022]", "EFT/ EAT", "6.60 ± 0.71", "mm", "T1DM"),
+            _cell(0, 2, "Ahmad et al. [2022]", "EFT/ EAT", "3.83 ± 0.35", "mm", "Control"),
+            _cell(0, 1, "Ahmad et al. [2022]", "N", "100"),
+            # unknown column → KEPT as unresolved, never dropped
+            _cell(0, 3, "Ahmad et al. [2022]", "Some Novel Column", "5", "", "T1DM"),
+            # written placeholder → KEPT with a reason (it may mean "not reached")
+            _cell(0, 4, "Ahmad et al. [2022]", "Age", "N/A", "years", "T1DM"),
+            # an EMPTY cell is layout, not a statement → skipped
+            _cell(0, 5, "Ahmad et al. [2022]", "Country", "", "", "Control"),
         ]},
+        {"studies": []},
     ])
     parser = ReviewParser(backend, _resolver())
     parsed = await parser.parse("dummy.pdf", research_context="EAT in T1DM")
@@ -66,14 +79,22 @@ async def test_parse_produces_normalized_long_items(monkeypatch):
         ("ahmad_2022", "control", "eat_thickness", "3.83 ± 0.35", "mm"),
         ("ahmad_2022", "-", "sample_size", "100", ""),          # study-level → group "-"
         ("ahmad_2022", "t1dm", "", "5", ""),                    # unknown → KEPT, field_type null
+        ("ahmad_2022", "t1dm", "", None, "years"),              # placeholder → KEPT, value null
     }
-    # placeholder value dropped; the UNKNOWN column is kept as unresolved (not dropped)
-    assert len(parsed.items) == 4
-    unresolved = [i for i in parsed.items if i.resolution_status == "unresolved"]
-    assert len(unresolved) == 1 and unresolved[0].raw_field_name == "Some Novel Column"
+    assert len(parsed.items) == 5
+    placeholder = next(i for i in parsed.items if i.value is None)
+    assert placeholder.reasons[0].code == "placeholder_cell"
+    assert "'N/A'" in placeholder.reasons[0].message
+
+    # cell-level provenance back to the captured table
+    eat = next(i for i in parsed.items if i.field_type == "eat_thickness")
+    assert eat.table_id == "table_1" and eat.cell_ref == (0, 2)
+    assert eat.cohort_label == "T1DM"          # the review's OWN word is preserved
+
     assert parsed.record.agent == "parser"
     assert [s.tool for s in parsed.record.steps] == [
-        "llm:stage1_structure", "llm:stage2_unpivot", "llm:stage_refs"]
+        "llm:table_capture", "llm:unpivot", "llm:stage_refs"]
+    assert [t.table_id for t in parsed.tables.tables] == ["table_1"]
 
 
 @pytest.mark.asyncio
@@ -82,14 +103,14 @@ async def test_study_level_field_collapses_to_one_row(monkeypatch):
     # the review repeats N in BOTH cohort rows; it must collapse to one study-level
     # row (group "-"), while a genuine per-cohort field stays split.
     backend = QueueBackend([
-        {"table_name": "Table 1", "columns": ["N", "EFT/ EAT"],
-         "group_handling": "", "notes": ""},
+        _capture([["Ahmad et al. [2022]", "100", "6.6"]], ("Study", "N", "EFT/ EAT")),
         {"rows": [
-            {"study": "Ahmad et al. [2022]", "group": "T1DM", "raw_field_name": "N", "value": "100", "unit": ""},
-            {"study": "Ahmad et al. [2022]", "group": "Control", "raw_field_name": "N", "value": "100", "unit": ""},
-            {"study": "Ahmad et al. [2022]", "group": "T1DM", "raw_field_name": "EFT/ EAT", "value": "6.6", "unit": "mm"},
-            {"study": "Ahmad et al. [2022]", "group": "Control", "raw_field_name": "EFT/ EAT", "value": "3.8", "unit": "mm"},
+            _cell(0, 1, "Ahmad et al. [2022]", "N", "100", "", "T1DM"),
+            _cell(0, 1, "Ahmad et al. [2022]", "N", "100", "", "Control"),
+            _cell(0, 2, "Ahmad et al. [2022]", "EFT/ EAT", "6.6", "mm", "T1DM"),
+            _cell(0, 2, "Ahmad et al. [2022]", "EFT/ EAT", "3.8", "mm", "Control"),
         ]},
+        {"studies": []},
     ])
     parsed = await ReviewParser(backend, _resolver()).parse("d.pdf")
     ss = [i for i in parsed.items if i.field_type == "sample_size"]
@@ -105,11 +126,11 @@ async def test_parse_extracts_research_context_and_dois(monkeypatch):
         lambda p: "body text …\n\nReferences\n1. Ahmad A. 2022. J Cardiol. doi:10.1/x\n"
                   "2. Aslan B. 2015. Echocardiography.",
     )
+    capture = _capture([["Ahmad et al. [2022]", "100"]], ("Study", "N"))
+    capture["research_context"] = "epicardial adipose tissue in T1DM vs healthy controls"
     backend = QueueBackend([
-        {"table_name": "Table 1", "columns": ["N"], "group_handling": "", "notes": "",
-         "research_context": "epicardial adipose tissue in T1DM vs healthy controls"},
-        {"rows": [{"study": "Ahmad et al. [2022]", "group": "T1DM",
-                   "raw_field_name": "N", "value": "100", "unit": ""}]},
+        capture,
+        {"rows": [_cell(0, 1, "Ahmad et al. [2022]", "N", "100", "", "T1DM")]},
         {"studies": [
             {"citation": "Ahmad A et al. 2022. J Cardiol.", "doi": "https://doi.org/10.1/X"},
             {"citation": "Aslan B et al. 2015. Echocardiography.", "doi": ""}]},
@@ -128,8 +149,7 @@ async def test_parse_extracts_research_context_and_dois(monkeypatch):
 async def test_research_context_falls_back_to_arg_when_not_extracted(monkeypatch):
     monkeypatch.setattr("react_review.parser.review_parser._pdf_text", lambda p: "t")
     backend = QueueBackend([
-        {"table_name": "T", "columns": [], "group_handling": "", "notes": ""},  # no research_context
-        {"rows": []},
+        {"tables": []},                      # nothing captured, no research_context
         {"studies": []},
     ])
     parsed = await ReviewParser(backend, _resolver()).parse("d.pdf", research_context="my ctx")

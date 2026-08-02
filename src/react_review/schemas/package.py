@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from react_review.schemas.agent import AgentRun
 from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
 from react_review.schemas.report import AuditReport, FinalVerification
+from react_review.schemas.table import CapturedTableSet
 
 
 class EvidencePackage(BaseModel):
@@ -29,3 +30,10 @@ class EvidencePackage(BaseModel):
     report: AuditReport | None = None
     final_verification: FinalVerification | None = None
     processing_records: list[AgentRun] = Field(default_factory=list)
+    # The verbatim tables the review claims were read from, as approved at the
+    # capture checkpoint — so any audited value can be traced back to its cell.
+    captured_tables: CapturedTableSet = Field(default_factory=CapturedTableSet)
+    # How the run ended: complete | stopped_by_user | interrupted | error.
+    # A partial package is still evidence — it records what HAD been checked.
+    status: str = "complete"
+    stopped_at_stage: str = ""

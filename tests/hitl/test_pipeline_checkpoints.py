@@ -1,0 +1,154 @@
+"""The audit pipeline gates per SOURCE PAPER and persists progress as it goes."""
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from react_review.audit import ToleranceTable
+from react_review.core.enums import CollectionOutcome, ReflectionDecision
+from react_review.core.exceptions import RunStopped
+from react_review.hitl import (
+    Decision,
+    RunJournal,
+    ScriptedCheckpoint,
+    StepReporter,
+    StepStage,
+)
+from react_review.orchestrator import AuditOrchestrator, AuditPipeline, Judge
+from react_review.schemas.agent import AgentRun
+from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
+from react_review.steps.paper_verification.schemas import ReferenceEntry
+from react_review.store import EvidencePackageStore
+from react_review.tools.compare import CompareValuesTool
+from react_review.tools.registry import ToolRegistry
+
+
+class _StubCollector:
+    """Echoes the review value back as the source value (always a match)."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def collect(self, review_item, reference, *, research_context=""):
+        self.calls += 1
+        from react_review.agents.collector import CollectResult
+        return CollectResult(
+            source_item=SourceEvidenceItem(
+                study_id=review_item.study_id, group=review_item.group,
+                field_type=review_item.field_type, source_value=review_item.value,
+                source_unit=review_item.unit, collection_outcome=CollectionOutcome.FOUND,
+            ),
+            record=AgentRun(agent="collector"),
+            decision=ReflectionDecision.ACCEPT,
+        )
+
+
+def _items() -> list[ReviewDataItem]:
+    # two studies, two claims each — interleaved to prove grouping preserves order
+    return [
+        ReviewDataItem(study_id="ahmad_2022", group="t1dm", field_type="bmi", value="24"),
+        ReviewDataItem(study_id="keles_2016", group="t1dm", field_type="bmi", value="25"),
+        ReviewDataItem(study_id="ahmad_2022", group="control", field_type="bmi", value="22"),
+    ]
+
+
+def _pipeline(tmp_path, decisions):
+    reg = ToolRegistry()
+    reg.register(CompareValuesTool(ToleranceTable()))
+    gate = ScriptedCheckpoint(decisions)
+    reporter = StepReporter("run1", gate=gate, journal=RunJournal(tmp_path / "run1"))
+    store = EvidencePackageStore(tmp_path)
+    pipe = AuditPipeline(_StubCollector(), AuditOrchestrator(reg), Judge(),
+                         store=store, reporter=reporter)
+    return pipe, gate, store
+
+
+@pytest.mark.asyncio
+async def test_every_paper_reports_but_the_batch_is_reviewed_once(tmp_path):
+    pipe, gate, _ = _pipeline(tmp_path, [])
+    await pipe.run(_items(), lambda sid: ReferenceEntry(title=sid), run_id="run1")
+
+    stages = [e.stage for e in gate.seen]
+    # every paper still REPORTS in full (2 studies, 3 claims)…
+    assert stages.count(StepStage.COLLECT_STUDY) == 2
+    # …but the collection is reviewed once, after all of it is in
+    assert stages.count(StepStage.COLLECTION_REVIEW) == 1
+    assert stages[-3:] == [StepStage.COLLECTION_REVIEW,
+                           StepStage.AUDIT_SUMMARY, StepStage.JUDGE_FLAGS]
+    # grouping preserves first-appearance order
+    assert [e.payload["study_id"] for e in gate.seen
+            if e.stage is StepStage.COLLECT_STUDY] == ["ahmad_2022", "keles_2016"]
+
+
+async def _blocking_stages(n_studies: int) -> list[StepStage]:
+    """Which stages the console actually PAUSES on for a review of n papers."""
+    from react_review.hitl import CheckpointPolicy, ConsoleCheckpoint
+
+    gate = ConsoleCheckpoint(CheckpointPolicy.key_stages())
+    gate._read_key = lambda: "c"                       # type: ignore[method-assign]
+    blocked: list[StepStage] = []
+    ask = gate._ask                                    # wrap the INSTANCE, not the class
+
+    async def counting_ask(event):
+        blocked.append(event.stage)
+        return await ask(event)
+
+    gate._ask = counting_ask                           # type: ignore[method-assign]
+
+    reg = ToolRegistry()
+    reg.register(CompareValuesTool(ToleranceTable()))
+    pipe = AuditPipeline(_StubCollector(), AuditOrchestrator(reg), Judge(),
+                         reporter=StepReporter("r", gate=gate))
+    items = [ReviewDataItem(study_id=f"s{i}", group="t1dm", field_type="bmi", value="24")
+             for i in range(n_studies)]
+    await pipe.run(items, lambda sid: ReferenceEntry(title=sid), run_id="r")
+    return blocked
+
+
+@pytest.mark.asyncio
+async def test_pause_count_does_not_grow_with_the_number_of_papers(capsys):
+    # A review may include 9 source papers or 80; the reviewer presses the same
+    # number of keys either way. This is the generalisation requirement.
+    few = await _blocking_stages(2)
+    many = await _blocking_stages(20)
+    capsys.readouterr()                                   # discard the rendered blocks
+
+    assert few == many
+    assert StepStage.COLLECT_STUDY not in few             # shown, never gated
+    assert few == [StepStage.COLLECTION_REVIEW, StepStage.AUDIT_SUMMARY,
+                   StepStage.JUDGE_FLAGS]
+
+
+@pytest.mark.asyncio
+async def test_stopping_at_a_study_keeps_the_evidence_already_collected(tmp_path):
+    pipe, _, store = _pipeline(tmp_path, [Decision.CONTINUE, Decision.STOP])
+    with pytest.raises(RunStopped):
+        await pipe.run(_items(), lambda sid: ReferenceEntry(title=sid), run_id="run1")
+
+    partial = tmp_path / "run1" / "package.partial.json"
+    assert partial.is_file()
+    data = json.loads(partial.read_text(encoding="utf-8"))
+    assert data["status"] == "in_progress"
+    assert len(data["source_items"]) == 3          # both groups were collected
+    assert not (tmp_path / "run1" / "package.json").is_file()   # never finalised
+
+
+@pytest.mark.asyncio
+async def test_full_run_writes_the_final_package(tmp_path):
+    pipe, _, store = _pipeline(tmp_path, [])
+    pkg = await pipe.run(_items(), lambda sid: ReferenceEntry(title=sid), run_id="run1")
+    assert pkg.status == "complete"
+    assert store.exists("run1")
+    assert pkg.report.n_match == 3
+
+
+@pytest.mark.asyncio
+async def test_collect_event_names_the_paper_and_shows_every_value(tmp_path):
+    pipe, gate, _ = _pipeline(tmp_path, [])
+    await pipe.run(_items(), lambda sid: ReferenceEntry(title=sid, doi="10.1/x"),
+                   run_id="run1")
+    first = next(e for e in gate.seen if e.stage is StepStage.COLLECT_STUDY)
+    assert first.subject == "doi:10.1/x"                     # which paper
+    assert len(first.payload["evidence"]) == 2               # full content, both claims
+    assert "review '24'" in first.render_blocks[0]

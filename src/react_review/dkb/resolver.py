@@ -53,8 +53,15 @@ class ResolvedField(BaseModel):
         return self.status == "candidate"
 
 
-def _cache_key(raw_name: str, unit: str, context: str) -> str:
-    return f"{raw_name.strip().lower()}||{unit.strip().lower()}||{context.strip().lower()}"
+def _cache_key(raw_name: str, unit: str, context: str, modality: str = "") -> str:
+    """Every signal that can change the answer must be part of the key.
+
+    Modality included: an ambiguous header like "EFT/ EAT" resolves to a
+    thickness in an echo study and a volume in a CT one, so caching on the name
+    alone would give every later row the first row's answer — silently.
+    """
+    return (f"{raw_name.strip().lower()}||{unit.strip().lower()}"
+            f"||{context.strip().lower()}||{modality.strip().lower()}")
 
 
 class FieldResolver:
@@ -94,7 +101,7 @@ class FieldResolver:
         self, raw_field_name: str, unit: str = "",
         modality: str = "", research_context: str = "", value: object = None,
     ) -> ResolvedField:
-        key = _cache_key(raw_field_name, unit, research_context)
+        key = _cache_key(raw_field_name, unit, research_context, modality)
 
         # 1. cache (per-run; dedupes repeat names without re-hitting the LLM)
         if key in self._cache:
