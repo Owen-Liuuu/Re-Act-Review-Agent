@@ -41,6 +41,7 @@ from react_review.steps.paper_verification.schemas import ReferenceEntry
 from react_review.tools.compare import CompareValuesTool
 from react_review.tools.extract import FetchFullTextTool
 from react_review.tools.extract_source import ExtractSourceValueTool
+from react_review.tools.extraction_cache import ExtractionCache
 from react_review.tools.registry import ToolRegistry
 from react_review.tools.semantic_compare import SemanticCompareTool
 
@@ -59,6 +60,7 @@ def main(argv: list[str] | None = None) -> None:
                     help="LLM config with an api_key (required unless --dry-run)")
     ap.add_argument("--limit", type=int, default=0, help="score only the first N rows")
     ap.add_argument("--studies", default="", help="comma-separated study_id filter")
+    ap.add_argument("--fields", default="", help="comma-separated field_type filter")
     ap.add_argument("--context", default="EAT thickness/volume in T1DM vs healthy controls")
     ap.add_argument("--tolerances", type=Path, default=None)
     ap.add_argument("--out", type=Path, default=None, help="write a JSON report")
@@ -71,12 +73,21 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--semantic-cache", type=Path, default=BENCH / "semantic_cache.json",
                     help="the recording both `on` and `cache-only` runs share, so a "
                          "replay reproduces the run that recorded it")
+    ap.add_argument("--extraction", choices=("live", "record", "replay"), default="live",
+                    help="live calls the LLM; record also saves raw model JSON; "
+                         "replay makes no extraction LLM calls")
+    ap.add_argument("--extraction-cache", type=Path,
+                    default=ROOT / "output" / "baselines" / "extraction_replay.json",
+                    help="raw extraction recording used by record/replay")
     args = ap.parse_args(argv)
 
     rows = _load_answer_key(BENCH / "audit_template.csv")
     if args.studies:
         keep = {s.strip() for s in args.studies.split(",") if s.strip()}
         rows = [r for r in rows if r["study_id"] in keep]
+    if args.fields:
+        keep_fields = {s.strip() for s in args.fields.split(",") if s.strip()}
+        rows = [r for r in rows if r["field_type"] in keep_fields]
     if args.limit:
         rows = rows[: args.limit]
 
@@ -86,19 +97,24 @@ def main(argv: list[str] | None = None) -> None:
         print("by expected_label:", dict(Counter(r["expected_label"] for r in rows)))
         return
 
-    if args.config is None:
-        ap.error("--config is required unless --dry-run")
+    needs_backend = args.extraction != "replay" or args.semantic == "on"
+    if args.config is None and needs_backend:
+        ap.error("--config is required for live extraction or live semantic comparison")
 
     studies = load_included_studies(BENCH / "included_studies.csv")
     by_id = {s.study_id: s for s in studies}
 
-    backend = _create_llm_backend(load_config(args.config))
+    backend = (_create_llm_backend(load_config(args.config))
+               if args.config is not None else None)
     tol = ToleranceTable.from_yaml(args.tolerances) if args.tolerances else ToleranceTable()
     retriever = LocalPdfRetriever(
         {s.doi: s.source_pdf for s in studies if s.doi and s.source_pdf}, base_dir=BENCH)
     reg = ToolRegistry()
     reg.register(FetchFullTextTool(retriever))
-    reg.register(ExtractSourceValueTool(backend))
+    extraction_cache = (None if args.extraction == "live"
+                        else ExtractionCache(args.extraction_cache))
+    reg.register(ExtractSourceValueTool(
+        backend, cache=extraction_cache, cache_mode=args.extraction))
     kb = load_runtime_knowledge(
         ROOT / "configs" / "knowledge.seed.json", ROOT / "configs" / "ontology")
     collector = Collector(reg, knowledge=kb)
@@ -119,6 +135,14 @@ def main(argv: list[str] | None = None) -> None:
     print(f"running {len(rows)} rows through Collector + audit …")
     results = asyncio.run(run_rows(rows, collector, tol, reference_for, args.context,
                                    comparator=comparator))
+    if extraction_cache is not None:
+        if args.extraction == "record":
+            extraction_cache.save()
+        print(f"extraction: mode={args.extraction} "
+              f"{extraction_cache.hits} reused / {extraction_cache.misses} cache misses "
+              f"({len(extraction_cache)} recorded) -> {args.extraction_cache}")
+    else:
+        print("extraction: mode=live; model variance is not hidden by a replay")
     if cache is not None:
         cache.save()
         print(f"semantic: mode={args.semantic} "
@@ -145,8 +169,21 @@ def main(argv: list[str] | None = None) -> None:
         print(f"[html] {args.html.resolve()}")
 
     if args.out:
+        run_meta = {
+            "extraction_mode": args.extraction,
+            "extraction_cache": str(args.extraction_cache.resolve())
+                                if extraction_cache is not None else "",
+            "extraction_model_id": (getattr(backend, "model_id", "")
+                                    or getattr(extraction_cache, "model_id", "")),
+            "extraction_cache_hits": (extraction_cache.hits
+                                      if extraction_cache is not None else 0),
+            "extraction_cache_misses": (extraction_cache.misses
+                                        if extraction_cache is not None else 0),
+            "semantic_mode": args.semantic,
+        }
         args.out.write_text(
-            json.dumps({"metrics": metrics, "rows": [asdict(r) for r in results]},
+            json.dumps({"run": run_meta, "metrics": metrics,
+                        "rows": [asdict(r) for r in results]},
                        ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"[report] {args.out.resolve()}")
 

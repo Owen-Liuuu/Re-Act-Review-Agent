@@ -89,6 +89,18 @@ async def test_absent_values_are_not_sent_for_equivalence(review, source):
 
 
 @pytest.mark.asyncio
+async def test_missing_source_with_residual_unit_neither_compares_nor_escalates():
+    tool, backend = _tool()
+    out = await tool.run(CompareInput(
+        field_type="eat_thickness", review_value="0.7", source_value=None,
+        review_unit="mm", source_unit="cm",
+    ))
+    assert out.label is AuditLabel.NOT_COMPARABLE
+    assert out.reason == "the source value is missing; units were not compared"
+    assert backend.calls == 0
+
+
+@pytest.mark.asyncio
 async def test_off_is_the_default_and_leaves_the_audit_deterministic():
     tool = CompareValuesTool(ToleranceTable())
     out = await tool.run(_text_pair())

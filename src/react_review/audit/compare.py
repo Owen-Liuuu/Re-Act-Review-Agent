@@ -1,12 +1,13 @@
 """``compare_values`` — the deterministic audit verdict for one value pair.
 
 Rule (Tier-3), in order:
-  1. Units present and different                 -> UNIT_MISMATCH
-  2. Either primary value unparseable            -> NOT_COMPARABLE
-  3. MEAN relative error > mean tolerance         -> MISMATCH
+  0. Either value missing / explicitly unavailable -> NOT_COMPARABLE
+  1. Units present and different                   -> UNIT_MISMATCH
+  2. Either primary value unparseable              -> NOT_COMPARABLE
+  3. MEAN relative error > mean tolerance           -> MISMATCH
   4. Both sides have an SD and the SD relative
      error > SD tolerance                         -> MISMATCH (SD-driven)
-  5. otherwise                                    -> MATCH
+  5. otherwise                                      -> MATCH
 
 Dual band: the mean (primary value) uses the tight band (MVP 1%); the SD uses a
 separate, looser band (MVP 3%) and is only checked when BOTH sides report a
@@ -28,6 +29,22 @@ _EPS = 1e-9
 _CI_TOLERANCE = 0.05
 
 Value = str | int | float | None
+
+# A stated absence is not a value.  This list is deliberately shared with the
+# semantic escalation gate: neither deterministic unit comparison nor an LLM
+# may turn an unavailable source value into evidence about that value.
+_MISSING_VALUES = {
+    "", "-", "—", "na", "n/a", "nr", "nd", "ne", "none", "null",
+    "not reported", "not applicable", "not available", "not stated",
+    "not reached", "unknown",
+}
+
+
+def is_missing_value(value: object) -> bool:
+    """Return True when *value* explicitly carries no auditable value."""
+    return value is None or (
+        isinstance(value, str) and value.strip().lower() in _MISSING_VALUES
+    )
 
 
 def _rel(a: float, b: float) -> float:
@@ -213,7 +230,18 @@ def compare_values(
         sd_tolerance_pct=round(sd_rel_tolerance * 100.0, 4),
     )
 
-    # 1. Unit axis takes precedence.
+    # 0. Existence takes precedence over every assertion about a value.  In
+    # particular, a residual unit returned alongside ``source_value=None`` is
+    # extraction metadata, not evidence that the review used the wrong unit.
+    for side, value in (("review", review_value), ("source", source_value)):
+        if is_missing_value(value):
+            return MatchResult(
+                **base,
+                label=AuditLabel.NOT_COMPARABLE,
+                reason=f"the {side} value is missing; units were not compared",
+            )
+
+    # 1. Unit axis takes precedence once both sides contain real values.
     if units_differ(review_unit, source_unit):
         return MatchResult(
             **base,

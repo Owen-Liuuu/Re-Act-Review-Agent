@@ -52,6 +52,18 @@ async def test_verdict_partial_on_unit_only():
 
 
 @pytest.mark.asyncio
+async def test_missing_source_value_precedes_residual_source_unit():
+    report = await _orch().run(
+        [_rv("s1", "t1dm", "eat_thickness", "0.7", unit="mm")],
+        [_sv("s1", "t1dm", "eat_thickness", None, unit="cm")],
+    )
+    assert report.n_unit_mismatch == 0
+    assert report.n_not_comparable == 1
+    assert report.results[0].reason == (
+        "the source value is missing; units were not compared")
+
+
+@pytest.mark.asyncio
 async def test_verdict_pass_when_all_match():
     report = await _orch().run(
         [_rv("s1", "t1dm", "age", "34", unit="years")],

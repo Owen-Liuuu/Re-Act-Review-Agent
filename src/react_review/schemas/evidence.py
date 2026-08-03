@@ -17,6 +17,14 @@ from react_review.schemas.reason import ReasonRecord
 Value = str | int | float | None
 
 
+class CohortCount(BaseModel):
+    """One explicitly printed arm count and its supporting source words."""
+
+    label: str
+    count: int
+    quote: str
+
+
 class ReviewDataItem(BaseModel):
     """One value the review reports (a cell of its data-extraction table).
 
@@ -76,6 +84,13 @@ class SourceEvidenceItem(BaseModel):
     source_unit: str = ""
     source_quote: str = ""
     source_location_in_paper: str = ""
+    value_origin: str = ""       # verbatim | derived_sum | unresolved
+    derivation: str = ""
+    cohort_counts: list[CohortCount] = Field(default_factory=list)
+    aggregation_status: str = "not_applicable"  # not_applicable | derived | rejected | protocol_error
+    aggregation_reason: str = ""
+    evidence_check: str = "ok"   # ok | protocol_error
+    evidence_reason: str = ""
     # WHERE this was read from. ``source_location_in_paper`` says "Table 2" — of
     # WHICH document was never recorded, so a reader could not go and check.
     # A local run has a file; an online one has a URL; both always have a kind.

@@ -200,10 +200,13 @@ def render_eval_report(metrics: dict[str, Any], rows: list) -> str:
                       "<p class='empty'>No rows scored.</p>", "")
 
     d, e = metrics["discrepancy"], metrics["extraction"]
+    safety = metrics.get("safety", {})
     tiles = [("Label accuracy", _pct(metrics["label_accuracy"]), "accent"),
              ("Precision", _pct(d["precision"]), "good"),
              ("Recall", _pct(d["recall"]), "good"),
              ("F1", _pct(d["f1"]), "good"),
+             ("Silent releases", str(safety.get("silent_release_count", 0)), "good"),
+             ("Review visibility", _pct(safety.get("review_visibility_rate")), "good"),
              ("Found rate", _pct(e["found_rate"]), "muted"),
              ("Value match", _pct(e["value_match_rate"]), "muted")]
     tiles_html = "".join(
@@ -217,14 +220,23 @@ def render_eval_report(metrics: dict[str, Any], rows: list) -> str:
     body_rows = ""
     for r in rows:
         ok = r.predicted_label == r.expected_label
+        audit_detail = " · ".join(x for x in (
+            getattr(r, "match_mode", ""), getattr(r, "match_reason", "")) if x)
+        source_detail = " · ".join(x for x in (
+            getattr(r, "source_unit", ""), getattr(r, "value_origin", ""),
+            getattr(r, "source_file", "")) if x)
+        quote = getattr(r, "source_quote", "")
         body_rows += (
             f'<tr class="r-{"" if ok else "bad"}">'
             f'<td><b>{escape(r.study_id)}</b><br><span class="sub">{escape(r.group)}</span></td>'
             f'<td>{escape(r.field_type)}</td>'
             f'<td>{_chip(r.expected_label)}</td>'
-            f'<td>{_chip(r.predicted_label)}</td>'
+            f'<td>{_chip(r.predicted_label)}<br><span class="sub">{escape(audit_detail)}</span></td>'
             f'<td class="num">{"✓" if ok else "✗"}</td>'
-            f'<td class="num">{escape(r.extracted_source)} <span class="u">vs {escape(r.expected_source)}</span></td>'
+            f'<td class="num">{escape("" if r.extracted_source is None else str(r.extracted_source))} '
+            f'<span class="u">vs {escape("" if r.expected_source is None else str(r.expected_source))}</span>'
+            f'<br><span class="sub">{escape(source_detail)}</span>'
+            f'<br><span class="sub">{escape(quote)}</span></td>'
             f'<td>{escape(r.outcome)}</td></tr>')
 
     body = (f'<div class="tiles">{tiles_html}</div>{dd}'

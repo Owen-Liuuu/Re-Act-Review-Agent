@@ -46,6 +46,7 @@
 | 编号 | 现象 | 影响 | 位置 | 改进方向 |
 |---|---|---|---|---|
 | **L10** | **只在单一基准验证** —— 全部指标基于一篇综述(EAT/T1DM) | 跨领域/跨综述表现未知 | `eval/benchmark/` | 加第 2、3 个不同领域的标注基准 |
+| **L13** | **实时 LLM 抽取不能充当确定性代码的回归基线** —— 同一评估代码与输入在两次 live 运行中曾把 Iacobellis 总人数分别抽成 30 和 15；Phase 6-0e 的独立 live 又比冻结 replay 多漏 2 行 | 把 live 波动混入代码回归会误判修复或回归，也会诱导“重跑到绿色” | `tools/extraction_cache.py`、`eval/run_full_accuracy.py` | 确定性回归使用版本化 raw-response replay；live 运行独立报告方差，禁止覆盖旧缓存或用重复运行挑选最好结果 |
 
 ### F. 语义等价(Phase 4B 新增)
 

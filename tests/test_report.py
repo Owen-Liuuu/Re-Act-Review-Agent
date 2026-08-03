@@ -145,6 +145,20 @@ def test_render_eval_report():
     assert "ahmad_2022" in html and "keles_2016" in html
 
 
+def test_render_eval_report_accepts_json_null_source_value():
+    rows = [
+        RowResult("keles_2016", "t1dm", "eat_thickness",
+                  expected_label="unit_mismatch", predicted_label="not_comparable",
+                  expected_source="0.7", extracted_source=None, found=False,
+                  outcome="missing_source", extraction_correct=False,
+                  source_unit="cm"),
+    ]
+    html = render_eval_report(score_rows(rows), rows)
+    assert "Silent releases" in html
+    assert "Review visibility" in html
+    assert "missing_source" in html
+
+
 def test_render_parser_report():
     stats = {
         "n_gt": 101, "n_parser": 112, "n_matched": 40, "recall": 0.396,

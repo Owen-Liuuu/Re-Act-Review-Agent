@@ -5,14 +5,15 @@ script supplies the (slow, LLM-backed) Collector and does the IO. Measures the
 Collector + audit against the benchmark answer key:
 
 - end-to-end audit label accuracy (predicted vs the hand-labeled expected_label);
-- discrepancy-detection precision/recall (a "flag" = mismatch or unit_mismatch);
+- strict discrepancy precision/recall (automatic mismatch/unit_mismatch only);
+- safety visibility (a true discrepancy must never be silently labelled MATCH);
 - source extraction: found-rate + value-match-rate vs the hand-labeled source;
 - collection_outcome breakdown (found / source_access_failed / missing_source).
 """
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import asdict as dataclass_asdict, dataclass, field
 from typing import Any, Awaitable, Callable, Protocol
 
 from react_review.audit import ToleranceTable
@@ -21,6 +22,7 @@ from react_review.tools.compare import CompareValuesTool
 from react_review.tools.models import CompareInput
 from react_review.core.enums import AuditLabel
 from react_review.schemas.evidence import ReviewDataItem
+from react_review.normalize import parse_numeric
 
 # A "flag" (positive for discrepancy detection) is any non-clean, comparable verdict.
 FLAG_LABELS = {AuditLabel.MISMATCH.value, AuditLabel.UNIT_MISMATCH.value}
@@ -35,11 +37,32 @@ class RowResult:
     field_type: str
     expected_label: str
     predicted_label: str
-    expected_source: str
-    extracted_source: str
+    expected_source: str | None
+    extracted_source: str | None
     found: bool
     outcome: str
     extraction_correct: bool
+    review_value: str = ""
+    review_unit: str = ""
+    source_unit: str = ""
+    source_quote: str = ""
+    source_location: str = ""
+    source_file: str = ""
+    source_uri: str = ""
+    value_origin: str = ""
+    derivation: str = ""
+    cohort_counts: list[dict[str, Any]] = field(default_factory=list)
+    aggregation_status: str = ""
+    aggregation_reason: str = ""
+    evidence_check: str = ""
+    evidence_reason: str = ""
+    reasons: list[dict[str, Any]] = field(default_factory=list)
+    match_mode: str = ""
+    match_reason: str = ""
+    components_compared: list[str] = field(default_factory=list)
+    components_unconsumed: list[str] = field(default_factory=list)
+    review_numeric: dict[str, Any] = field(default_factory=dict)
+    source_numeric: dict[str, Any] = field(default_factory=dict)
 
 
 class _CollectorLike(Protocol):
@@ -82,10 +105,11 @@ async def run_rows(
             review, reference_for(review.study_id), research_context=research_context)
         si = res.source_item
 
-        predicted = (await _compare(
+        match = await _compare(
             comparator, review.field_type, review.value, si.source_value,
             review.unit, si.source_unit, quote=si.source_quote,
-            research_context=research_context)).label
+            research_context=research_context)
+        predicted = match.label
         # Extraction is "correct" when the extracted value matches the human's
         # hand-labeled source value within tolerance.
         expected_source = r.get("source_value") or None
@@ -98,9 +122,24 @@ async def run_rows(
             study_id=review.study_id, group=review.group, field_type=review.field_type,
             expected_label=(r.get("expected_label") or ""),
             predicted_label=predicted.value,
-            expected_source=str(expected_source), extracted_source=str(si.source_value),
+            expected_source=expected_source, extracted_source=si.source_value,
             found=si.source_value is not None,
             outcome=si.collection_outcome.value, extraction_correct=extraction_correct,
+            review_value=str(review.value), review_unit=review.unit,
+            source_unit=si.source_unit, source_quote=si.source_quote,
+            source_location=si.source_location_in_paper,
+            source_file=si.source_file, source_uri=si.source_uri,
+            value_origin=si.value_origin, derivation=si.derivation,
+            cohort_counts=[c.model_dump(mode="json") for c in si.cohort_counts],
+            aggregation_status=si.aggregation_status,
+            aggregation_reason=si.aggregation_reason,
+            evidence_check=si.evidence_check, evidence_reason=si.evidence_reason,
+            reasons=[reason.model_dump(mode="json") for reason in si.reasons],
+            match_mode=match.match_mode, match_reason=match.reason,
+            components_compared=list(match.components_compared),
+            components_unconsumed=list(match.components_unconsumed),
+            review_numeric=dataclass_asdict(parse_numeric(review.value)),
+            source_numeric=dataclass_asdict(parse_numeric(si.source_value)),
         ))
     return results
 
@@ -114,9 +153,19 @@ def score_rows(results: list[RowResult]) -> dict[str, Any]:
     label_correct = sum(r.predicted_label == r.expected_label for r in results)
 
     tp = fp = fn = tn = 0
+    expected_discrepancies = silent_releases = visible_discrepancies = 0
+    escalated_not_comparable = 0
     for r in results:
         pred_pos = r.predicted_label in FLAG_LABELS
         exp_pos = r.expected_label in FLAG_LABELS
+        if exp_pos:
+            expected_discrepancies += 1
+            if r.predicted_label == AuditLabel.MATCH.value:
+                silent_releases += 1
+            else:
+                visible_discrepancies += 1
+                if r.predicted_label == AuditLabel.NOT_COMPARABLE.value:
+                    escalated_not_comparable += 1
         if pred_pos and exp_pos:
             tp += 1
         elif pred_pos and not exp_pos:
@@ -129,6 +178,8 @@ def score_rows(results: list[RowResult]) -> dict[str, Any]:
     recall = tp / (tp + fn) if (tp + fn) else None
     f1 = (2 * precision * recall / (precision + recall)
           if precision and recall else None)
+    visibility_rate = (visible_discrepancies / expected_discrepancies
+                       if expected_discrepancies else None)
 
     n_found = sum(r.found for r in results)
     n_extract_ok = sum(r.extraction_correct for r in results)
@@ -139,6 +190,13 @@ def score_rows(results: list[RowResult]) -> dict[str, Any]:
         "discrepancy": {
             "tp": tp, "fp": fp, "fn": fn, "tn": tn,
             "precision": precision, "recall": recall, "f1": f1,
+        },
+        "safety": {
+            "expected_discrepancies": expected_discrepancies,
+            "silent_release_count": silent_releases,
+            "visible_discrepancies": visible_discrepancies,
+            "review_visibility_rate": visibility_rate,
+            "escalated_not_comparable": escalated_not_comparable,
         },
         "extraction": {
             "found_rate": n_found / n,
@@ -158,7 +216,7 @@ def _pct(x: float | None) -> str:
 def format_report(metrics: dict[str, Any]) -> str:
     if metrics.get("n", 0) == 0:
         return "no rows scored."
-    d, e = metrics["discrepancy"], metrics["extraction"]
+    d, e, s = metrics["discrepancy"], metrics["extraction"], metrics["safety"]
     lines = [
         "",
         "================ C1 accuracy ================",
@@ -168,6 +226,11 @@ def format_report(metrics: dict[str, Any]) -> str:
         f"  precision            : {_pct(d['precision'])}  (tp={d['tp']} fp={d['fp']})",
         f"  recall               : {_pct(d['recall'])}  (fn={d['fn']} tn={d['tn']})",
         f"  f1                   : {_pct(d['f1'])}",
+        "-- safety visibility (true discrepancy must not silently MATCH) --",
+        f"  silent releases      : {s['silent_release_count']}",
+        f"  review visibility    : {_pct(s['review_visibility_rate'])}  "
+        f"(visible={s['visible_discrepancies']} "
+        f"escalated={s['escalated_not_comparable']})",
         "-- source extraction --",
         f"  found rate           : {_pct(e['found_rate'])}",
         f"  value match rate     : {_pct(e['value_match_rate'])}",

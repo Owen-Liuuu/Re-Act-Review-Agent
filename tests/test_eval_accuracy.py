@@ -37,6 +37,13 @@ def test_score_rows_metrics():
         "tp": 1, "fp": 1, "fn": 1, "tn": 2,
         "precision": 0.5, "recall": 0.5, "f1": 0.5,
     }
+    assert m["safety"] == {
+        "expected_discrepancies": 2,
+        "silent_release_count": 1,
+        "visible_discrepancies": 1,
+        "review_visibility_rate": 0.5,
+        "escalated_not_comparable": 0,
+    }
     assert m["extraction"]["found_rate"] == 4 / 5
     assert m["extraction"]["value_match_rate"] == 3 / 5
     assert m["outcomes"] == {"found": 4, "source_access_failed": 1}
@@ -59,6 +66,8 @@ class _FakeCollector:
         si = SourceEvidenceItem(
             study_id=review_item.study_id, group=review_item.group,
             field_type=review_item.field_type, source_value=v, source_unit=u,
+            source_quote=f"quoted {v}", source_file="C:/papers/source.pdf",
+            value_origin="verbatim",
             collection_outcome=oc)
         return SimpleNamespace(source_item=si)
 
@@ -82,4 +91,38 @@ async def test_run_rows_predicts_labels_and_extraction():
                          lambda sid: ReferenceEntry(title=sid))
     assert res[0].predicted_label == "match" and res[0].extraction_correct is True
     assert res[1].predicted_label == "mismatch" and res[1].extraction_correct is True
+    assert res[0].source_quote == "quoted 6.60 ± 0.71"
+    assert res[0].source_file == "C:/papers/source.pdf"
+    assert res[0].source_unit == "mm" and res[0].review_unit == "mm"
+    assert res[0].value_origin == "verbatim"
+    assert res[0].match_mode == "numeric" and res[0].match_reason
+    assert res[0].review_numeric["primary"] == 6.60
+    assert res[0].source_numeric["spread"] == 0.71
     assert score_rows(res)["label_accuracy"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_missing_source_with_residual_unit_is_null_and_visible():
+    rows = [{
+        "study_id": "keles_2016", "group": "t1dm",
+        "field_type": "eat_thickness", "review_value": "0.7", "unit": "mm",
+        "source_value": "0.7", "source_unit": "cm",
+        "expected_label": "unit_mismatch",
+    }]
+    smap = {
+        ("keles_2016", "t1dm", "eat_thickness"):
+            (None, "cm", CollectionOutcome.MISSING_SOURCE),
+    }
+
+    result = (await run_rows(
+        rows, _FakeCollector(smap), ToleranceTable(),
+        lambda sid: ReferenceEntry(title=sid),
+    ))[0]
+
+    assert result.extracted_source is None
+    assert result.predicted_label == "not_comparable"
+    assert result.match_reason == "the source value is missing; units were not compared"
+    safety = score_rows([result])["safety"]
+    assert safety["silent_release_count"] == 0
+    assert safety["review_visibility_rate"] == 1.0
+    assert safety["escalated_not_comparable"] == 1

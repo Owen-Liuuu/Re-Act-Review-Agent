@@ -8,17 +8,53 @@ side; here the LLM maps it back to whatever the source paper calls it.
 from __future__ import annotations
 
 import re
+import unicodedata
 
 import structlog
 from pydantic import BaseModel, Field
 
 from react_review.llm.base import LLMBackend, parse_llm_response
+from react_review.schemas.evidence import CohortCount
 from react_review.steps.data_extraction.schemas import PaperDocument
 from react_review.tools.base import Tool, ToolStage
+from react_review.tools.extraction_cache import (
+    ExtractionCache,
+    ExtractionCacheMiss,
+    extraction_cache_key,
+)
 
 logger = structlog.get_logger(__name__)
 
 _MAX_TEXT = 20000
+PROMPT_VERSION = "extract-source-v3-scoped-cohort-counts"
+
+_SAMPLE_SIZE_RULES = """- SPECIAL CASE — whole-study sample size: if the paper explicitly prints the
+  total, copy it and set ``explicit_total_reported=true``. If it prints only arm
+  counts, leave found=false/value=null and copy EVERY explicit arm count into
+  ``cohort_counts`` with its own verbatim quote. Never add the arms yourself.
+- ``explicit_total_reported=true`` is allowed ONLY when the total numeral itself
+  appears in ``quote``. A quote containing "15 in A and 15 in B" does NOT print
+  the total 30: return value=null and the two cohort_counts. Whenever multiple
+  cohorts are seen, populate cohort_counts even if an explicit total also exists.
+- Set ``cohort_partition_complete`` and ``cohort_partition_mutually_exclusive``
+  true only when the paper clearly establishes that the listed arms cover the
+  full population without overlap. Copy those supporting words/header into
+  ``cohort_partition_quote``. For overlap, missing arms, a range, or unclear
+  coverage, leave the relevant flag false and explain why.
+- Every quote must be one contiguous verbatim substring of PAPER TEXT. Do not
+  insert ellipses, paraphrase, or join separated passages. A Methods sentence
+  that enumerates all enrolled/participating arms can establish coverage; it
+  need not literally use the words "complete" or "mutually exclusive".
+- Operational definition: ``complete=true`` when a Methods/enrolment sentence
+  presents the counted groups as all participant arms in that study (for
+  example, "N arm A and M arm B underwent...") and names no additional arm.
+  ``mutually_exclusive=true`` when that same passage presents them as separate
+  comparison arms (patients vs controls, treatment vs placebo, etc.) and does
+  not say membership overlaps. Do NOT set either false merely because the paper
+  omits the literal words "only", "complete", or "mutually exclusive".
+- A baseline/characteristics table can also establish the partition when its
+  only participant columns are the separately counted study arms. In that case,
+  quote one contiguous table header/block containing every arm label and N."""
 
 _PROMPT = """You are extracting ONE specific value from a source paper for an audit.
 
@@ -28,6 +64,7 @@ _PROMPT = """You are extracting ONE specific value from a source paper for an au
 ## TARGET
 Find the value of **{concept}** for the **{group_desc}**.
 (The review's column was labelled "{raw_label}"; internal field_type: {field_type}.)
+The paper may name this field using: {concept_variants}
 Expected unit (hint, may differ in the paper): "{unit_hint}"
 
 ## RULES
@@ -49,7 +86,12 @@ Expected unit (hint, may differ in the paper): "{unit_hint}"
   only / the text is truncated / the table did not come through, …). "Not found"
   without a reason cannot be acted on.
 - Return the value and unit EXACTLY as printed (keep "mean ± SD" / "median (IQR)").
-- Do NOT infer or compute; only report what is written.
+- Do not infer a missing value and do not perform arithmetic.
+- ``quote`` must be one contiguous verbatim substring of PAPER TEXT and must
+  contain the returned value. Never paraphrase, insert ellipses, or construct a
+  supporting sentence. If no such quote exists, return found=false.
+{sample_size_rules}
+{retry_rules}
 
 ## PAPER TEXT
 {paper_text}
@@ -60,6 +102,13 @@ Expected unit (hint, may differ in the paper): "{unit_hint}"
   "found": true or false, "value": "verbatim value or null", "unit": "verbatim unit or empty",
   "quote": "verbatim supporting sentence/cell", "source_field_name": "the paper's own label for this field",
   "location": "where (e.g. Table 2, Results)",
+  "explicit_total_reported": false,
+  "cohort_counts": [{{"label": "paper's arm name", "count": 15,
+                       "quote": "verbatim text containing this arm and count"}}],
+  "cohort_partition_complete": false,
+  "cohort_partition_mutually_exclusive": false,
+  "cohort_partition_quote": "verbatim text establishing the partition, or empty",
+  "cohort_partition_reason": "why coverage/exclusivity is clear or unclear",
   "not_found_reason": "when found=false, why — otherwise empty"}}
 """
 
@@ -144,6 +193,7 @@ class ExtractSourceValueInput(BaseModel):
     field_type: str
     group: str = "-"
     concept: str = ""
+    concept_variants: list[str] = Field(default_factory=list)
     raw_field_name: str = ""      # the review's own column label — the extraction target
     unit_hint: str = ""
     research_context: str = ""
@@ -151,6 +201,7 @@ class ExtractSourceValueInput(BaseModel):
     # so the guard can check the paper's label without any disease vocabulary.
     cohort_display: str = ""
     cohorts: dict[str, list[str]] = {}
+    attempt: int = 0
 
 
 class SourceValueResult(BaseModel):
@@ -170,6 +221,13 @@ class SourceValueResult(BaseModel):
     # Both were previously discarded, leaving "found=false" with no explanation.
     not_found_reason: str = ""
     cohorts_seen: list[str] = Field(default_factory=list)
+    value_origin: str = "unresolved"
+    derivation: str = ""
+    cohort_counts: list[CohortCount] = Field(default_factory=list)
+    aggregation_status: str = "not_applicable"  # also derived | rejected | protocol_error
+    aggregation_reason: str = ""
+    evidence_check: str = "ok"  # ok | protocol_error
+    evidence_reason: str = ""
     error: str = ""
 
 
@@ -181,8 +239,22 @@ class ExtractSourceValueTool(Tool):
     input_model = ExtractSourceValueInput
     output_model = SourceValueResult
 
-    def __init__(self, backend: LLMBackend) -> None:
+    def __init__(
+        self,
+        backend: LLMBackend | None,
+        *,
+        cache: ExtractionCache | None = None,
+        cache_mode: str = "live",
+    ) -> None:
+        if cache_mode not in {"live", "record", "replay"}:
+            raise ValueError("cache_mode must be live, record, or replay")
+        if cache_mode in {"record", "replay"} and cache is None:
+            raise ValueError(f"{cache_mode} extraction requires a cache")
+        if cache_mode != "replay" and backend is None:
+            raise ValueError("live extraction requires an LLM backend")
         self._backend = backend
+        self._cache = cache
+        self._cache_mode = cache_mode
 
     async def run(self, payload: ExtractSourceValueInput) -> SourceValueResult:
         # The target description prefers the canonical concept, but falls back to
@@ -194,15 +266,51 @@ class ExtractSourceValueTool(Tool):
             concept=target,
             raw_label=payload.raw_field_name or target,
             field_type=payload.field_type or "(unresolved)",
+            concept_variants=(", ".join(payload.concept_variants)
+                              or raw_or_target(payload.raw_field_name, target)),
             group_desc=cohort_description(
                 payload.group, display=payload.cohort_display,
                 variants=payload.cohorts.get(payload.group, [])),
             unit_hint=payload.unit_hint,
-            paper_text=(payload.document.full_text or "")[:_MAX_TEXT],
+            sample_size_rules=(
+                _SAMPLE_SIZE_RULES if payload.field_type == "sample_size" and
+                (payload.group or "").strip().lower() in {"all", "-"} else ""),
+            retry_rules=("- RETRY CORRECTION: the previous response failed a "
+                         "deterministic evidence check. Re-read the paper and "
+                         "return only an exact contiguous quote that is visibly "
+                         "present in PAPER TEXT and contains the extracted value. "
+                         "The returned unit must also be exactly the unit printed "
+                         "in that quote; do not correct a paper's apparent typo."
+                         if payload.attempt else ""),
+            paper_text=_paper_excerpt(
+                payload.document.full_text or "", target=target,
+                raw_label=payload.raw_field_name,
+                field_type=payload.field_type,
+                variants=payload.concept_variants),
         )
+        model_id = ((self._backend.model_id if self._backend is not None else "")
+                    or (self._cache.model_id if self._cache is not None else "")
+                    or "replay")
+        key = extraction_cache_key(
+            model_id=model_id, prompt_version=PROMPT_VERSION, prompt=prompt,
+            attempt=payload.attempt)
         try:
-            raw = await self._backend.complete(prompt)
-            data = parse_llm_response(raw, self._backend.model_id)
+            # record is resumable: reuse a response already persisted for this
+            # exact prompt/attempt, and call the model only for a cache miss.
+            data = (self._cache.get(key)
+                    if self._cache_mode in {"record", "replay"} else None)
+            if data is None:
+                if self._cache_mode == "replay":
+                    raise ExtractionCacheMiss(
+                        f"no recorded extraction for {payload.document.paper_id}/"
+                        f"{payload.group}/{payload.field_type}, attempt {payload.attempt + 1}")
+                assert self._backend is not None
+                raw = await self._backend.complete(prompt)
+                data = parse_llm_response(raw, self._backend.model_id)
+                if self._cache_mode == "record" and self._cache is not None:
+                    self._cache.put(key, data, model_id=self._backend.model_id)
+        except ExtractionCacheMiss:
+            raise
         except Exception as exc:
             # The text is CARRIED, not just logged: without it the Collector can
             # only record "not found", and a transport error becomes
@@ -212,51 +320,375 @@ class ExtractSourceValueTool(Tool):
                 found=False, error=str(exc)[:300],
                 not_found_reason=f"the extraction call failed: {type(exc).__name__}")
 
-        value = data.get("value")
-        if isinstance(value, str) and value.strip().lower() in ("", "null", "none", "n/a"):
-            value = None
-        found = bool(data.get("found")) and value is not None
-        label_in_paper = (data.get("group_label_in_paper") or "").strip()
-        quote = (data.get("quote") or "").strip()
+        return _finalize_result(data, payload)
 
-        # Guard: check the paper's OWN cohort label — and the quote, which may
-        # name a different arm than the label claims — against the cohorts this
-        # review reports. Three outcomes, and "not confirmed" is not "fine".
-        verdict, reason = "ok", ""
-        if found:
-            verdict, reason = cohort_conflicts(payload.group, label_in_paper,
-                                               cohorts=payload.cohorts)
-            if verdict != "wrong_cohort":
-                # The quote is prose, not a label: it can only ever PROVE the
-                # value came from another arm ("Regarding diabetic children …"
-                # quoted for a control ask). Not resembling a short cohort name
-                # is normal for a sentence and says nothing either way.
-                quote_verdict, quote_reason = cohort_conflicts(
-                    payload.group, quote, cohorts=payload.cohorts)
-                if quote_verdict == "wrong_cohort":
-                    verdict, reason = quote_verdict, quote_reason
 
-        if verdict == "wrong_cohort":
-            logger.info("extract_source_wrong_cohort", target=payload.group,
-                        got=label_in_paper, quote=quote[:80])
-            return SourceValueResult(
-                found=False, group_label_in_paper=label_in_paper,
-                wrong_group_rejected=True, cohort_check=verdict, cohort_reason=reason,
-                not_found_reason=reason)
+def _finalize_result(data: dict, payload: ExtractSourceValueInput) -> SourceValueResult:
+    """Validate raw model JSON and perform the one permitted derivation."""
+    value = data.get("value")
+    if isinstance(value, str) and value.strip().lower() in ("", "null", "none", "n/a"):
+        value = None
+    found = bool(data.get("found")) and value is not None
+    label_in_paper = str(data.get("group_label_in_paper") or "").strip()
+    quote = str(data.get("quote") or "").strip()
+    counts, count_error = _cohort_counts(
+        data.get("cohort_counts"), payload.document.full_text or "")
 
+    whole_sample = payload.field_type == "sample_size" and (
+        (payload.group or "").strip().lower() in {"all", "-"})
+    aggregation_status = "not_applicable"
+    aggregation_reason = ""
+    derivation = ""
+    value_origin = "verbatim" if found else "unresolved"
+
+    if whole_sample:
+        explicit_total = bool(data.get("explicit_total_reported"))
+        direct_count = _positive_integer(value)
+        direct_anchored = found and (
+            _count_quote_anchors(
+                quote, direct_count, payload.document.full_text or "")
+            if direct_count is not None else
+            _quote_anchors(quote, str(value), payload.document.full_text or ""))
+        # In a single-cohort paper, an anchored participant count is itself the
+        # whole-study count even if the model forgot the explicit-total boolean.
+        # With multiple cohorts we still require the explicit-total signal, so
+        # an arm count cannot masquerade as the total.
+        direct_is_total = direct_anchored and (
+            explicit_total or len(data.get("cohorts_seen") or []) <= 1)
+        if direct_is_total:
+            value_origin = "verbatim"
+        else:
+            derived, aggregation_reason = _derive_whole_study_count(
+                counts=counts, count_error=count_error,
+                complete=bool(data.get("cohort_partition_complete")),
+                mutually_exclusive=bool(data.get("cohort_partition_mutually_exclusive")),
+                partition_quote=str(data.get("cohort_partition_quote") or "").strip(),
+                partition_reason=str(data.get("cohort_partition_reason") or "").strip(),
+                paper_text=payload.document.full_text or "")
+            if derived is not None:
+                value = str(derived)
+                found = True
+                value_origin = "derived_sum"
+                aggregation_status = "derived"
+                derivation = (" + ".join(str(c.count) for c in counts)
+                              + f" = {derived} ("
+                              + "; ".join(c.label for c in counts) + ")")
+                quote = " | ".join(dict.fromkeys(c.quote for c in counts))
+            else:
+                value = None
+                found = False
+                value_origin = "unresolved"
+                # The model claiming an unquoted computed total, omitting arm
+                # structures despite seeing multiple arms, or returning a
+                # non-verbatim count quote is a retryable protocol failure. A
+                # well-formed answer that says coverage/overlap is unclear is a
+                # substantive rejection and must not be guessed around.
+                protocol_error = (
+                    (bool(data.get("found")) and explicit_total and not direct_anchored)
+                    or bool(count_error)
+                    or "not anchored by a verbatim source quote" in aggregation_reason
+                    or (len(data.get("cohorts_seen") or []) >= 2
+                        and len(counts) < len(data.get("cohorts_seen") or []))
+                )
+                aggregation_status = "protocol_error" if protocol_error else "rejected"
+                if protocol_error:
+                    aggregation_reason = (
+                        "the extraction response violated the sample-size contract: "
+                        + aggregation_reason)
+
+    # Guard: check the paper's OWN cohort label and quote against the review.
+    verdict, reason = "ok", ""
+    if found:
+        verdict, reason = cohort_conflicts(payload.group, label_in_paper,
+                                           cohorts=payload.cohorts)
+        if verdict != "wrong_cohort":
+            quote_verdict, quote_reason = cohort_conflicts(
+                payload.group, quote, cohorts=payload.cohorts)
+            if quote_verdict == "wrong_cohort":
+                verdict, reason = quote_verdict, quote_reason
+
+    if verdict == "wrong_cohort":
+        logger.info("extract_source_wrong_cohort", target=payload.group,
+                    got=label_in_paper, quote=quote[:80])
         return SourceValueResult(
-            found=found,
-            value=value if found else None,
-            unit=(data.get("unit") or "").strip(),
+            found=False, group_label_in_paper=label_in_paper,
+            wrong_group_rejected=True, cohort_check=verdict, cohort_reason=reason,
+            not_found_reason=reason, cohort_counts=counts,
+            value_origin="unresolved", aggregation_status=aggregation_status,
+            aggregation_reason=aggregation_reason)
+
+    # Every direct value must be supported by source text that can be found in
+    # the document. Derived totals were already checked count-by-count above;
+    # their display quote intentionally joins multiple independently anchored
+    # snippets and is not expected to be one source substring.
+    evidence_reason = ""
+    if found and value_origin != "derived_sum":
+        value_anchored = (
+            _count_quote_anchors(
+                quote, direct_count, payload.document.full_text or "")
+            if whole_sample and direct_count is not None else
+            _value_quote_anchors(
+                quote, str(value), payload.document.full_text or ""))
+        if not value_anchored:
+            evidence_reason = (
+                "the extracted value is not supported by a contiguous verbatim "
+                "quote in the source document")
+        elif not _unit_quote_anchors(str(data.get("unit") or ""), quote):
+            evidence_reason = (
+                "the returned unit is not printed in the supporting source quote")
+    if evidence_reason:
+        return SourceValueResult(
+            found=False, value=None, unit=str(data.get("unit") or "").strip(),
             quote=quote,
-            source_field_name=(data.get("source_field_name") or "").strip(),
-            location=(data.get("location") or "").strip(),
+            source_field_name=str(data.get("source_field_name") or "").strip(),
+            location=str(data.get("location") or "").strip(),
             group_label_in_paper=label_in_paper,
             cohort_check=verdict, cohort_reason=reason,
-            # The model was asked WHY when it found nothing; keep its answer,
-            # and keep the cohorts it saw — both were being thrown away.
-            not_found_reason=("" if found else
-                              (data.get("not_found_reason") or "").strip()),
+            not_found_reason=evidence_reason,
             cohorts_seen=[str(c) for c in (data.get("cohorts_seen") or [])
                           if isinstance(c, (str, int, float))],
-        )
+            value_origin="unresolved", cohort_counts=counts,
+            aggregation_status=aggregation_status,
+            aggregation_reason=aggregation_reason,
+            evidence_check="protocol_error", evidence_reason=evidence_reason)
+
+    model_not_found = str(data.get("not_found_reason") or "").strip()
+    return SourceValueResult(
+        found=found,
+        value=value if found else None,
+        unit=str(data.get("unit") or "").strip(),
+        quote=quote,
+        source_field_name=str(data.get("source_field_name") or "").strip(),
+        location=str(data.get("location") or "").strip(),
+        group_label_in_paper=label_in_paper,
+        cohort_check=verdict, cohort_reason=reason,
+        not_found_reason=("" if found else (aggregation_reason or model_not_found)),
+        cohorts_seen=[str(c) for c in (data.get("cohorts_seen") or [])
+                      if isinstance(c, (str, int, float))],
+        value_origin=value_origin, derivation=derivation,
+        cohort_counts=counts, aggregation_status=aggregation_status,
+        aggregation_reason=aggregation_reason,
+    )
+
+
+def raw_or_target(raw_label: str, target: str) -> str:
+    return raw_label or target
+
+
+def _paper_excerpt(text: str, *, target: str, raw_label: str,
+                   field_type: str, variants: list[str] | None = None) -> str:
+    """Keep the abstract plus the most target-dense later source blocks.
+
+    Taking only the first 20k characters silently omitted later tables.  This
+    selector is lexical and deterministic: it does not identify a value, it only
+    makes source regions containing the requested concept available to the
+    extractor while preserving the same context-size ceiling.
+    """
+    if len(text) <= _MAX_TEXT:
+        return text
+    generic = {
+        "and", "data", "field", "mean", "source", "study", "table", "the",
+        "total", "value", "values",
+    }
+    terms = {
+        token for token in re.findall(
+            r"[a-z0-9]+",
+            f"{target} {raw_label} {field_type} {' '.join(variants or [])}".lower())
+        if len(token) >= 3 and token not in generic
+    }
+    # Smaller overlapping blocks let a numeric table compete with discussion
+    # prose that repeats the concept many times. Numeric density is only a bonus
+    # after a block contains a target term, so unrelated number-heavy tables do
+    # not win a text-field query.
+    block_size, stride = 3000, 2500
+    blocks: list[tuple[int, int, int]] = []
+    lower = text.lower()
+    for start in range(0, len(text), stride):
+        end = min(len(text), start + block_size)
+        block = lower[start:end]
+        term_score = sum(block.count(term) for term in terms)
+        numeric_count = len(re.findall(r"(?<![a-z])\d+(?:\.\d+)?", block))
+        score = (term_score + min(numeric_count // 10, 20)
+                 if term_score else 0)
+        blocks.append((score, start, end))
+        if end == len(text):
+            break
+
+    selected = {(0, min(block_size, len(text)))}
+    for _score, start, end in sorted(blocks, key=lambda b: (-b[0], b[1])):
+        selected.add((start, end))
+        if sum(e - s for s, e in selected) >= _MAX_TEXT - 500:
+            break
+    pieces: list[str] = []
+    used = 0
+    for start, end in sorted(selected):
+        marker = f"\n\n[SOURCE EXCERPT {start}:{end}]\n"
+        room = _MAX_TEXT - used - len(marker)
+        if room <= 0:
+            break
+        piece = text[start:min(end, start + room)]
+        pieces.append(marker + piece)
+        used += len(marker) + len(piece)
+    return "".join(pieces)
+
+
+def _derive_whole_study_count(
+    *, counts: list[CohortCount], count_error: str, complete: bool,
+    mutually_exclusive: bool, partition_quote: str, partition_reason: str,
+    paper_text: str,
+) -> tuple[int | None, str]:
+    if count_error:
+        return None, count_error
+    if len(counts) < 2:
+        return None, ("whole-study total is not printed and fewer than two "
+                      "explicit arm counts were captured")
+    labels = [_normalise(c.label) for c in counts]
+    if any(not label for label in labels) or len(set(labels)) != len(labels):
+        return None, "arm labels are missing or duplicated, so the counts cannot be safely summed"
+    if not complete:
+        reason = "the captured arms are not confirmed to cover the full study population"
+        return None, reason + (f": {partition_reason}" if partition_reason else "")
+    if not mutually_exclusive:
+        reason = "the captured arms are not confirmed to be mutually exclusive"
+        return None, reason + (f": {partition_reason}" if partition_reason else "")
+    if partition_quote and not _normalised_contains(paper_text, partition_quote):
+        # Every arm count and quote has already been independently anchored.
+        # The two structured partition flags are sufficient for arithmetic; keep
+        # the absent independent partition sentence visible in the reason.
+        return sum(c.count for c in counts), (
+            "all explicit arm counts were anchored and the extraction marked "
+            "them complete/mutually exclusive; no separate partition quote was anchored")
+    return sum(c.count for c in counts), "all explicit, mutually-exclusive arms were deterministically summed"
+
+
+def _cohort_counts(raw: object, paper_text: str) -> tuple[list[CohortCount], str]:
+    if raw in (None, ""):
+        return [], ""
+    if not isinstance(raw, list):
+        return [], "cohort_counts is not a list"
+    result: list[CohortCount] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            return [], "a cohort count is not a structured object"
+        label = str(item.get("label") or "").strip()
+        quote = str(item.get("quote") or "").strip()
+        count = _positive_integer(item.get("count"))
+        if count is None:
+            return [], f"the count for {label or 'an unnamed arm'} is not one positive integer"
+        if not _count_quote_anchors(quote, count, paper_text):
+            return [], f"the count for {label or 'an unnamed arm'} is not anchored by a verbatim quote"
+        if not _label_anchors(label, quote):
+            return [], f"the quote for arm {label or '(unnamed)'} does not identify that arm"
+        result.append(CohortCount(label=label, count=count, quote=quote))
+    return result, ""
+
+
+def _positive_integer(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, float) and value.is_integer() and value > 0:
+        return int(value)
+    text = str(value or "").strip()
+    return int(text) if re.fullmatch(r"[1-9][0-9]*", text) else None
+
+
+def _normalise(text: str) -> str:
+    # PDF text often carries a printed line-wrap hyphen ("pres-\nent"). Join
+    # only across an actual newline; ordinary compounds such as "age-matched"
+    # remain tokenised as two words on both sides.
+    text = unicodedata.normalize("NFKD", text or "")
+    text = re.sub(r"(?<=[A-Za-z])[-\u00ad]\s*\n\s*(?=[A-Za-z])", "", text)
+    return " ".join(re.findall(r"[a-z0-9]+", text.lower()))
+
+
+def _normalised_contains(haystack: str, needle: str) -> bool:
+    normal_needle = _normalise(needle)
+    if not normal_needle:
+        return False
+    if normal_needle in _normalise(haystack):
+        return True
+    # PDF line wrapping may produce either pres-\nent -> present or
+    # sex-\nmatched -> sex matched. Ignoring separators on BOTH sides handles
+    # both without fuzzy word substitution or semantic inference.
+    compact_needle = _alnum_compact(needle)
+    compact_haystack = _alnum_compact(haystack)
+    return bool(compact_needle) and compact_needle in compact_haystack
+
+
+def _quote_anchors(quote: str, value: str, paper_text: str) -> bool:
+    return (_normalised_contains(paper_text, quote)
+            and bool(re.search(rf"(?<![0-9]){re.escape(value.strip())}(?![0-9])", quote)))
+
+
+def _value_quote_anchors(quote: str, value: str, paper_text: str) -> bool:
+    if not _normalised_contains(paper_text, quote):
+        return False
+    normal_value = _normalise(value)
+    normal_quote = _normalise(quote)
+    if normal_value and normal_value in normal_quote:
+        return True
+    compact_value = _alnum_compact(value)
+    compact_quote = _alnum_compact(quote)
+    return bool(compact_value) and compact_value in compact_quote
+
+
+def _unit_quote_anchors(unit: str, quote: str) -> bool:
+    compact_unit = _alnum_compact(unit)
+    if not compact_unit or compact_unit in {"count", "counts", "participant",
+                                            "participants", "subject", "subjects"}:
+        return True
+    return compact_unit in _alnum_compact(quote)
+
+
+def _alnum_compact(text: str) -> str:
+    normal = unicodedata.normalize("NFKD", text or "").lower()
+    return "".join(re.findall(r"[a-z0-9]+", normal))
+
+
+def _count_quote_anchors(quote: str, count: int, paper_text: str) -> bool:
+    if not _normalised_contains(paper_text, quote):
+        return False
+    if re.search(rf"(?<![0-9]){count}(?![0-9])", quote):
+        return True
+    words = _integer_words(count)
+    return bool(words and words in _normalise(quote))
+
+
+def _integer_words(value: int) -> str:
+    """English rendering used only to anchor printed counts such as Thirty-six."""
+    ones = ["zero", "one", "two", "three", "four", "five", "six", "seven",
+            "eight", "nine", "ten", "eleven", "twelve", "thirteen",
+            "fourteen", "fifteen", "sixteen", "seventeen", "eighteen",
+            "nineteen"]
+    tens = ["", "", "twenty", "thirty", "forty", "fifty", "sixty",
+            "seventy", "eighty", "ninety"]
+    if 0 <= value < 20:
+        return ones[value]
+    if value < 100:
+        return tens[value // 10] + (f" {ones[value % 10]}" if value % 10 else "")
+    if value < 1000:
+        rest = _integer_words(value % 100) if value % 100 else ""
+        return f"{ones[value // 100]} hundred" + (f" {rest}" if rest else "")
+    return ""
+
+
+def _label_anchors(label: str, quote: str) -> bool:
+    label_tokens = set(re.findall(r"[a-z0-9]+", label.lower()))
+    quote_tokens = set(re.findall(r"[a-z0-9]+", quote.lower()))
+    if label_tokens and label_tokens & quote_tokens:
+        return True
+    # Short paper labels are often acronyms (DM) while the quoted sentence
+    # spells the arm out (type 1 diabetic patients). The exact quote and count
+    # are already anchored above; accept the acronym only when the quote also
+    # contains substantive arm descriptors, not merely "N participants".
+    if len(_normalise(label).replace(" ", "")) <= 4:
+        generic = {
+            "a", "an", "and", "arm", "cohort", "consisted", "enrolled",
+            "group", "included", "of", "participant", "participants",
+            "patient", "patients", "people", "recruited", "subject",
+            "subjects", "the", "was", "were", "with",
+        }
+        return len(quote_tokens - generic) >= 2
+    return False

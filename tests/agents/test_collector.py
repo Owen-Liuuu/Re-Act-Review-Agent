@@ -17,9 +17,11 @@ from react_review.tools.extract import FetchFullTextTool
 from react_review.tools.extract_source import (
     ExtractSourceValueInput,
     ExtractSourceValueTool,
+    _paper_excerpt,
     cohort_conflicts,
     cohort_description,
 )
+from react_review.tools.extraction_cache import ExtractionCache, ExtractionCacheMiss
 from react_review.tools.registry import ToolRegistry
 
 
@@ -42,7 +44,8 @@ class _DocRetriever(PaperRetriever):
     async def retrieve(self, reference):
         return PaperDocument(
             paper_id=reference.doi or "x", reference=reference,
-            full_text="Table 2 reports EFT of 6.60 ± 0.71 mm in diabetic children.",
+            full_text=("Table 2 reports EFT of 6.60 ± 0.71 mm in diabetic children. "
+                       "EAT volume 52.3 cm3."),
         )
 
 
@@ -71,7 +74,8 @@ async def test_extract_tool_found():
                            "quote": "EFT of 6.60 ± 0.71 mm", "source_field_name": "EFT",
                            "location": "Table 2"})
     tool = ExtractSourceValueTool(backend)
-    doc = PaperDocument(paper_id="x", reference=_REF, full_text="…")
+    doc = PaperDocument(paper_id="x", reference=_REF,
+                        full_text="EFT of 6.60 ± 0.71 mm")
     out = await tool.run(ExtractSourceValueInput(document=doc, field_type="eat_thickness", group="t1dm"))
     assert out.found is True and out.value == "6.60 ± 0.71" and out.unit == "mm"
 
@@ -91,6 +95,293 @@ async def test_extract_tool_unparseable_is_not_found():
         ExtractSourceValueInput(document=PaperDocument(paper_id="x", reference=_REF),
                                 field_type="bmi"))
     assert out.found is False
+
+
+@pytest.mark.asyncio
+async def test_direct_value_is_rejected_when_quote_is_not_in_source_document():
+    backend = StubBackend({"found": True, "value": "4.8 (4.2–5.4)", "unit": "mm",
+                           "quote": "EFT was 4.8 (4.2–5.4) mm."})
+    out = await ExtractSourceValueTool(backend).run(
+        ExtractSourceValueInput(
+            document=PaperDocument(paper_id="x", reference=_REF,
+                                   full_text="The actual EFT was 0.7 (0.6–0.9) cm."),
+            field_type="eat_thickness", group="t1dm"))
+    assert not out.found and out.value is None
+    assert out.evidence_check == "protocol_error"
+    assert "verbatim quote" in out.evidence_reason
+
+
+def test_paper_excerpt_keeps_target_dense_late_table_under_size_cap():
+    text = ("abstract and methods " * 1200
+            + "\nTable 2\nEpicardial fat thickness EFT (cm) "
+              "0.7 (0.6–0.9) 0.6 (0.5–0.7)\n"
+            + "discussion " * 1200)
+    excerpt = _paper_excerpt(
+        text, target="epicardial adipose tissue thickness",
+        raw_label="EAT thickness", field_type="eat_thickness",
+        variants=["EFT", "epicardial fat thickness"])
+    assert len(excerpt) <= 20000
+    assert "abstract and methods" in excerpt
+    assert "EFT (cm) 0.7" in excerpt
+
+
+def _sample_size_payload(**overrides):
+    sentence = "The study population was composed of 15 T1DM patients and 15 healthy controls."
+    data = {
+        "found": False, "value": None, "unit": "participants",
+        "cohorts_seen": ["T1DM patients", "healthy controls"],
+        "cohort_counts": [
+            {"label": "T1DM patients", "count": 15, "quote": sentence},
+            {"label": "healthy controls", "count": 15, "quote": sentence},
+        ],
+        "cohort_partition_complete": True,
+        "cohort_partition_mutually_exclusive": True,
+        "cohort_partition_quote": sentence,
+        "cohort_partition_reason": "the study population is composed of the two arms",
+        "not_found_reason": "no total was printed",
+    }
+    data.update(overrides)
+    return sentence, data
+
+
+@pytest.mark.asyncio
+async def test_whole_study_sample_size_sums_only_explicit_complete_disjoint_arms():
+    sentence, data = _sample_size_payload()
+    out = await ExtractSourceValueTool(StubBackend(data)).run(
+        ExtractSourceValueInput(
+            document=PaperDocument(paper_id="x", reference=_REF, full_text=sentence),
+            field_type="sample_size", group="-"))
+    assert out.found and out.value == "30"
+    assert out.value_origin == "derived_sum" and out.aggregation_status == "derived"
+    assert out.derivation == "15 + 15 = 30 (T1DM patients; healthy controls)"
+    assert [c.count for c in out.cohort_counts] == [15, 15]
+
+
+@pytest.mark.asyncio
+async def test_anchored_arm_quotes_and_true_partition_flags_do_not_require_a_third_quote():
+    sentence, data = _sample_size_payload(
+        cohort_partition_quote="15 in arm A ... and 15 in arm B")
+    out = await ExtractSourceValueTool(StubBackend(data)).run(
+        ExtractSourceValueInput(
+            document=PaperDocument(paper_id="x", reference=_REF, full_text=sentence),
+            field_type="sample_size", group="-"))
+    assert out.value == "30" and out.aggregation_status == "derived"
+    assert "no separate partition quote" in out.aggregation_reason
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change, expected, status", [
+    ({"cohort_partition_complete": False}, "not confirmed to cover", "rejected"),
+    ({"cohort_partition_mutually_exclusive": False},
+     "not confirmed to be mutually exclusive", "rejected"),
+    ({"cohort_counts": [{"label": "T1DM patients", "count": 15,
+                          "quote": "15 T1DM patients"}]},
+     "fewer than two", "protocol_error"),
+])
+async def test_whole_study_sample_size_refuses_incomplete_overlap_or_missing_arm(
+        change, expected, status):
+    sentence, data = _sample_size_payload(**change)
+    # Include the one-arm quote in the document for the missing-arm case.
+    text = sentence + " 15 T1DM patients"
+    out = await ExtractSourceValueTool(StubBackend(data)).run(
+        ExtractSourceValueInput(
+            document=PaperDocument(paper_id="x", reference=_REF, full_text=text),
+            field_type="sample_size", group="-"))
+    assert not out.found and out.value is None
+    assert out.value_origin == "unresolved" and out.aggregation_status == status
+    assert expected in out.aggregation_reason
+
+
+@pytest.mark.asyncio
+async def test_whole_study_sample_size_accepts_an_anchored_explicit_total():
+    quote = "A total of 30 participants were enrolled."
+    data = {"found": True, "value": "30", "unit": "participants",
+            "quote": quote, "explicit_total_reported": True}
+    out = await ExtractSourceValueTool(StubBackend(data)).run(
+        ExtractSourceValueInput(
+            document=PaperDocument(paper_id="x", reference=_REF, full_text=quote),
+            field_type="sample_size", group="-"))
+    assert out.found and out.value == "30" and out.value_origin == "verbatim"
+    assert out.aggregation_status == "not_applicable"
+
+
+@pytest.mark.asyncio
+async def test_computed_total_masquerading_as_explicit_is_a_protocol_error():
+    quote = "15 subjects with T1DM and 15 non-diabetic controls"
+    data = {"found": True, "value": "30", "explicit_total_reported": True,
+            "quote": quote, "cohorts_seen": ["T1DM", "controls"],
+            "cohort_counts": []}
+    out = await ExtractSourceValueTool(StubBackend(data)).run(
+        ExtractSourceValueInput(
+            document=PaperDocument(paper_id="x", reference=_REF, full_text=quote),
+            field_type="sample_size", group="-"))
+    assert not out.found and out.value is None
+    assert out.aggregation_status == "protocol_error"
+    assert "violated the sample-size contract" in out.aggregation_reason
+
+
+@pytest.mark.asyncio
+async def test_spelled_out_arm_count_and_pdf_line_wrap_are_anchored():
+    paper = ("Thirty-six type 1 diabetic patients were included. The control "
+             "group consisted of 43 healthy people. A total of 79 partici-\n"
+             "pants were included.")
+    data = {
+        "found": False, "value": None, "cohorts_seen": ["DM", "CONTROL"],
+        "cohort_counts": [
+            {"label": "DM", "count": 36,
+             "quote": "Thirty-six type 1 diabetic patients were included."},
+            {"label": "control group", "count": 43,
+             "quote": "The control group consisted of 43 healthy people."},
+        ],
+        "cohort_partition_complete": True,
+        "cohort_partition_mutually_exclusive": True,
+        "cohort_partition_quote": (
+            "Thirty-six type 1 diabetic patients were included. The control "
+            "group consisted of 43 healthy people."),
+    }
+    out = await ExtractSourceValueTool(StubBackend(data)).run(
+        ExtractSourceValueInput(
+            document=PaperDocument(paper_id="x", reference=_REF, full_text=paper),
+            field_type="sample_size", group="-"))
+    assert out.value == "79" and out.value_origin == "derived_sum"
+
+
+@pytest.mark.asyncio
+async def test_explicit_total_quote_survives_pdf_hyphenated_line_wraps():
+    paper = ("A total of 97 participants were registered in the pres-\n"
+             "ent study (63 diabetic patients and 34 age- and sex-\nmatched controls).")
+    quote = ("A total of 97 participants were registered in the present study "
+             "(63 diabetic patients and 34 age- and sex-matched controls).")
+    data = {"found": True, "value": "97", "quote": quote,
+            "explicit_total_reported": True,
+            "cohorts_seen": ["diabetic patients", "controls"]}
+    out = await ExtractSourceValueTool(StubBackend(data)).run(
+        ExtractSourceValueInput(
+            document=PaperDocument(paper_id="x", reference=_REF, full_text=paper),
+            field_type="sample_size", group="-"))
+    assert out.value == "97" and out.value_origin == "verbatim"
+
+
+@pytest.mark.asyncio
+async def test_spelled_out_single_cohort_total_is_accepted():
+    quote = "Seventy-three patients agreed to participate and were evaluated."
+    data = {"found": True, "value": "73", "unit": "count", "quote": quote,
+            "explicit_total_reported": False, "cohorts_seen": ["patients"]}
+    out = await ExtractSourceValueTool(StubBackend(data)).run(
+        ExtractSourceValueInput(
+            document=PaperDocument(paper_id="x", reference=_REF, full_text=quote),
+            field_type="sample_size", group="-"))
+    assert out.value == "73" and out.value_origin == "verbatim"
+
+
+@pytest.mark.asyncio
+async def test_direct_quote_survives_pdf_font_ligature_normalisation():
+    paper = "The EFT was signiﬁcantly greater [0.7 (0.6–0.9) cm]."
+    quote = "The EFT was significantly greater [0.7 (0.6–0.9) cm]."
+    data = {"found": True, "value": "0.7 (0.6–0.9)", "unit": "cm",
+            "quote": quote, "group_label_in_paper": "DM"}
+    out = await ExtractSourceValueTool(StubBackend(data)).run(
+        ExtractSourceValueInput(
+            document=PaperDocument(paper_id="x", reference=_REF, full_text=paper),
+            field_type="eat_thickness", group="t1dm"))
+    assert out.found and out.value == "0.7 (0.6–0.9)"
+
+
+@pytest.mark.asyncio
+async def test_direct_value_rejects_a_unit_the_quote_does_not_print():
+    quote = "Body mass index (kg/m3) 25.8 ± 3.9 25.5 ± 4.2"
+    data = {"found": True, "value": "25.5 ± 4.2", "unit": "kg/m2",
+            "quote": quote, "group_label_in_paper": "Controls"}
+    out = await ExtractSourceValueTool(StubBackend(data)).run(
+        ExtractSourceValueInput(
+            document=PaperDocument(paper_id="x", reference=_REF, full_text=quote),
+            field_type="bmi", group="control"))
+    assert not out.found and out.evidence_check == "protocol_error"
+    assert "unit" in out.evidence_reason
+
+
+@pytest.mark.asyncio
+async def test_single_cohort_anchored_count_does_not_depend_on_model_boolean():
+    quote = "Finally, 72 patients underwent CCTA."
+    data = {"found": True, "value": "72", "quote": quote,
+            "explicit_total_reported": False,
+            "cohorts_seen": ["T1DM patients"]}
+    out = await ExtractSourceValueTool(StubBackend(data)).run(
+        ExtractSourceValueInput(
+            document=PaperDocument(paper_id="x", reference=_REF, full_text=quote),
+            field_type="sample_size", group="-"))
+    assert out.value == "72" and out.value_origin == "verbatim"
+
+
+@pytest.mark.asyncio
+async def test_whole_study_sample_size_rejects_unanchored_model_counts():
+    sentence, data = _sample_size_payload()
+    out = await ExtractSourceValueTool(StubBackend(data)).run(
+        ExtractSourceValueInput(
+            document=PaperDocument(paper_id="x", reference=_REF,
+                                   full_text="This paper does not contain that sentence."),
+            field_type="sample_size", group="-"))
+    assert not out.found and "not anchored" in out.aggregation_reason
+
+
+@pytest.mark.asyncio
+async def test_extraction_recording_replays_raw_json_through_derivation(tmp_path):
+    sentence, data = _sample_size_payload()
+    path = tmp_path / "extract.json"
+    cache = ExtractionCache(path)
+    backend = StubBackend(data)
+    payload = ExtractSourceValueInput(
+        document=PaperDocument(paper_id="x", reference=_REF, full_text=sentence),
+        field_type="sample_size", group="-")
+    recorded = await ExtractSourceValueTool(
+        backend, cache=cache, cache_mode="record").run(payload)
+    cache.save()
+    body = json.loads(path.read_text(encoding="utf-8"))
+    raw = next(iter(body["entries"].values()))
+    assert raw["found"] is False and raw["value"] is None  # not the derived 30
+
+    resume_backend = StubBackend({"found": True, "value": "999"})
+    resumed = await ExtractSourceValueTool(
+        resume_backend, cache=ExtractionCache(path), cache_mode="record").run(payload)
+    assert resumed.value == "30" and resume_backend.calls == 0
+
+    replayed = await ExtractSourceValueTool(
+        None, cache=ExtractionCache(path), cache_mode="replay").run(payload)
+    assert recorded.value == replayed.value == "30"
+    assert recorded.derivation == replayed.derivation
+    assert backend.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_extraction_replay_miss_fails_loudly(tmp_path):
+    cache = ExtractionCache(tmp_path / "missing.json")
+    tool = ExtractSourceValueTool(None, cache=cache, cache_mode="replay")
+    with pytest.raises(ExtractionCacheMiss):
+        await tool.run(ExtractSourceValueInput(
+            document=PaperDocument(paper_id="x", reference=_REF, full_text="x"),
+            field_type="bmi", group="control"))
+
+
+@pytest.mark.asyncio
+async def test_collector_carries_derivation_and_does_not_retry_a_rejected_sum():
+    sentence, data = _sample_size_payload(cohort_partition_complete=False)
+
+    class _CountsRetriever(PaperRetriever):
+        async def retrieve(self, reference):
+            return PaperDocument(paper_id="counts", reference=reference,
+                                 full_text=sentence)
+
+    backend = StubBackend(data)
+    review = ReviewDataItem(study_id="iacobellis_2014", group="-",
+                            field_type="sample_size", value="30")
+    res = await Collector(_catalogue(_CountsRetriever(), backend), max_attempts=3).collect(
+        review, _REF)
+    assert backend.calls == 1
+    assert res.source_item.collection_outcome == CollectionOutcome.MISSING_SOURCE
+    assert res.source_item.value_origin == "unresolved"
+    assert res.source_item.aggregation_status == "rejected"
+    assert res.source_item.cohort_counts[0].count == 15
+    assert res.source_item.reasons[0].source == "deterministic"
 
 
 # --- cohort guard: checked against the REVIEW's own labels, not a disease list ---
@@ -147,7 +438,8 @@ async def test_extract_tool_rejects_wrong_cohort_value():
                            "group_label_in_paper": "Diabetic children",
                            "quote": "Age 12.90 ± 1.30", "location": "Table 1"})
     out = await ExtractSourceValueTool(backend).run(ExtractSourceValueInput(
-        document=PaperDocument(paper_id="x", reference=_REF),
+        document=PaperDocument(paper_id="x", reference=_REF,
+                               full_text="Age 12.90"),
         field_type="age", group="control", cohorts=_COHORTS))
     assert out.found is False and out.value is None      # rejected as wrong cohort
     assert out.group_label_in_paper == "Diabetic children"
@@ -160,10 +452,13 @@ async def test_unverifiable_cohort_is_kept_but_marked_not_passed_as_clean():
     # The paper names a cohort this review does not report. The value is still
     # useful evidence, but nobody has confirmed which arm it belongs to, so it
     # must not read as a clean result.
+    quote = "The mean age of the study population was 12.90 ± 1.30 years overall."
     backend = StubBackend({"found": True, "value": "12.90 ± 1.30", "unit": "years",
-                           "group_label_in_paper": "Cohort B", "quote": "Age 12.90"})
+                           "group_label_in_paper": "Cohort B", "quote": quote})
     out = await ExtractSourceValueTool(backend).run(ExtractSourceValueInput(
-        document=PaperDocument(paper_id="x", reference=_REF),
+        document=PaperDocument(
+            paper_id="x", reference=_REF,
+            full_text=quote),
         field_type="age", group="control", cohorts=_COHORTS))
     assert out.found is True                      # evidence kept
     assert out.cohort_check == "ambiguous"        # but explicitly unconfirmed
@@ -180,7 +475,9 @@ async def test_a_quote_that_resembles_no_cohort_name_is_not_treated_as_a_problem
                            "quote": "The mean age of the study population was "
                                     "12.90 ± 1.30 years overall."})
     out = await ExtractSourceValueTool(backend).run(ExtractSourceValueInput(
-        document=PaperDocument(paper_id="x", reference=_REF),
+        document=PaperDocument(
+            paper_id="x", reference=_REF,
+            full_text="The mean age of the study population was 12.90 ± 1.30 years overall."),
         field_type="age", group="t1dm", cohorts={"t1dm": ["T1DM"],
                                                  "control": ["Control"]}))
     assert out.found is True and out.cohort_check == "ok"
@@ -190,9 +487,10 @@ async def test_a_quote_that_resembles_no_cohort_name_is_not_treated_as_a_problem
 async def test_extract_tool_accepts_matching_cohort():
     backend = StubBackend({"found": True, "value": "12.96 ± 1.12", "unit": "years",
                            "group_label_in_paper": "Healthy controls",
-                           "quote": "Controls 12.96 ± 1.12", "location": "Table 1"})
+                           "quote": "Controls 12.96 ± 1.12 years", "location": "Table 1"})
     out = await ExtractSourceValueTool(backend).run(ExtractSourceValueInput(
-        document=PaperDocument(paper_id="x", reference=_REF),
+        document=PaperDocument(paper_id="x", reference=_REF,
+                               full_text="Controls 12.96 ± 1.12 years"),
         field_type="age", group="control"))
     assert out.found is True and out.value == "12.96 ± 1.12"
 
@@ -268,7 +566,7 @@ async def test_collector_back_check_flags_contradicting_concept():
 async def test_collector_no_back_check_for_resolved_items():
     # A trusted (resolved) concept is never second-guessed by the back-check.
     backend = StubBackend({"found": True, "value": "52.3", "unit": "cm3",
-                           "quote": "x", "location": "y"})
+                           "quote": "EAT volume 52.3 cm3", "location": "y"})
     review = ReviewDataItem(study_id="ahmad_2022", group="t1dm",
                             field_type="eat_thickness", value="52.3", unit="cm3",
                             resolution_status="resolved")

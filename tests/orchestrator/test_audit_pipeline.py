@@ -45,7 +45,8 @@ class _KeyedBackend(LLMBackend):
 class _DocRetriever(PaperRetriever):
     async def retrieve(self, reference):
         return PaperDocument(paper_id=reference.doi or "x", reference=reference,
-                             full_text="source paper text")
+                             full_text=("source paper text. EFT 6.60 ± 0.71 mm. "
+                                        "EFT 0.7 cm."))
 
 
 def _pipeline(extract_backend):
@@ -134,9 +135,17 @@ async def test_pipeline_missing_source_flags_review():
         ReviewDataItem(study_id="x_2020", group="t1dm",
                        field_type="bmi", value="24.0", unit="kg/m2"),
     ]
-    backend = _KeyedBackend({})  # always not found
+    backend = _KeyedBackend({"bmi": {
+        "found": False, "value": None, "unit": "kg/m3",
+        "not_found_reason": "the paper does not report BMI",
+    }})
     pkg = await _pipeline(backend).run(review, _REF, run_id="r3")
 
     # source not found -> not_comparable -> flagged for human review
     assert pkg.source_items[0].source_value is None
-    assert len(pkg.final_verification.human_review_flags) == 1
+    assert pkg.source_items[0].source_unit == "kg/m3"  # retained provenance, not a verdict
+    assert pkg.report.n_unit_mismatch == 0
+    assert pkg.report.n_not_comparable == 1
+    flags = pkg.final_verification.human_review_flags
+    assert len(flags) == 1
+    assert flags[0].label == "missing_source"

@@ -54,6 +54,25 @@ def test_unparseable_is_not_comparable():
     assert _label("not reported", "6.60", ru="mm", su="mm") == AuditLabel.NOT_COMPARABLE
 
 
+@pytest.mark.parametrize("missing", [None, "", "NR", "not reported"])
+def test_missing_source_precedes_residual_unit(missing):
+    result = compare_values(
+        field_type="eat_thickness", review_value="0.7", source_value=missing,
+        review_unit="mm", source_unit="cm",
+    )
+    assert result.label == AuditLabel.NOT_COMPARABLE
+    assert result.reason == "the source value is missing; units were not compared"
+
+
+def test_missing_review_precedes_residual_unit():
+    result = compare_values(
+        field_type="eat_thickness", review_value=None, source_value="0.7",
+        review_unit="mm", source_unit="cm",
+    )
+    assert result.label == AuditLabel.NOT_COMPARABLE
+    assert result.reason == "the review value is missing; units were not compared"
+
+
 # --- dual band: SD comparison (mean 1% + SD 3%) ---
 
 def test_sd_within_band_matches():

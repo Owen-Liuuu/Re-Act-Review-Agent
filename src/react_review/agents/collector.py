@@ -64,8 +64,21 @@ def _reasons_for(result: SourceValueResult, outcome: CollectionOutcome) -> list[
         reasons.append(ReasonRecord(code="extraction_error", source="exception",
                                     stage="collector", message=result.error))
     if result.not_found_reason and outcome is not CollectionOutcome.FOUND:
-        reasons.append(ReasonRecord(code=outcome.value, source="llm",
+        reason_source = ("deterministic" if (
+                             result.aggregation_status in {"rejected", "protocol_error"}
+                             or result.evidence_check == "protocol_error")
+                         else "llm")
+        reasons.append(ReasonRecord(code=outcome.value, source=reason_source,
                                     stage="collector", message=result.not_found_reason))
+    if result.aggregation_status == "derived":
+        reasons.append(ReasonRecord(
+            code="derived_source_value", source="deterministic", stage="collector",
+            message=result.derivation,
+            detail={"cohort_counts": [c.model_dump() for c in result.cohort_counts]}))
+    if result.evidence_check == "protocol_error" and result.evidence_reason:
+        reasons.append(ReasonRecord(
+            code="source_quote_unanchored", source="deterministic",
+            stage="collector", message=result.evidence_reason))
     if result.cohort_check == "ambiguous" and result.cohort_reason:
         # The value is kept, but nobody has confirmed which arm it belongs to.
         reasons.append(ReasonRecord(code="cohort_ambiguous", source="deterministic",
@@ -102,6 +115,11 @@ class Collector:
         if self._kb and field_type in self._kb.entries:
             return self._kb.entries[field_type].concept
         return ""
+
+    def _concept_variants_for(self, field_type: str) -> list[str]:
+        if self._kb and field_type in self._kb.entries:
+            return self._kb.entries[field_type].all_names()
+        return []
 
     def _cohort_variants(self) -> dict[str, list[str]]:
         """key → the review's own words for that cohort (for the guard)."""
@@ -189,11 +207,13 @@ class Collector:
                 field_type=review_item.field_type,
                 group=review_item.group,
                 concept=concept,
+                concept_variants=self._concept_variants_for(review_item.field_type),
                 raw_field_name=review_item.raw_field_name,
                 unit_hint=review_item.unit,
                 research_context=research_context,
                 cohort_display=review_item.cohort_label,
                 cohorts=self._cohort_variants(),
+                attempt=attempt,
             ))
             steps.append(StepRecord(
                 index=len(steps),
@@ -209,11 +229,13 @@ class Collector:
             outcome_of = self._decider.decide(
                 ReflectionSignals(retrieval_ok=result.found, attempt=attempt))
             decision, reflection_reason = outcome_of.decision, outcome_of.reason
-            # A wrong-cohort rejection is deterministic — retrying the same prompt
-            # just repeats it, so escalate immediately instead of burning attempts.
-            if result.wrong_group_rejected:
+            # Deterministic rejection will not improve by repeating the same
+            # extraction.  Preserve it and escalate without burning attempts.
+            deterministic_rejection = (
+                result.wrong_group_rejected or result.aggregation_status == "rejected")
+            if deterministic_rejection:
                 decision = ReflectionDecision.ESCALATE
-            if result.found or result.wrong_group_rejected or decision != ReflectionDecision.RETRY:
+            if result.found or deterministic_rejection or decision != ReflectionDecision.RETRY:
                 break
 
         # Retrieved but the value was never located → potential fabrication.
@@ -259,6 +281,13 @@ class Collector:
             source_unit=result.unit,
             source_quote=result.quote,
             source_location_in_paper=result.location,
+            value_origin=result.value_origin,
+            derivation=result.derivation,
+            cohort_counts=result.cohort_counts,
+            aggregation_status=result.aggregation_status,
+            aggregation_reason=result.aggregation_reason,
+            evidence_check=result.evidence_check,
+            evidence_reason=result.evidence_reason,
             collection_outcome=outcome,
             concept_mismatch=bool(mismatch_reason),
             concept_mismatch_reason=mismatch_reason,

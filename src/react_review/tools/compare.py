@@ -13,6 +13,7 @@ from __future__ import annotations
 import structlog
 
 from react_review.audit import ToleranceTable, compare_values
+from react_review.audit.compare import is_missing_value
 from react_review.audit.semantic_cache import SemanticCache, SemanticCacheMiss
 from react_review.audit.semantic_control import (
     DEFAULT_MIN_CONFIDENCE,
@@ -25,17 +26,6 @@ from react_review.tools.models import CompareInput
 from react_review.tools.semantic_compare import PROMPT_VERSION, cache_key
 
 logger = structlog.get_logger(__name__)
-
-# Text that states the ABSENCE of a value. Two cells both reading "NR" are not
-# evidence of agreement, and asking a model to compare them invites one.
-_PLACEHOLDERS = {"", "-", "—", "na", "n/a", "nr", "nd", "ne", "none", "null",
-                 "not reported", "not applicable", "not available", "not stated",
-                 "not reached", "unknown"}
-
-
-def _is_placeholder(value: object) -> bool:
-    return str(value or "").strip().lower() in _PLACEHOLDERS
-
 
 class CompareValuesTool(Tool):
     """Audit one review↔source value pair using the dual-band tolerance."""
@@ -83,7 +73,7 @@ class CompareValuesTool(Tool):
             return False
         if "could not be parsed" not in result.reason:   # e.g. a bound, already decided
             return False
-        if _is_placeholder(payload.review_value) or _is_placeholder(payload.source_value):
+        if is_missing_value(payload.review_value) or is_missing_value(payload.source_value):
             return False
         return bool(self._semantic or self._cache)
 
