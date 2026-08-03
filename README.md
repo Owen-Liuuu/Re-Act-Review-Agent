@@ -10,33 +10,37 @@ typed tool catalogue.
 
 ## Status
 
-**P1 — data contract + audit core (in progress).** The deterministic audit
-chain is built and validated against the hand-labelled benchmark: a review table
-and a source table are joined on `(study, group, timepoint, field_type)`, each
-pair is compared with a dual-band tolerance (mean 1% + SD 3%; unit as a separate
-axis), and the result is aggregated into an audit report. Done: schemas,
-syntax-normalize, audit compare, the typed tool catalogue, and the thin
-orchestrator. Remaining: the DKB Tier-2 semantic resolver and the
-ReAct agents / real parser (P2). Migrated from the `lit_inspector` prototype in
-P0 (lifted, renamed, dead code dropped, test baseline restored).
+**Phase 6E — final acceptance complete.** The review-to-source pipeline now
+includes review-derived cohort identities, structured numeric comparison,
+controlled semantic escalation, governed DKB/checklist checkpoints, auditable
+source-extraction replay, and HTML rendering from a previously saved Evidence
+Package.
+
+The frozen EAT/T1DM replay scores 89.47% label accuracy, 80% strict discrepancy
+precision/recall/F1, zero silent releases, and 100% human-review visibility.
+The melanoma checkpoint exercised all expected cross-domain paths (semantic,
+numeric, and structured) with zero silent releases, but its 60% label accuracy
+failed the accuracy gate. Those multi-arm extraction and semantic issues are
+preserved for later work; the project therefore claims cross-domain mechanism
+coverage, not established cross-domain accuracy. See
+`docs/baselines/phase6e_acceptance.json` and
+`docs/deferred/phase6b-melanoma-audit.md`.
 
 ## Layout
 
 ```
 src/react_review/
   core/          config, logging, exceptions, enums (+ AuditLabel)
-  schemas/       4-table data contract: ReviewDataItem / SourceEvidenceItem /
-                 IncludedStudy / MatchResult / ToleranceRule / AuditReport
-  normalize/     Tier-1 syntax (deterministic): NumericValue parse (mean+SD),
-                 unit normalization
-  audit/         ToleranceTable (dual band) + compare_values
-  tools/         typed tool catalogue (Search/Verify/Extract/Compare) + registry
-  orchestrator/  matcher (4-tuple join) + thin deterministic pipeline
+  schemas/       review/source evidence, match results, reasons, and reports
+  normalize/     review-derived cohorts, units, and structured numeric values
+  audit/         component comparison, semantic controls, caches, aggregation
+  dkb/           governed field resolution and provisional knowledge lifecycle
+  tools/         typed Search/Verify/Extract/Compare catalogue and replay hooks
+  orchestrator/  matching, collection, judging, checkpoints, and pipeline
+  agents/        bounded collector/auditor/judge workflows
   llm/           backend ABC + retry engine + provider adapters
-  pipeline/      legacy orchestrator/factory/schemas (reused impls live under steps/)
-  steps/         reused implementations (search/verify/fetch/extract/report)
-eval/            benchmark (ground truth) + run_benchmark.py + run_pipeline.py
-docs/            normalization_pipeline.md
+eval/            frozen EAT and melanoma benchmarks + accuracy runners
+docs/            architecture, limitations, sanitized baselines, deferred issues
 tests/           unit + integration (mock-mode) tests
 ```
 

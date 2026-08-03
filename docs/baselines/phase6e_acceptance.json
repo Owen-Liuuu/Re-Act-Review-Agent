@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "artifact_kind": "sanitized_phase6e_final_acceptance",
+  "generated_on": "2026-08-03",
+  "code_base_before_phase6e": "47425179e55bd91beba6cf2ddce3e5c25b74042e",
+  "phase_commits": {
+    "phase5": "c48dcb5",
+    "phase6_checklist_contract": "8bdef2d",
+    "phase6_extraction_replay": "a08bec6",
+    "phase6_sanitized_eat_record": "0141b9a",
+    "phase6a_frozen_cross_domain_benchmark": "aa5da13",
+    "phase6b_cross_domain_validation": "5c344db",
+    "phase6b_deferred_archive": "623b3d1",
+    "phase6c_saved_package_reporting": "4742517"
+  },
+  "privacy": {
+    "contains_source_quotes": false,
+    "contains_raw_model_responses": false,
+    "contains_local_absolute_paths": false,
+    "private_row_level_artifacts_remain_gitignored": true,
+    "local_claude_permissions_are_gitignored": true
+  },
+  "verification": {
+    "test_suite": {
+      "command": "python -m pytest -q -p no:cacheprovider",
+      "passed": 582,
+      "failed": 0
+    },
+    "eat_replay": {
+      "rows": 57,
+      "extraction_cache_hits": 71,
+      "extraction_cache_misses": 0,
+      "label_accuracy": 0.8947368421052632,
+      "discrepancy_precision": 0.8,
+      "discrepancy_recall": 0.8,
+      "discrepancy_f1": 0.8,
+      "silent_release_count": 0,
+      "review_visibility_rate": 1.0,
+      "metrics_equal_to_phase6_0e": true,
+      "all_preexisting_row_fields_equal_to_phase6_0e": true,
+      "phase6e_private_json_sha256": "9821692362CC42CA9103B785F8DC222D5C2A0BE886AE8C8319F1EC02BE72A51E"
+    },
+    "melanoma_replay": {
+      "rows": 15,
+      "extraction_cache_hits": 15,
+      "extraction_cache_misses": 0,
+      "semantic_cache_hits": 4,
+      "semantic_cache_misses": 0,
+      "observed_modes": {
+        "semantic": 4,
+        "numeric": 4,
+        "structured": 7
+      },
+      "label_accuracy": 0.6,
+      "discrepancy_precision": 0.2,
+      "discrepancy_recall": 0.3333333333333333,
+      "discrepancy_f1": 0.25,
+      "silent_release_count": 0,
+      "review_visibility_rate": 1.0,
+      "byte_equal_to_phase6b_postmetricfix_replay": true,
+      "phase6e_private_json_sha256": "5D47D074E7A8F688771F41CC733E75EB67D5239CFBFFDEDB5A8728992103FB26"
+    },
+    "saved_package_report_round_trip": {
+      "package_sha256_before": "C8E677638CC8905620CFEEB293FA87EC4E5D5CCF3FB01699B0FBA5C69A52D0D7",
+      "package_sha256_after": "C8E677638CC8905620CFEEB293FA87EC4E5D5CCF3FB01699B0FBA5C69A52D0D7",
+      "package_unchanged": true,
+      "private_html_sha256": "9C71FE46C94239F9504817183EB132FBBF82F517A2BB2093D3F1D161F15863B6"
+    },
+    "published_manifest_hashes": {
+      "eat_phase5_phase6_metrics.json": "C0279A9F5B41AB7754E6CEBABFEB8C9BBAF796193942CAC5774650DC4090E626",
+      "eat_phase6_manifest.json": "213CB533E64A527DB5C2E431B909382CE458AD620B2A5BF1EB502E048AE6D8D1",
+      "melanoma_phase6b_metrics.json": "F395E6908F5BA5A84304DCAE59B03B2E47A7AAD45AF0FB32A5318A158ED722B2",
+      "phase6b_deferred_archive": "FBBED551101C5E9C70A7C14E21EBC86C8266A4744625B29B42BBFA6E39BF1EE3"
+    },
+    "all_preexisting_eat_manifest_hashes_match": true,
+    "all_preexisting_melanoma_manifest_hashes_and_sizes_match": true,
+    "melanoma_review_pdf_tracked": true,
+    "melanoma_source_pdf_gitignored": true
+  },
+  "working_tree_policy": {
+    "preserved_user_files": [
+      "ReAct-Review_Project_Progress_2026-07-30.pptx",
+      "ReAct-Review_Project_Progress_2026-07-30.pptx.inspect.ndjson"
+    ],
+    "user_files_modified_or_deleted": false
+  },
+  "deferred": {
+    "issue_archive": "docs/deferred/phase6b-melanoma-audit.md",
+    "status": "deferred_by_project_decision",
+    "accuracy_gate_passed": false
+  },
+  "acceptance": {
+    "deterministic_regression_gate": "pass",
+    "safety_visibility_gate": "pass",
+    "report_round_trip_gate": "pass",
+    "privacy_and_artifact_integrity_gate": "pass",
+    "cross_domain_path_coverage_gate": "pass",
+    "cross_domain_accuracy_gate": "fail_deferred",
+    "result": "pass_with_deferred_cross_domain_accuracy"
+  },
+  "conclusions": [
+    "Phase 6 deterministic behavior is reproducible from frozen extraction and semantic recordings.",
+    "A full run can persist its Evidence Package before HTML is rendered, and the same HTML path can be exercised from the saved package without mutating it.",
+    "Cross-domain mechanisms were exercised end to end, but cross-domain accuracy was not established.",
+    "Private reports, source quotations, raw model responses, and the local source PDF remain outside Git."
+  ]
+}

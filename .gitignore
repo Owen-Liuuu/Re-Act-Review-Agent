@@ -27,6 +27,9 @@ config.yaml
 config.local.yaml
 .env
 
+# Local assistant permissions / workspace state
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db

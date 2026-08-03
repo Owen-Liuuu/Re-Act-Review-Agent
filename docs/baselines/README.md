@@ -32,3 +32,8 @@ The resulting extraction, structured-value, and semantic-relation issues are
 intentionally deferred and preserved in
 `docs/deferred/phase6b-melanoma-audit.md`; Phase 6B artifacts must not be
 overwritten when that work resumes.
+
+`phase6e_acceptance.json` is the final quote-free acceptance record. It ties
+the full test suite, both deterministic replays, the package-to-HTML round trip,
+artifact hashes, privacy boundary, and intentionally deferred Phase 6B accuracy
+failure to the code base accepted at the start of Phase 6E.
