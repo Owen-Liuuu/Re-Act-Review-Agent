@@ -500,6 +500,13 @@ def _run_main(argv: list[str] | None = None) -> None:
                          "(default: all of them; the checkpoint can also drop one)")
     ap.add_argument("--drop-tables", default="",
                     help="exclude these captured tables, e.g. table_s1")
+    ap.add_argument("--semantic", choices=("off", "cache-only", "on"), default="on",
+                    help="judge text values the numeric comparison cannot read: "
+                         "on = ask the model (costs tokens), cache-only = replay a "
+                         "recording and fail on a miss, off = deterministic only")
+    ap.add_argument("--semantic-cache", type=Path, default=None,
+                    help="file of recorded judgements to reuse and extend "
+                         "(default: <out>/<run_id>/semantic_cache.json)")
     args = ap.parse_args(argv)
 
     # Prefer real UTF-8 output; safe_print still covers consoles that refuse.
@@ -575,6 +582,11 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
     """The audit itself, wrapped so a stop/interrupt can finalise cleanly."""
     from react_review.agents.collector import Collector
     from react_review.audit import ToleranceTable
+    from react_review.audit.semantic_cache import SemanticCache
+    from react_review.audit.semantic_control import (
+        format_threshold_sensitivity,
+        threshold_sensitivity,
+    )
     from react_review.csv_io import load_included_studies
     from react_review.orchestrator import AuditOrchestrator, AuditPipeline, Judge
     from react_review.retrieval.local_pdf import LocalPdfRetriever
@@ -586,6 +598,7 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
         resolve_studies,
     )
     from react_review.tools.compare import CompareValuesTool
+    from react_review.tools.semantic_compare import SemanticCompareTool
     from react_review.tools.extract import FetchFullTextTool
     from react_review.tools.extract_source import ExtractSourceValueTool
     from react_review.tools.registry import ToolRegistry
@@ -635,7 +648,18 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
     reg.register(FetchFullTextTool(retriever))
     reg.register(ExtractSourceValueTool(backend))
     reg.register(ResolveReferenceTool(reconciler))          # no-DOI refs → gated online DOI
-    reg.register(CompareValuesTool(tol))
+    # Text the numeric comparison cannot read ("ICU" vs "intensive care unit")
+    # goes to the model, and its answer then goes through the deterministic
+    # controls. Every judgement is recorded so the run can be replayed offline.
+    semantic_cache = None
+    if args.semantic != "off":
+        semantic_cache = SemanticCache(
+            args.semantic_cache or (args.out / run_id / "semantic_cache.json"))
+    reg.register(CompareValuesTool(
+        tol,
+        semantic=SemanticCompareTool(backend) if args.semantic == "on" else None,
+        semantic_mode=args.semantic, semantic_cache=semantic_cache,
+        min_confidence=tol.semantic_min_confidence))
     pipeline = AuditPipeline(
         Collector(reg, knowledge=kb, cohorts=parsed.cohorts),
         AuditOrchestrator(reg), Judge(),
@@ -654,6 +678,20 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
     for f in fv.human_review_flags[:40]:
         _safe_print(f"  [{f.label}] {f.study_id}/{f.group}/{f.field_type}: {f.reason}")
     _safe_print(f"\n[PACKAGE] {(args.out / run_id / 'package.json').resolve()}")
+
+    if semantic_cache is not None:
+        path = semantic_cache.save()
+        _safe_print(
+            f"[SEMANTIC] mode={args.semantic}  min_confidence={tol.semantic_min_confidence}"
+            f"  {len(semantic_cache)} judgement(s), "
+            f"{semantic_cache.hits} reused / {semantic_cache.misses} new"
+            f"  ({semantic_cache.hit_rate:.0%} from cache)")
+        vs = semantic_cache.verdicts()
+        line = format_threshold_sensitivity(threshold_sensitivity(vs), len(vs))
+        if line:
+            _safe_print(f"           {line}")
+        _safe_print(f"           replay this run offline with: "
+                    f"--semantic cache-only --semantic-cache {path}")
 
     # The audit itself never writes the KB. It only COLLECTS candidate concepts as
     # proposals; a developer later curates them with `react-review learn`.

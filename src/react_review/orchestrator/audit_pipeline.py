@@ -138,7 +138,8 @@ class AuditPipeline:
             warnings=[w for p in per_study for w in p["warnings"]],
         )
 
-        report = await self._auditor.run(review_items, source_items, run_id=run_id)
+        report = await self._auditor.run(review_items, source_items, run_id=run_id,
+                                         research_context=research_context)
         await self._reporter.step_or_stop(
             StepStage.AUDIT_SUMMARY, title="Audit result",
             payload=report.model_dump(mode="json"),

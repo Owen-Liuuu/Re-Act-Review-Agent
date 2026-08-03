@@ -78,6 +78,11 @@ class Judge:
 
         for r in report.results:
             if r.label == AuditLabel.MATCH:
+                # A match that only checked PART of what the values reported is
+                # not a finished check — an interval or a count the other side
+                # never stated stays unverified, and must be seen.
+                if r.review_required:
+                    flags.append(_flag(r, "partially_verified", r.reason))
                 continue
             label, reason = r.label.value, r.reason
             if r.label == AuditLabel.NOT_COMPARABLE:

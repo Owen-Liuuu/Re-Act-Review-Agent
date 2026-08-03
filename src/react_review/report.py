@@ -64,6 +64,30 @@ def _reasons_html(item) -> str:
     return f'<ul class="why">{rows}</ul>'
 
 
+def _semantic_html(result) -> str:
+    """Show what the model claimed AND which controls let the claim stand.
+
+    A model-reached verdict is only auditable if the reader sees what it argued,
+    what it cited, and which deterministic check would have stopped it. A
+    semantic MATCH rendered as a plain MATCH is precisely the opaque output this
+    report exists to prevent.
+    """
+    v = getattr(result, "semantic", None)
+    if v is None:
+        return ""
+    checks = getattr(result, "semantic_controls", None) or {}
+    marks = "".join(
+        f'<span class="ck {"ok" if passed else "bad"}">{escape(name)} '
+        f'{"&#10003;" if passed else "&#10007;"}</span>'
+        for name, passed in checks.items())
+    span = (f'<div class="q">cited: “{escape(v.evidence_span)}”</div>'
+            if v.evidence_span else "")
+    return (f'<div class="sem"><b>semantic · {escape(v.relation)}</b> '
+            f'(confidence {v.confidence:.2f})'
+            f'<div class="loc">{escape(v.rationale)}</div>{span}'
+            f'<div class="cks">{marks}</div></div>')
+
+
 def _chip(label: str) -> str:
     text, cls = _LABEL.get(label, (label, "muted"))
     return f'<span class="chip {cls}">{escape(text)}</span>'
@@ -129,7 +153,7 @@ def render_html_report(pkg: EvidencePackage) -> str:
             loc = escape(s.source_location_in_paper) if s and s.source_location_in_paper else ""
             ev = (f'<div class="q">“{quote}”</div>' if quote else "") + \
                  (f'<div class="loc">{loc}</div>' if loc else "") + \
-                 _provenance_html(s) + _reasons_html(s)
+                 _provenance_html(s) + _reasons_html(s) + _semantic_html(r)
             body_rows += (
                 f'<tr class="r-{_LABEL.get(r.label.value, ("", "muted"))[1]}">'
                 f'<td>{escape(r.group)}</td>'
@@ -329,6 +353,12 @@ tr.r-bad td{background:var(--bad-bg)}tr.r-warn td{background:var(--warn-bg)}
 .ev .src code{font-family:var(--mono);font-size:10.5px}
 .ev .why{margin:4px 0 0;padding-left:14px;color:var(--muted);font-size:11px}
 .ev .why b{font-family:var(--mono);font-weight:600}
+.ev .sem{margin-top:6px;padding:5px 7px;border-left:2px solid var(--line);font-size:11px}
+.ev .sem>b{font-family:var(--mono);font-weight:600}
+.ev .cks{margin-top:4px;display:flex;flex-wrap:wrap;gap:4px}
+.ev .ck{font-family:var(--mono);font-size:10px;padding:1px 5px;border-radius:3px;
+border:1px solid var(--line);color:var(--muted)}
+.ev .ck.bad{border-color:var(--bad);color:var(--bad)}
 footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:var(--faint);
 font-family:var(--mono);font-size:11px}
 """

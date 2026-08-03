@@ -18,6 +18,13 @@ class CompareInput(BaseModel):
     source_value: Value = None
     review_unit: str = ""
     source_unit: str = ""
+    # Context for the semantic fallback. Two text values can only be judged
+    # equivalent against what they are values OF and where the source one came
+    # from — "ICU" and "intensive care unit" under a Setting column, quoted from
+    # the paper, is a different question from the strings in isolation.
+    column_header: str = ""
+    source_quote: str = ""
+    research_context: str = ""
 
 
 class CountInput(BaseModel):

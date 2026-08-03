@@ -12,6 +12,7 @@ from react_review.schemas.audit import MatchResult
 from react_review.schemas.evidence import SourceEvidenceItem
 from react_review.schemas.package import EvidencePackage
 from react_review.schemas.report import AuditReport, FinalVerification, HumanReviewFlag
+from react_review.schemas.semantic import SemanticVerdict
 
 
 def _package() -> EvidencePackage:
@@ -59,6 +60,36 @@ def test_render_escapes_html():
                                               report=rep, final_verification=fv))
     assert "<script>alert(1)</script>" not in html     # escaped, not injected
     assert "&lt;script&gt;" in html
+
+
+def test_a_model_reached_verdict_shows_its_reasoning_and_its_controls():
+    # A semantic MATCH that renders as a plain MATCH is the opaque output the
+    # report exists to prevent: the reader must see the claim AND the checks.
+    verdict = SemanticVerdict(
+        relation="source_broader", equivalent=True, confidence=0.88,
+        rationale="the source names the same country plus the unit",
+        evidence_span="France, surgical ICU")
+    mr = MatchResult(study_id="s", group="t1dm", field_type="setting",
+                     review_value="France", source_value="France, surgical ICU",
+                     label=AuditLabel.MATCH, match_mode="semantic",
+                     review_required=True, semantic=verdict,
+                     semantic_relation="source_broader",
+                     semantic_controls={"numeric": True, "anchor": True,
+                                        "polarity": True, "confidence": True})
+    src = SourceEvidenceItem(study_id="s", group="t1dm", field_type="setting",
+                             source_quote="Conducted in France, surgical ICU.")
+    rep = AuditReport(run_id="d", results=[mr], verdict=ReportVerdict.PASS)
+    fv = FinalVerification(run_id="d", verdict=ReportVerdict.PASS, summary="ok")
+    html = render_html_report(EvidencePackage(run_id="d", source_items=[src],
+                                              report=rep, final_verification=fv))
+    assert "source_broader" in html and "0.88" in html
+    assert "the source names the same country plus the unit" in html
+    assert "France, surgical ICU" in html               # the span it cited
+    assert "anchor" in html and "polarity" in html      # which controls ran
+
+
+def test_a_deterministic_verdict_carries_no_semantic_block():
+    assert "semantic ·" not in render_html_report(_package())
 
 
 def test_render_eval_report():

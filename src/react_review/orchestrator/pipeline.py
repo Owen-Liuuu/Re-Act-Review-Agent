@@ -37,6 +37,7 @@ class AuditOrchestrator:
         source_items: list[SourceEvidenceItem],
         *,
         run_id: str = "",
+        research_context: str = "",
     ) -> AuditReport:
         run_id = run_id or uuid.uuid4().hex[:12]
         pairs, unmatched_review, unmatched_source = build_pairs(review_items, source_items)
@@ -59,6 +60,9 @@ class AuditOrchestrator:
                         source_value=source.source_value,
                         review_unit=review.unit,
                         source_unit=source.source_unit,
+                        column_header=review.column_header or review.raw_field_name,
+                        source_quote=source.source_quote,
+                        research_context=research_context,
                     )
                 )
             except Exception as exc:  # a bad pair must not abort the whole run
@@ -103,11 +107,15 @@ class AuditOrchestrator:
         n_unit = counts[AuditLabel.UNIT_MISMATCH]
         n_nc = counts[AuditLabel.NOT_COMPARABLE]
 
+        # A run holding a match that was only partially verified has not fully
+        # checked its claims, and PASS would say otherwise.
+        n_partial = sum(1 for r in results if r.review_required)
+
         if not results:
             verdict = ReportVerdict.INCOMPLETE
         elif n_mismatch > 0:
             verdict = ReportVerdict.FAIL
-        elif n_unit > 0:
+        elif n_unit > 0 or n_partial > 0:
             verdict = ReportVerdict.PARTIAL
         elif n_match == 0:
             # Every pair was not_comparable — nothing was actually verified.

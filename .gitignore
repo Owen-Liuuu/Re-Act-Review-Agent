@@ -10,6 +10,8 @@ venv/
 
 # Test / tooling caches
 .pytest_cache/
+.cache/
+.tmp/
 .mypy_cache/
 .ruff_cache/
 .coverage

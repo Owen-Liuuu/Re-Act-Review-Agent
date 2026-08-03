@@ -1,7 +1,9 @@
 """Tolerance rules and the per-value audit result."""
 from __future__ import annotations
 
-from pydantic import BaseModel
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 from react_review.core.enums import AuditLabel
 
@@ -57,3 +59,17 @@ class MatchResult(BaseModel):
     tolerance_pct: float | None = None
     sd_tolerance_pct: float | None = None
     reason: str = ""
+    # numeric | structured | semantic — how this verdict was reached.
+    match_mode: str = "numeric"
+    # Which structured parts were actually checked, and which were recognised in
+    # the text but could not be. A MATCH with something unconsumed is a PARTIAL
+    # check, and saying so is the difference between an audit and an assertion.
+    components_compared: list[str] = Field(default_factory=list)
+    components_unconsumed: list[str] = Field(default_factory=list)
+    # A MATCH that still needs a human — the Judge skips matches otherwise.
+    review_required: bool = False
+    # The model's claim and which controls passed, kept so a semantic verdict can
+    # be explained and disputed rather than merely accepted.
+    semantic: Any = None
+    semantic_relation: str = ""
+    semantic_controls: dict[str, bool] = Field(default_factory=dict)

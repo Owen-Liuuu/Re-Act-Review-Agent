@@ -20,3 +20,23 @@ per_field_type: {}
   # p_value: 0.001
 
 per_field_type_sd: {}
+
+# --- structured numeric comparison (Phase 4A) ---
+# A p-value threshold needs an ABSOLUTE band: 0.001 vs 0.002 is a 100% relative
+# error but a 0.001 absolute one.
+p_value_abs_tolerance: 0.0
+
+# The no-effect value a confidence interval must exclude, per measure. Ratio
+# measures (HR/RR/OR) use 1.0, differences use 0.0. Configured rather than
+# guessed from the name: which measures are ratios is domain knowledge.
+null_value_by_field_type: {}
+  # hazard_ratio: 1.0
+  # odds_ratio: 1.0
+  # risk_ratio: 1.0
+  # mean_difference: 0.0
+
+# --- semantic equivalence (Phase 4B) ---
+# PROVISIONAL. Chosen to be roughly sensible, not calibrated against data: a
+# model's stated confidence is not a probability. Record which values a run
+# used, and treat movements around them as untested.
+semantic_min_confidence: 0.70

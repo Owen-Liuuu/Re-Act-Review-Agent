@@ -18,15 +18,170 @@ from __future__ import annotations
 
 from react_review.core.enums import AuditLabel
 from react_review.normalize import normalize_unit, parse_numeric, units_differ
+from react_review.normalize.numeric import NumericValue
 from react_review.schemas.audit import MatchResult
 
 _EPS = 1e-9
+# Interval bounds are estimated, not measured, so they carry more rounding noise
+# than a point estimate; a band as tight as the mean's would flag transcription
+# rounding as a discrepancy.
+_CI_TOLERANCE = 0.05
 
 Value = str | int | float | None
 
 
 def _rel(a: float, b: float) -> float:
     return abs(a - b) / max(abs(a), abs(b), _EPS)
+
+
+def _within(a: float, b: float, rel_tolerance: float) -> bool:
+    return _rel(a, b) <= rel_tolerance
+
+
+def _compare_components(
+    rv: NumericValue, sv: NumericValue, base: dict, *,
+    rel_tolerance: float, p_value_abs_tolerance: float, null_value: float | None,
+) -> MatchResult | None:
+    """Decide a pair that reports structure, or return None to fall through.
+
+    Each component is judged against its OWN counterpart, never pooled into one
+    list of numbers: in ``45/120 (37.5%)`` the three numbers mean different
+    things. Anything the parse recognised but this function cannot compare is
+    recorded in ``components_unconsumed`` and forces human review, so a partial
+    check never presents itself as a complete one.
+    """
+    mine, theirs = rv.components(), sv.components()
+    structural = (mine | theirs) - {"sd"}            # sd is handled by the mean band
+    if not structural:
+        return None
+
+    def result(label, reason, *, compared, unconsumed=(), review=False, **extra):
+        return MatchResult(**base, label=label, reason=reason,
+                           components_compared=sorted(compared),
+                           components_unconsumed=sorted(unconsumed),
+                           review_required=review, match_mode="structured", **extra)
+
+    # A cell that contradicts itself cannot be audited against anything.
+    for side, value in (("review", rv), ("source", sv)):
+        if not value.self_consistent(rel_tolerance):
+            return result(
+                AuditLabel.NOT_COMPARABLE,
+                f"the {side} value is internally inconsistent: {value.events}/"
+                f"{value.total} is {value.derived_pct:.4g}%, not {value.pct}%",
+                compared=["events", "pct"])
+
+    compared: list[str] = []
+    unconsumed: list[str] = []
+
+    # --- a relational bound ("p < 0.001") ---
+    if "operator" in structural:
+        verdict = _compare_operator(rv, sv, p_value_abs_tolerance, rel_tolerance)
+        if verdict is not None:
+            label, reason = verdict
+            return result(label, reason, compared=["operator"])
+        compared.append("operator")
+
+    # --- proportions: events/total and percentages meet through the percentage ---
+    if structural & {"events", "pct"}:
+        r_pct = rv.pct if rv.pct is not None else rv.derived_pct
+        s_pct = sv.pct if sv.pct is not None else sv.derived_pct
+        if r_pct is not None and s_pct is not None:
+            if not _within(r_pct, s_pct, rel_tolerance):
+                return result(AuditLabel.MISMATCH,
+                              f"proportion {r_pct:.4g}% vs {s_pct:.4g}%",
+                              compared=["pct"], rel_error_pct=round(_rel(r_pct, s_pct) * 100, 4))
+            compared.append("pct")
+            if rv.events is not None and sv.events is not None:
+                if rv.events != sv.events or rv.total != sv.total:
+                    return result(AuditLabel.MISMATCH,
+                                  f"counts {rv.events}/{rv.total} vs "
+                                  f"{sv.events}/{sv.total}", compared=["events", "pct"])
+                compared.append("events")
+            elif "events" in structural:
+                unconsumed.append("events")   # only one side reported the counts
+        else:
+            unconsumed.extend(structural & {"events", "pct"})
+
+    # --- confidence interval ---
+    if "ci" in structural:
+        if rv.ci_lower is not None and sv.ci_lower is not None:
+            if null_value is not None and rv.crosses(null_value) != sv.crosses(null_value):
+                return result(
+                    AuditLabel.MISMATCH,
+                    f"the intervals disagree about {null_value:g}: review "
+                    f"[{rv.ci_lower:g}, {rv.ci_upper:g}] vs source "
+                    f"[{sv.ci_lower:g}, {sv.ci_upper:g}] — one excludes it, one does not",
+                    compared=["ci"])
+            for name, a, b in (("lower", rv.ci_lower, sv.ci_lower),
+                               ("upper", rv.ci_upper, sv.ci_upper)):
+                if not _within(a, b, _CI_TOLERANCE):
+                    return result(
+                        AuditLabel.MISMATCH,
+                        f"confidence interval {name} bound {a:g} vs {b:g}",
+                        compared=["ci"], rel_error_pct=round(_rel(a, b) * 100, 4))
+            compared.append("ci")
+        else:
+            # An interval one side reported and the other did not cannot be
+            # verified; the point estimate alone must not read as fully checked.
+            unconsumed.append("ci")
+
+    if unconsumed:
+        # Fall back to the point estimates ONLY if nothing else was comparable.
+        # Where a component did agree — a percentage, say — the leading numbers
+        # may not even denote the same quantity: in "45/120 (37.5%)" against
+        # "37.5%" they are an event count and a percentage.
+        if compared:
+            return result(
+                AuditLabel.MATCH,
+                f"{', '.join(compared)} agree, but only one side reports "
+                f"{', '.join(unconsumed)} — that part is unverified",
+                compared=compared, unconsumed=unconsumed, review=True)
+        mean_ok = _within(rv.primary, sv.primary, rel_tolerance)
+        return result(
+            AuditLabel.MATCH if mean_ok else AuditLabel.MISMATCH,
+            ("the point estimates agree, but " if mean_ok else "point estimates differ; ")
+            + f"only one side reports {', '.join(unconsumed)} — not verified",
+            compared=compared, unconsumed=unconsumed, review=True,
+            rel_error_pct=round(_rel(rv.primary, sv.primary) * 100, 4))
+
+    if compared:
+        return result(AuditLabel.MATCH,
+                      f"{', '.join(compared)} agree within tolerance",
+                      compared=compared)
+    return None
+
+
+def _compare_operator(
+    rv: NumericValue, sv: NumericValue, abs_tolerance: float, rel_tolerance: float,
+) -> tuple[AuditLabel, str] | None:
+    """Judge a relational bound; None means "agreed, carry on"."""
+    if rv.operator and sv.operator:
+        if rv.operator != sv.operator:
+            return AuditLabel.MISMATCH, (
+                f"different bounds: {rv.operator}{rv.primary:g} vs "
+                f"{sv.operator}{sv.primary:g}")
+        if abs(rv.primary - sv.primary) <= abs_tolerance or _within(
+                rv.primary, sv.primary, rel_tolerance):
+            return None
+        return AuditLabel.MISMATCH, (
+            f"same bound, different threshold: {rv.operator}{rv.primary:g} vs "
+            f"{sv.operator}{sv.primary:g}")
+
+    # One side states a bound, the other an exact value.
+    bound, exact = (rv, sv) if rv.operator else (sv, rv)
+    satisfies = (exact.primary < bound.primary if bound.operator == "<" else
+                 exact.primary <= bound.primary if bound.operator == "<=" else
+                 exact.primary > bound.primary if bound.operator == ">" else
+                 exact.primary >= bound.primary)
+    if satisfies:
+        # "p < 0.001" and "p = 0.0009" do not contradict each other, but they are
+        # not the same statement either — one is a bound, the other a measurement.
+        return AuditLabel.NOT_COMPARABLE, (
+            f"consistent but not exact: {bound.operator}{bound.primary:g} reports a "
+            f"bound, {exact.primary:g} an exact value")
+    return AuditLabel.MISMATCH, (
+        f"{exact.primary:g} violates the reported bound "
+        f"{bound.operator}{bound.primary:g}")
 
 
 def compare_values(
@@ -38,6 +193,8 @@ def compare_values(
     source_unit: str = "",
     rel_tolerance: float = 0.01,
     sd_rel_tolerance: float = 0.03,
+    p_value_abs_tolerance: float = 0.0,
+    null_value: float | None = None,
     audit_id: str = "",
     study_id: str = "",
     group: str = "-",
@@ -76,6 +233,17 @@ def compare_values(
             label=AuditLabel.NOT_COMPARABLE,
             reason="a primary numeric value could not be parsed",
         )
+
+    # 2b. Structured components (a bound, an interval, events/total). These are
+    # decided on their own terms BEFORE the mean band, because comparing their
+    # leading number as if it were a plain value is what produced wrong verdicts:
+    # two hazard ratios of 0.62 matched while one interval crossed 1.0 and the
+    # other did not.
+    structured = _compare_components(
+        rv, sv, base, rel_tolerance=rel_tolerance,
+        p_value_abs_tolerance=p_value_abs_tolerance, null_value=null_value)
+    if structured is not None:
+        return structured
 
     # 3. Mean band.
     mean_rel = _rel(rv.primary, sv.primary)

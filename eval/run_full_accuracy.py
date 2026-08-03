@@ -26,6 +26,11 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 import react_review.cli  # noqa: F401  prime the import graph
 from react_review.agents.collector import Collector
 from react_review.audit import ToleranceTable
+from react_review.audit.semantic_cache import SemanticCache
+from react_review.audit.semantic_control import (
+    format_threshold_sensitivity,
+    threshold_sensitivity,
+)
 from react_review.core.config import load_config
 from react_review.csv_io import load_included_studies
 from react_review.eval_accuracy import format_report, run_rows, score_rows
@@ -33,9 +38,11 @@ from react_review.dkb import KnowledgeBase
 from react_review.pipeline.factory import _create_llm_backend
 from react_review.retrieval.local_pdf import LocalPdfRetriever
 from react_review.steps.paper_verification.schemas import ReferenceEntry
+from react_review.tools.compare import CompareValuesTool
 from react_review.tools.extract import FetchFullTextTool
 from react_review.tools.extract_source import ExtractSourceValueTool
 from react_review.tools.registry import ToolRegistry
+from react_review.tools.semantic_compare import SemanticCompareTool
 
 BENCH = Path(__file__).resolve().parent / "benchmark"
 ROOT = BENCH.parent.parent
@@ -58,6 +65,12 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--html", type=Path, default=None, help="write an HTML test report")
     ap.add_argument("--dry-run", action="store_true",
                     help="offline: just show the answer-key distribution")
+    ap.add_argument("--semantic", choices=("off", "cache-only", "on"), default="off",
+                    help="judge text the numeric comparison cannot read "
+                         "(default off: the eval stays deterministic)")
+    ap.add_argument("--semantic-cache", type=Path, default=BENCH / "semantic_cache.json",
+                    help="the recording both `on` and `cache-only` runs share, so a "
+                         "replay reproduces the run that recorded it")
     args = ap.parse_args(argv)
 
     rows = _load_answer_key(BENCH / "audit_template.csv")
@@ -89,13 +102,32 @@ def main(argv: list[str] | None = None) -> None:
     kb = KnowledgeBase.from_json(ROOT / "configs" / "knowledge.seed.json")
     collector = Collector(reg, knowledge=kb)
 
+    # One shared cache file across runs — a fresh empty cache per run would make
+    # `cache-only` miss everything the `on` run just recorded.
+    cache = None if args.semantic == "off" else SemanticCache(args.semantic_cache)
+    comparator = CompareValuesTool(
+        tol, semantic=SemanticCompareTool(backend) if args.semantic == "on" else None,
+        semantic_mode=args.semantic, semantic_cache=cache,
+        min_confidence=tol.semantic_min_confidence)
+
     def reference_for(study_id: str) -> ReferenceEntry:
         s = by_id.get(study_id)
         return ReferenceEntry(title=(s.review_citation if s else study_id),
                               doi=(s.doi if s else None))
 
     print(f"running {len(rows)} rows through Collector + audit …")
-    results = asyncio.run(run_rows(rows, collector, tol, reference_for, args.context))
+    results = asyncio.run(run_rows(rows, collector, tol, reference_for, args.context,
+                                   comparator=comparator))
+    if cache is not None:
+        cache.save()
+        print(f"semantic: mode={args.semantic} "
+              f"min_confidence={tol.semantic_min_confidence} "
+              f"{cache.hits} reused / {cache.misses} new "
+              f"({cache.hit_rate:.0%} from cache) -> {args.semantic_cache}")
+        vs = cache.verdicts()
+        line = format_threshold_sensitivity(threshold_sensitivity(vs), len(vs))
+        if line:
+            print(f"semantic: {line}")
 
     for r in results:
         mark = "ok" if r.predicted_label == r.expected_label else "XX"

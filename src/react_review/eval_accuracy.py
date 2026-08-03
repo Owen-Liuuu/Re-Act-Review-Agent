@@ -15,7 +15,10 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Protocol
 
-from react_review.audit import ToleranceTable, compare_values
+from react_review.audit import ToleranceTable
+from react_review.schemas.audit import MatchResult
+from react_review.tools.compare import CompareValuesTool
+from react_review.tools.models import CompareInput
 from react_review.core.enums import AuditLabel
 from react_review.schemas.evidence import ReviewDataItem
 
@@ -44,14 +47,18 @@ class _CollectorLike(Protocol):
                 *, research_context: str = "") -> Awaitable[Any]: ...
 
 
-def _label(tol: ToleranceTable, field_type: str, rv: Any, sv: Any,
-           ru: str, su: str) -> AuditLabel:
-    return compare_values(
+async def _compare(comparator, field_type: str, rv: Any, sv: Any, ru: str, su: str,
+                   *, quote: str = "", research_context: str = "") -> MatchResult:
+    """Score through the TOOL, so the eval exercises the same path a run does.
+
+    Calling ``compare_values`` directly here meant the eval could never reach the
+    semantic fallback, and a number it reported would not be the number the
+    pipeline produces.
+    """
+    return await comparator.run(CompareInput(
         field_type=field_type, review_value=rv, source_value=sv,
-        review_unit=ru, source_unit=su,
-        rel_tolerance=tol.rel_tolerance(field_type),
-        sd_rel_tolerance=tol.sd_rel_tolerance(field_type),
-    ).label
+        review_unit=ru, source_unit=su, source_quote=quote,
+        research_context=research_context))
 
 
 async def run_rows(
@@ -60,8 +67,10 @@ async def run_rows(
     tol: ToleranceTable,
     reference_for: Callable[[str], Any],
     research_context: str = "",
+    comparator: Any = None,
 ) -> list[RowResult]:
     """Collect + audit each answer-key row into a scored RowResult."""
+    comparator = comparator or CompareValuesTool(tol)
     results: list[RowResult] = []
     for r in rows:
         review = ReviewDataItem(
@@ -73,14 +82,17 @@ async def run_rows(
             review, reference_for(review.study_id), research_context=research_context)
         si = res.source_item
 
-        predicted = _label(tol, review.field_type, review.value, si.source_value,
-                            review.unit, si.source_unit)
+        predicted = (await _compare(
+            comparator, review.field_type, review.value, si.source_value,
+            review.unit, si.source_unit, quote=si.source_quote,
+            research_context=research_context)).label
         # Extraction is "correct" when the extracted value matches the human's
         # hand-labeled source value within tolerance.
         expected_source = r.get("source_value") or None
-        extraction_correct = si.source_value is not None and _label(
-            tol, review.field_type, expected_source, si.source_value,
-            (r.get("source_unit") or ""), si.source_unit) == AuditLabel.MATCH
+        extraction_correct = si.source_value is not None and (await _compare(
+            comparator, review.field_type, expected_source, si.source_value,
+            (r.get("source_unit") or ""), si.source_unit,
+            research_context=research_context)).label == AuditLabel.MATCH
 
         results.append(RowResult(
             study_id=review.study_id, group=review.group, field_type=review.field_type,
