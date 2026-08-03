@@ -22,13 +22,15 @@ class UnmatchedClaim(BaseModel):
     field_type: str = ""
     table_id: str = ""
     cell_ref: tuple[int, int] | None = None
+    checklist_id: str = ""
     # no_source_evidence | ambiguous_match_key | unclaimed_source
     reason_code: str = "no_source_evidence"
     message: str = ""
 
     @property
     def key_text(self) -> str:
-        return f"{self.study_id}/{self.group}/{self.timepoint}/{self.field_type}"
+        base = f"{self.study_id}/{self.group}/{self.timepoint}/{self.field_type}"
+        return f"{base} [checklist:{self.checklist_id}]" if self.checklist_id else base
 
 
 class AuditReport(BaseModel):
@@ -69,6 +71,12 @@ class HumanReviewFlag(BaseModel):
     field_type: str = ""
     table_id: str = ""
     cell_ref: tuple[int, int] | None = None
+    checklist_id: str = ""
+    # Concept-level flags point back to the one run-level field decision and say
+    # how many cells it affected. Ordinary audit discrepancies leave the key
+    # empty and continue to point at exactly one cell.
+    resolution_key: str = ""
+    affected_cells: int = 1
     label: str = ""          # the audit label, or "escalated"/"unmatched"
     reason: str = ""
 

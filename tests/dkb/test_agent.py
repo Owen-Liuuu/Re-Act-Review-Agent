@@ -65,3 +65,16 @@ async def test_agent_proposes_new_as_provisional(kb):
     assert result.entry is not None
     assert result.entry.status == "provisional"        # never silently authoritative
     assert result.entry.provenance.source == "llm" and result.entry.provenance.confidence == 0.7
+
+
+@pytest.mark.asyncio
+async def test_invalid_confidence_is_provenance_only_not_a_parse_failure(kb):
+    backend = _Stub({"field_type": "novel_marker", "concept": "marker",
+                     "value_type": "numeric", "default_unit": "%",
+                     "scope": "cohort", "is_new": True,
+                     "grounded_on": [], "confidence": "very sure"})
+    result = await KnowledgeAgent(backend, KeywordRetriever(kb)).classify(
+        "Novel marker", unit="%")
+    assert result.field_type == "novel_marker"
+    assert result.confidence == 0.0
+    assert result.entry is not None and result.entry.provenance.confidence == 0.0

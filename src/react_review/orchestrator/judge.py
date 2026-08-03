@@ -10,7 +10,8 @@ genuinely ambiguous cases) can slot in later.
 """
 from __future__ import annotations
 
-from react_review.core.enums import AuditLabel, CollectionOutcome
+from react_review.checklist.schema import ChecklistApplication
+from react_review.core.enums import AuditLabel, CollectionOutcome, ReportVerdict
 from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
 from react_review.schemas.report import AuditReport, FinalVerification, HumanReviewFlag
 
@@ -40,17 +41,24 @@ def _locator(item) -> tuple:
         item.study_id, item.group, getattr(item, "timepoint", "single"),
         item.field_type, getattr(item, "table_id", "") or "",
         getattr(item, "cell_ref", None),
+        getattr(item, "checklist_id", "") or "",
     )
 
 
-def _flag(item, label: str, reason: str, *, field_type: str | None = None) -> HumanReviewFlag:
+def _flag(
+    item, label: str, reason: str, *, field_type: str | None = None,
+    resolution_key: str = "", affected_cells: int = 1,
+) -> HumanReviewFlag:
     """A flag that points at ONE cell, so a human can go and check it."""
     return HumanReviewFlag(
         study_id=item.study_id, group=item.group,
         timepoint=getattr(item, "timepoint", "single"),
         field_type=item.field_type if field_type is None else field_type,
         table_id=getattr(item, "table_id", "") or "",
-        cell_ref=getattr(item, "cell_ref", None), label=label, reason=reason,
+        cell_ref=getattr(item, "cell_ref", None),
+        checklist_id=getattr(item, "checklist_id", "") or "",
+        resolution_key=resolution_key or getattr(item, "resolution_key", ""),
+        affected_cells=affected_cells, label=label, reason=reason,
     )
 
 
@@ -62,6 +70,7 @@ class Judge:
         report: AuditReport,
         source_items: list[SourceEvidenceItem] | None = None,
         review_items: list["ReviewDataItem"] | None = None,
+        checklist: ChecklistApplication | None = None,
     ) -> FinalVerification:
         # Keyed on the FULL locator, not (study, group, field): two rows of the
         # same study/cohort/field would otherwise overwrite each other here, and
@@ -131,39 +140,71 @@ class Judge:
                 flags.append(_flag(s, "cohort_ambiguous", detail or
                                    "the source cohort could not be confirmed"))
 
-        # DKB guardrail: the concept mapping's own certainty, independent of the
-        # value check. A CANDIDATE (LLM-proposed, not-yet-authoritative) must be
-        # confirmed; an UNRESOLVED field (no concept found) is kept but flagged.
-        for item in (review_items or []):
-            status = getattr(item, "resolution_status", "resolved")
-            if status == "candidate":
-                contradiction = mismatch_by_key.get(_locator(item))
-                if contradiction:
-                    label, reason = "concept_contradicted", (
-                        f"field '{item.raw_field_name or item.field_type}' was "
-                        f"auto-classified as {item.field_type}, but the source "
-                        f"evidence contradicts it: {contradiction}")
-                else:
-                    label, reason = "provisional_concept", (
-                        f"field '{item.raw_field_name or item.field_type}' was "
-                        f"auto-classified as {item.field_type} (provisional) — "
-                        "confirm the concept mapping")
-                flags.append(_flag(item, label, reason))
-            elif status == "unresolved":
-                # No concept to name it by — show the review's own column header
-                # so the flag still says WHICH field a human should look at.
-                flags.append(_flag(
-                    item, "needs_review",
-                    f"field '{item.raw_field_name}' could not be mapped to a known "
-                    "concept — not comparable, needs human review",
-                    field_type=item.field_type or item.raw_field_name))
+        # DKB guardrail is CONCEPT-level, not cell-level. One tentative mapping
+        # can affect dozens of rows; emitting the same flag for every row creates
+        # alert fatigue without creating any new decision for the reviewer.
+        concept_groups: dict[str, list[ReviewDataItem]] = {}
+        for index, item in enumerate(review_items or []):
+            if getattr(item, "resolution_status", "resolved") not in {
+                    "candidate", "unresolved"}:
+                continue
+            key = getattr(item, "resolution_key", "") or f"cell:{index}:{_locator(item)!r}"
+            concept_groups.setdefault(key, []).append(item)
+
+        for key, items in concept_groups.items():
+            statuses = {getattr(item, "resolution_status", "resolved") for item in items}
+            contradictions = [
+                (item, mismatch_by_key[_locator(item)])
+                for item in items if _locator(item) in mismatch_by_key]
+            exemplar = contradictions[0][0] if contradictions else items[0]
+            raw_name = exemplar.raw_field_name or exemplar.field_type
+            scope = (f"affects {len(items)} review cell(s) across "
+                     f"{len({item.study_id for item in items})} study/studies")
+
+            if contradictions:
+                details = list(dict.fromkeys(reason for _, reason in contradictions))
+                label = "concept_contradicted"
+                reason = (
+                    f"field '{raw_name}' was auto-classified as {exemplar.field_type}, "
+                    f"but source evidence contradicts the mapping: {'; '.join(details)}; "
+                    f"{scope}")
+                field_type = exemplar.field_type
+            elif "unresolved" in statuses:
+                label = "needs_review"
+                reason = (
+                    f"field '{raw_name}' could not be mapped to a stable, "
+                    f"self-consistent concept — not comparable; {scope}")
+                field_type = exemplar.field_type or raw_name
+            else:
+                label = "provisional_concept"
+                reason = (
+                    f"field '{raw_name}' was auto-classified as "
+                    f"{exemplar.field_type} (stable but still provisional); {scope}; "
+                    "confirm the concept mapping")
+                field_type = exemplar.field_type
+            flags.append(_flag(
+                exemplar, label, reason, field_type=field_type,
+                resolution_key=(key if not key.startswith("cell:") else ""),
+                affected_cells=len(items)))
+
+        # A missing checklist requirement is a review-level finding, not a
+        # fabricated claim with an empty value. Route it directly to the human.
+        for gap in (checklist.gaps if checklist is not None else []):
+            flags.append(HumanReviewFlag(
+                study_id=gap.study_id, group=gap.group,
+                field_type=gap.checklist_id, checklist_id=gap.checklist_id,
+                label="checklist_gap", reason=gap.reason))
+
+        verdict = report.verdict
+        if checklist is not None and checklist.gaps and verdict == ReportVerdict.PASS:
+            verdict = ReportVerdict.PARTIAL
 
         summary = (
-            f"[{report.verdict.value}] {report.n_match} match, {report.n_mismatch} "
+            f"[{verdict.value}] {report.n_match} match, {report.n_mismatch} "
             f"mismatch, {report.n_unit_mismatch} unit_mismatch; "
-            f"{len(flags)} item(s) flagged for human review."
+            f"{len(flags)} review flag(s)."
         )
         return FinalVerification(
-            run_id=report.run_id, verdict=report.verdict,
+            run_id=report.run_id, verdict=verdict,
             human_review_flags=flags, summary=summary,
         )

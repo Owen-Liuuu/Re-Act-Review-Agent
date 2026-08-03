@@ -48,6 +48,7 @@ class MatchResult(BaseModel):
     timepoint: str = "single"
     table_id: str = ""
     cell_ref: tuple[int, int] | None = None
+    checklist_id: str = ""
     field_type: str = ""
     review_value: Value = None
     review_unit: str = ""

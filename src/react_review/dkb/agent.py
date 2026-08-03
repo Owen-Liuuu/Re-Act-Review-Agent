@@ -8,12 +8,15 @@ authoritative (human confirm / repeated agreement) is DKB-3.
 """
 from __future__ import annotations
 
+import hashlib
+
 import structlog
 from pydantic import BaseModel, Field
 
 from react_review.dkb.retrieval import Retriever
 from react_review.dkb.schema import KnowledgeEntry, Provenance
 from react_review.llm.base import LLMBackend, parse_llm_response
+from react_review.schemas.resolution import ResolutionAttempt
 
 logger = structlog.get_logger(__name__)
 
@@ -29,6 +32,7 @@ Candidate field_types (choose the best fit; otherwise propose a NEW snake_case f
 Return a single JSON object, no commentary:
 {{"field_type": "snake_case_name", "concept": "short description",
   "value_type": "numeric|text|categorical", "default_unit": "unit or empty",
+  "scope": "study|cohort",
   "is_new": true or false,
   "grounded_on": ["field_types from the candidates you used to decide"],
   "confidence": 0.0}}
@@ -43,6 +47,15 @@ class AgentClassification(BaseModel):
     confidence: float = 0.0
     grounded_on: list[str] = Field(default_factory=list)
     entry: KnowledgeEntry | None = None      # the provisional entry to add, if new
+    attempt: ResolutionAttempt | None = None
+
+
+class KnowledgeAgentError(RuntimeError):
+    """A failed classification that still carries its auditable attempt."""
+
+    def __init__(self, message: str, attempt: ResolutionAttempt) -> None:
+        super().__init__(message)
+        self.attempt = attempt
 
 
 class KnowledgeAgent:
@@ -55,6 +68,7 @@ class KnowledgeAgent:
     async def classify(
         self, raw_name: str, unit: str = "",
         research_context: str = "", modality: str = "",
+        *, seed: int = 42,
     ) -> AgentClassification:
         cands = await self._retriever.retrieve(f"{raw_name} {unit} {research_context}".strip())
         cand_list = "\n".join(
@@ -66,15 +80,39 @@ class KnowledgeAgent:
             context=research_context or "a systematic review",
             raw_field_name=raw_name, unit=unit, candidates=cand_list,
         )
-        data = parse_llm_response(await self._backend.complete(prompt), self._backend.model_id)
+        prompt_sha256 = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        raw = ""
+        try:
+            raw = await self._backend.complete(prompt, seed=seed)
+            data = parse_llm_response(raw, self._backend.model_id)
 
-        ft = (data.get("field_type") or "").strip().lower().replace(" ", "_")
-        if not ft:
-            raise ValueError(f"agent returned no field_type for {raw_name!r}")
-        known = {e.field_type for e in cands}
-        is_new = bool(data.get("is_new", ft not in known)) and ft not in known
-        grounded = [str(c) for c in (data.get("grounded_on") or []) if isinstance(c, str)]
-        confidence = float(data.get("confidence") or 0.0)
+            ft = (data.get("field_type") or "").strip().lower().replace(" ", "_")
+            if not ft:
+                raise ValueError(f"agent returned no field_type for {raw_name!r}")
+            known = {e.field_type for e in cands}
+            # Whether a concept is new is a fact about the retrieved/curated KB,
+            # not something the model gets to assert incorrectly.
+            is_new = ft not in known
+            grounded = [str(c) for c in (data.get("grounded_on") or [])
+                        if isinstance(c, str)]
+            try:
+                confidence = float(data.get("confidence") or 0.0)
+            except (TypeError, ValueError):
+                # Confidence is provenance only. A malformed self-score must
+                # not turn an otherwise identical concept into a different
+                # control-flow outcome.
+                confidence = 0.0
+        except Exception as exc:                              # noqa: BLE001
+            response_sha256 = (
+                hashlib.sha256(raw.encode("utf-8")).hexdigest() if raw else "")
+            raise KnowledgeAgentError(
+                str(exc),
+                ResolutionAttempt(
+                    seed=seed, model_id=self._backend.model_id,
+                    prompt_sha256=prompt_sha256,
+                    response_sha256=response_sha256, error=str(exc)[:200],
+                ),
+            ) from exc
 
         entry = None
         if is_new:
@@ -83,6 +121,7 @@ class KnowledgeAgent:
                 concept=(data.get("concept") or "").strip(),
                 value_type=(data.get("value_type") or "numeric").strip().lower(),
                 default_unit=(data.get("default_unit") or "").strip(),
+                scope=(data.get("scope") or "cohort").strip().lower(),
                 synonyms=[raw_name],
                 provenance=Provenance(source="llm", confidence=confidence,
                                       citation=", ".join(grounded)),
@@ -90,5 +129,15 @@ class KnowledgeAgent:
             )
         logger.info("dkb_agent_classify", raw=raw_name, field_type=ft,
                     is_new=is_new, grounded_on=grounded)
+        attempt = ResolutionAttempt(
+            seed=seed, model_id=self._backend.model_id, field_type=ft,
+            is_new=is_new,
+            value_type=str(data.get("value_type") or "").strip().lower(),
+            default_unit=str(data.get("default_unit") or "").strip(),
+            scope=str(data.get("scope") or (entry.scope if entry is not None else "cohort")),
+            grounded_on=grounded, confidence=confidence,
+            prompt_sha256=prompt_sha256,
+            response_sha256=hashlib.sha256(raw.encode("utf-8")).hexdigest(),
+        )
         return AgentClassification(field_type=ft, is_new=is_new, confidence=confidence,
-                                   grounded_on=grounded, entry=entry)
+                                   grounded_on=grounded, entry=entry, attempt=attempt)

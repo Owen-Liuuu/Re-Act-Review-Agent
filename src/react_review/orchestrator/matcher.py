@@ -36,15 +36,19 @@ def _key_of(item: ReviewDataItem | SourceEvidenceItem) -> MatchKey:
 
 
 def cell_id(item: ReviewDataItem | SourceEvidenceItem) -> str:
-    """The disambiguator: which table cell this row is about ("" if unknown).
+    """The table cell and/or checklist assertion identity ("" if unknown).
 
     ``cell_ref`` alone is not enough — row 0, column 3 exists in every table.
     """
     table_id = getattr(item, "table_id", "") or ""
     cell = getattr(item, "cell_ref", None)
-    if not table_id or cell is None:
-        return ""
-    return f"{table_id}#{cell[0]},{cell[1]}"
+    checklist_id = getattr(item, "checklist_id", "") or ""
+    parts: list[str] = []
+    if table_id and cell is not None:
+        parts.append(f"{table_id}#{cell[0]},{cell[1]}")
+    if checklist_id:
+        parts.append(f"checklist#{checklist_id}")
+    return "|".join(parts)
 
 
 def _unmatched(item, reason_code: str, message: str) -> UnmatchedClaim:
@@ -52,6 +56,7 @@ def _unmatched(item, reason_code: str, message: str) -> UnmatchedClaim:
         study_id=item.study_id, group=item.group, timepoint=item.timepoint,
         field_type=item.field_type, table_id=getattr(item, "table_id", "") or "",
         cell_ref=getattr(item, "cell_ref", None),
+        checklist_id=getattr(item, "checklist_id", "") or "",
         reason_code=reason_code, message=message,
     )
 

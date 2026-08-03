@@ -31,6 +31,7 @@ _LABEL = {
     "unknown_cohort": ("Cohort not identified", "warn"),
     "cohort_ambiguous": ("Cohort unconfirmed", "warn"),
     "ambiguous_match_key": ("Ambiguous — not paired", "warn"),
+    "checklist_gap": ("Required checklist gap", "warn"),
 }
 
 
@@ -40,6 +41,7 @@ def _locator(item) -> tuple:
         item.study_id, item.group, getattr(item, "timepoint", "single"),
         item.field_type, getattr(item, "table_id", "") or "",
         getattr(item, "cell_ref", None),
+        getattr(item, "checklist_id", "") or "",
     )
 
 
@@ -111,7 +113,7 @@ def render_html_report(pkg: EvidencePackage) -> str:
     rep = pkg.report or AuditReport(run_id=pkg.run_id)
     fv = pkg.final_verification or FinalVerification(
         run_id=pkg.run_id, verdict=rep.verdict, summary=rep.summary)
-    v_text, v_cls = _VERDICT.get(rep.verdict.value, (rep.verdict.value, "muted"))
+    v_text, v_cls = _VERDICT.get(fv.verdict.value, (fv.verdict.value, "muted"))
     # Keyed on the full locator: two rows of the same study/cohort/field would
     # otherwise collapse here, showing one row's quote next to the other's number.
     src = {_locator(s): s for s in pkg.source_items}

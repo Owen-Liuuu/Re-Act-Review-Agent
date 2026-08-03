@@ -62,6 +62,41 @@ def test_render_escapes_html():
     assert "&lt;script&gt;" in html
 
 
+def test_final_checklist_verdict_controls_the_banner():
+    rep = AuditReport(run_id="d", n_match=1, verdict=ReportVerdict.PASS)
+    fv = FinalVerification(
+        run_id="d", verdict=ReportVerdict.PARTIAL,
+        human_review_flags=[HumanReviewFlag(
+            field_type="risk", checklist_id="risk", label="checklist_gap",
+            reason="required checklist item was not found")],
+        summary="[PARTIAL] required checklist gap")
+    html = render_html_report(EvidencePackage(
+        run_id="d", report=rep, final_verification=fv))
+    assert '<div class="vb">PARTIAL</div>' in html
+    assert "Required checklist gap" in html
+
+
+def test_checklist_identity_prevents_source_quotes_from_overwriting_in_report():
+    results = [
+        MatchResult(study_id="s", field_type="effect_size", checklist_id="primary",
+                    label=AuditLabel.MATCH, source_value="0.4"),
+        MatchResult(study_id="s", field_type="effect_size", checklist_id="secondary",
+                    label=AuditLabel.MATCH, source_value="0.2"),
+    ]
+    sources = [
+        SourceEvidenceItem(study_id="s", field_type="effect_size",
+                           checklist_id="primary", source_quote="primary quote"),
+        SourceEvidenceItem(study_id="s", field_type="effect_size",
+                           checklist_id="secondary", source_quote="secondary quote"),
+    ]
+    rep = AuditReport(run_id="d", results=results, n_match=2, verdict=ReportVerdict.PASS)
+    html = render_html_report(EvidencePackage(
+        run_id="d", report=rep, source_items=sources,
+        final_verification=FinalVerification(
+            run_id="d", verdict=ReportVerdict.PASS, summary="ok")))
+    assert "primary quote" in html and "secondary quote" in html
+
+
 def test_a_model_reached_verdict_shows_its_reasoning_and_its_controls():
     # A semantic MATCH that renders as a plain MATCH is the opaque output the
     # report exists to prevent: the reader must see the claim AND the checks.

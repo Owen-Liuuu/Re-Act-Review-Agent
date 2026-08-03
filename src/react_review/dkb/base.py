@@ -8,12 +8,14 @@ write-back land in DKB-2 (dkb/retrieval.py, dkb/agent.py).
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 
 from react_review.dkb.schema import KnowledgeEntry
+from react_review.schemas.knowledge import KnowledgeImportRecord
 from react_review.normalize.units import normalize_unit
 
 
@@ -26,6 +28,7 @@ class KnowledgeBase(BaseModel):
 
     entries: dict[str, KnowledgeEntry] = Field(default_factory=dict)
     version: str = ""              # snapshot id for reproducible runs (DKB-3)
+    imports: list[KnowledgeImportRecord] = Field(default_factory=list)
 
     # ---- persistence (same JSON shape as the old vocabulary seed) ----
     @classmethod
@@ -41,6 +44,16 @@ class KnowledgeBase(BaseModel):
     def save(self, path: Path | str) -> None:
         body = {ft: e.model_dump(exclude={"field_type"}) for ft, e in self.entries.items()}
         Path(path).write_text(json.dumps(body, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def fingerprint(self) -> str:
+        """Content hash of the effective entries, independent of file ordering."""
+        body = {
+            ft: self.entries[ft].model_dump(mode="json", exclude={"field_type"})
+            for ft in sorted(self.entries)
+        }
+        material = json.dumps(
+            body, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+        return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
     # ---- mutation ----
     def add(self, entry: KnowledgeEntry) -> None:

@@ -35,6 +35,12 @@ def _verify(kb, ft, **kw):
     return verify_candidate(ft, kb=kb, **base)
 
 
+def _proposal(ft="novel_marker", **kw):
+    base = dict(field_type=ft, value_type="numeric", default_unit="%", scope="cohort")
+    base.update(kw)
+    return KnowledgeEntry(**base)
+
+
 # --- unit_kind ---
 
 @pytest.mark.parametrize("unit, kind", [
@@ -49,30 +55,20 @@ def test_unit_kind(unit, kind):
     assert unit_kind(unit) == kind
 
 
-# --- grounding check ---
+# --- confidence is provenance, never a gate ---
 
-def test_grounding_passes_when_cited():
-    v = _verify(_kb(), "eat_thickness", is_new=True, grounded_on=["eat_thickness"],
-                confidence=0.05)
-    assert v.ok and v.checks["grounding"]
-
-
-def test_grounding_passes_on_confidence_alone():
-    v = _verify(_kb(), "novel_marker", is_new=True, grounded_on=[], confidence=0.6)
-    assert v.ok and v.checks["grounding"]
+@pytest.mark.parametrize("confidence", [0.0, 0.1, 0.6, 1.0])
+def test_confidence_does_not_change_a_self_consistent_new_concept(confidence):
+    v = _verify(
+        _kb(), "novel_marker", is_new=True, grounded_on=[], confidence=confidence,
+        proposal=_proposal(), unit="%", value="7.0")
+    assert v.ok and v.checks["confidence_not_used"]
 
 
-def test_grounding_fails_ungrounded_low_confidence():
-    v = _verify(_kb(), "novel_marker", is_new=True, grounded_on=[], confidence=0.1)
-    assert not v.ok and v.checks["grounding"] is False
-    assert "ungrounded" in v.reason
-
-
-def test_mapping_to_existing_concept_is_grounded_by_construction():
-    # is_new=False means the LLM chose a retrieved concept → grounded even at conf 0
+def test_mapping_to_existing_concept_does_not_need_model_confidence():
     v = _verify(_kb(), "eat_thickness", is_new=False, grounded_on=[], confidence=0.0,
                 unit="mm")
-    assert v.ok and v.checks["grounding"]
+    assert v.ok and v.checks["confidence_not_used"]
 
 
 # --- unit-kind check ---
@@ -111,12 +107,44 @@ def test_value_within_range_is_accepted():
     assert v.ok and v.checks["range"]
 
 
-# --- unknown concept: nothing to check against ---
+# --- new concept self-contract ---
 
-def test_new_concept_not_in_kb_skips_unit_and_range():
-    v = _verify(_kb(), "brand_new_score", is_new=True, grounded_on=[], confidence=0.6,
+def test_new_concept_requires_a_proposal_contract():
+    v = _verify(_kb(), "brand_new_score", is_new=True, grounded_on=[], confidence=1.0,
                 unit="cm3", value="9999")
-    assert v.ok                                            # no expectation to violate
+    assert not v.ok and v.checks["proposal_present"] is False
+
+
+def test_new_numeric_concept_rejects_a_text_observation_even_at_confidence_one():
+    v = _verify(
+        _kb(), "control_group_size", is_new=True, confidence=1.0, grounded_on=[],
+        proposal=_proposal("control_group_size", default_unit="count"),
+        unit="", value="Control")
+    assert not v.ok and v.checks["observed_value_type"] is False
+    assert "contradicts observed value" in v.reason
+
+
+def test_new_concept_rejects_declared_unit_kind_conflict():
+    v = _verify(
+        _kb(), "novel_volume", is_new=True, confidence=1.0, grounded_on=[],
+        proposal=_proposal("novel_volume", default_unit="mm"),
+        unit="cm3", value="42")
+    assert not v.ok and v.checks["declared_unit"] is False
+
+
+def test_new_concept_must_declare_an_observed_unit():
+    v = _verify(
+        _kb(), "novel_marker", is_new=True, confidence=1.0, grounded_on=[],
+        proposal=_proposal(default_unit=""), unit="%", value="7")
+    assert not v.ok and v.checks["declared_unit"] is False
+    assert "omitted default_unit" in v.reason
+
+
+def test_new_concept_rejects_invalid_scope():
+    v = _verify(
+        _kb(), "novel_marker", is_new=True, confidence=1.0, grounded_on=[],
+        proposal=_proposal(scope="review"), unit="%", value="7")
+    assert not v.ok and v.checks["declared_scope"] is False
 
 
 # --- evidence_contradicts (the source-side back-check) ---

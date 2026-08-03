@@ -77,6 +77,7 @@ class AuditOrchestrator:
             res.timepoint = review.timepoint
             res.table_id = review.table_id
             res.cell_ref = review.cell_ref
+            res.checklist_id = review.checklist_id
             results.append(res)
 
         for u in (*unmatched_review, *unmatched_source):

@@ -24,9 +24,10 @@ class StepStage(str, Enum):
 
     REVIEW_PDF_LOADED = "review_pdf_loaded"
     TABLE_CAPTURE = "review_table_capture"
-    LONG_FORMAT_ROWS = "long_format_rows"
     COHORT_REGISTRY = "cohort_registry"
     FIELD_RESOLUTION = "field_resolution"
+    LONG_FORMAT_ROWS = "long_format_rows"
+    CHECKLIST = "checklist"
     REFERENCE_COVERAGE = "reference_coverage"
     # Per-paper evidence: SHOWN in full as it is collected, but not gated — a
     # review may include 9 source papers or 80, and the checkpoint count must

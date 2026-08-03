@@ -5,6 +5,7 @@ import json
 
 import pytest
 
+from react_review.checklist.schema import ChecklistApplication
 from react_review.audit import ToleranceTable
 from react_review.core.enums import CollectionOutcome, ReflectionDecision
 from react_review.core.exceptions import RunStopped
@@ -18,6 +19,8 @@ from react_review.hitl import (
 from react_review.orchestrator import AuditOrchestrator, AuditPipeline, Judge
 from react_review.schemas.agent import AgentRun
 from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
+from react_review.schemas.knowledge import KnowledgeImportRecord
+from react_review.schemas.resolution import FieldResolutionRecord
 from react_review.steps.paper_verification.schemas import ReferenceEntry
 from react_review.store import EvidencePackageStore
 from react_review.tools.compare import CompareValuesTool
@@ -123,14 +126,30 @@ async def test_pause_count_does_not_grow_with_the_number_of_papers(capsys):
 @pytest.mark.asyncio
 async def test_stopping_at_a_study_keeps_the_evidence_already_collected(tmp_path):
     pipe, _, store = _pipeline(tmp_path, [Decision.CONTINUE, Decision.STOP])
+    field_resolution = FieldResolutionRecord(
+        resolution_key="resolution-bmi", raw_field_name="BMI", field_type="bmi",
+        status="authoritative", source="deterministic")
+    knowledge_import = KnowledgeImportRecord(
+        source="ontology:labs", path="labs.json", sha256="hash", added=3)
+    checklist = ChecklistApplication(
+        name="clinical", version="1", source_file="checklist.yaml", sha256="check-hash")
     with pytest.raises(RunStopped):
-        await pipe.run(_items(), lambda sid: ReferenceEntry(title=sid), run_id="run1")
+        await pipe.run(
+            _items(), lambda sid: ReferenceEntry(title=sid), run_id="run1",
+            field_resolutions=[field_resolution], knowledge_imports=[knowledge_import],
+            knowledge_fingerprint="effective-kb-hash", knowledge_concept_count=12,
+            checklist=checklist)
 
     partial = tmp_path / "run1" / "package.partial.json"
     assert partial.is_file()
     data = json.loads(partial.read_text(encoding="utf-8"))
     assert data["status"] == "in_progress"
     assert len(data["source_items"]) == 3          # both groups were collected
+    assert data["field_resolutions"][0]["resolution_key"] == "resolution-bmi"
+    assert data["knowledge_imports"][0]["source"] == "ontology:labs"
+    assert data["knowledge_fingerprint"] == "effective-kb-hash"
+    assert data["knowledge_concept_count"] == 12
+    assert data["checklist"]["sha256"] == "check-hash"
     assert not (tmp_path / "run1" / "package.json").is_file()   # never finalised
 
 

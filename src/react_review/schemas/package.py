@@ -14,10 +14,13 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from react_review.checklist.schema import ChecklistApplication
 from react_review.normalize.cohorts import CohortRegistry
 from react_review.schemas.agent import AgentRun
 from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
+from react_review.schemas.knowledge import KnowledgeImportRecord
 from react_review.schemas.report import AuditReport, FinalVerification
+from react_review.schemas.resolution import FieldResolutionRecord
 from react_review.schemas.table import CapturedTableSet
 
 
@@ -37,6 +40,17 @@ class EvidencePackage(BaseModel):
     # The cohorts this review was found to report — so a reader can see what the
     # arms were called and how each claim's group was arrived at.
     cohorts: CohortRegistry = Field(default_factory=CohortRegistry)
+    # Every field mapping applied to ``review_items``.  Review rows carry only a
+    # ``resolution_key``; the full attempts/checks/reasons live once here.
+    field_resolutions: list[FieldResolutionRecord] = Field(default_factory=list)
+    # Exact ontology files and conflict policy that produced the runtime KB.
+    knowledge_imports: list[KnowledgeImportRecord] = Field(default_factory=list)
+    # Snapshot identity for the *effective* KB after seed + ontology merging.
+    # Import records alone cannot prove which seed version was used.
+    knowledge_fingerprint: str = ""
+    knowledge_concept_count: int = 0
+    # Clinician-editable coverage questions and every required gap found.
+    checklist: ChecklistApplication | None = None
     # How the run ended: complete | stopped_by_user | interrupted | error.
     # A partial package is still evidence — it records what HAD been checked.
     status: str = "complete"

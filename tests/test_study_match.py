@@ -62,19 +62,39 @@ def test_resolve_studies_relabels_and_maps():
 def test_apply_modality_disambiguation():
     # DKB A2 fix: a CT study's eat_thickness becomes eat_volume; echo stays.
     from react_review.dkb import KnowledgeBase
+    from react_review.schemas.resolution import FieldResolutionRecord, ResolutionCellRef
     from react_review.study_match import apply_modality_disambiguation
 
     kb = KnowledgeBase.from_json(BENCH.parent.parent / "configs" / "knowledge.seed.json")
     sid_map = {s.study_id: s for s in STUDIES}
     items = [
         ReviewDataItem(study_id="svanteson_2019", group="t1dm",   # modality ct
-                       field_type="eat_thickness", value="40"),
+                       field_type="eat_thickness", value="40", table_id="table_1",
+                       cell_ref=(0, 2), resolution_key="eat-resolution"),
         ReviewDataItem(study_id="ahmad_2022", group="t1dm",       # modality echo
-                       field_type="eat_thickness", value="6.6", unit="mm"),
+                       field_type="eat_thickness", value="6.6", unit="mm",
+                       table_id="table_1", cell_ref=(1, 2),
+                       resolution_key="eat-resolution"),
     ]
-    out = apply_modality_disambiguation(items, sid_map, kb)
+    resolutions = [FieldResolutionRecord(
+        resolution_key="eat-resolution", raw_field_name="EFT/ EAT",
+        field_type="eat_thickness", status="authoritative", source="deterministic",
+        field_types_seen=["eat_thickness"],
+        affected_cells=[
+            ResolutionCellRef(table_id="table_1", cell_ref=(0, 2),
+                              study_id="svanteson_2019", field_type="eat_thickness"),
+            ResolutionCellRef(table_id="table_1", cell_ref=(1, 2),
+                              study_id="ahmad_2022", field_type="eat_thickness"),
+        ],
+    )]
+    out = apply_modality_disambiguation(items, sid_map, kb, resolutions)
     assert out[0].field_type == "eat_volume"        # CT → volume
     assert out[1].field_type == "eat_thickness"     # echo → unchanged
+    assert resolutions[0].status == "mixed"
+    assert resolutions[0].field_type is None
+    assert {c.field_type for c in resolutions[0].affected_cells} == {
+        "eat_volume", "eat_thickness"}
+    assert resolutions[0].reasons[0].code == "modality_disambiguation"
 
 
 def test_build_reference_resolver_from_parsed():

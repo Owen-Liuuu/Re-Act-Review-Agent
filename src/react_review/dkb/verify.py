@@ -7,9 +7,9 @@ is kept UNRESOLVED (needs human review). No LLM here: the LLM understands, this
 code judges its guess against the knowledge base.
 
 Checks
-  grounding : evidence-backed — the LLM cited retrieved candidates (or mapped to
-              an existing concept), or is confident enough (>= min_confidence).
-              A blind, low-confidence invention is rejected.
+  self-contract : for a NEW concept, the proposal's declared value type, unit
+                  and scope must not contradict the value actually observed.
+                  Model confidence is recorded but never used as a gate.
   unit      : if the chosen field_type is a KNOWN concept with an expected unit,
               the column's unit must be the same KIND (length vs volume vs mass).
               mm vs cm is fine (both length; a scale mismatch caught at compare);
@@ -66,6 +66,69 @@ def _range_conflict(value: object, entry: KnowledgeEntry) -> tuple[bool, float |
     return (not lo <= p <= hi), p
 
 
+def _new_concept_checks(
+    proposal: KnowledgeEntry | None, *, unit: str, value: object,
+) -> tuple[dict[str, bool], list[str]]:
+    """Make a new proposal obey the contract it declared itself.
+
+    These checks establish absence of a deterministic contradiction; they do
+    not establish that the proposed clinical concept is correct.
+    """
+    checks = {
+        "proposal_present": proposal is not None,
+        "declared_value_type": False,
+        "observed_value_type": False,
+        "declared_scope": False,
+        "declared_unit": False,
+    }
+    if proposal is None:
+        return checks, ["new concept did not include a proposal contract"]
+
+    reasons: list[str] = []
+    value_type = (proposal.value_type or "").strip().lower()
+    checks["declared_value_type"] = value_type in {"numeric", "text", "categorical"}
+    if not checks["declared_value_type"]:
+        reasons.append(f"unsupported declared value_type {proposal.value_type!r}")
+
+    # Numeric is the declaration that can be contradicted safely. Text and
+    # categorical fields may legitimately contain numeric codes, so a number
+    # alone is not enough to reject either of those declarations.
+    checks["observed_value_type"] = (
+        value is None
+        or value_type in {"text", "categorical"}
+        or (value_type == "numeric" and primary_number(value) is not None)
+    )
+    if (value is not None and checks["declared_value_type"]
+            and not checks["observed_value_type"]):
+        reasons.append(
+            f"declared value_type 'numeric' contradicts observed value {value!r}")
+
+    checks["declared_scope"] = proposal.scope in {"study", "cohort"}
+    if not checks["declared_scope"]:
+        reasons.append(f"unsupported declared scope {proposal.scope!r}")
+
+    observed, declared = normalize_unit(unit), normalize_unit(proposal.default_unit)
+    if observed and not declared:
+        checks["declared_unit"] = False
+    elif not observed or observed == declared:
+        checks["declared_unit"] = True
+    else:
+        observed_kind, declared_kind = unit_kind(unit), unit_kind(proposal.default_unit)
+        # Unknown compound/custom units cannot be judged safely. Known physical
+        # kinds, however, must agree (length vs volume must never pass).
+        checks["declared_unit"] = (
+            observed_kind == "unknown" or declared_kind == "unknown"
+            or observed_kind == declared_kind)
+    if not checks["declared_unit"]:
+        if not declared:
+            reasons.append(
+                f"proposal omitted default_unit despite observed unit {unit!r}")
+        else:
+            reasons.append(
+                f"declared unit {proposal.default_unit!r} contradicts observed unit {unit!r}")
+    return checks, reasons
+
+
 def verify_candidate(
     field_type: str,
     *,
@@ -75,18 +138,24 @@ def verify_candidate(
     is_new: bool,
     confidence: float,
     grounded_on: list[str],
+    proposal: KnowledgeEntry | None = None,
     min_confidence: float = 0.35,
 ) -> CandidateVerdict:
     """Judge whether an LLM-proposed ``field_type`` may be used as a candidate."""
     checks: dict[str, bool] = {}
     reasons: list[str] = []
 
-    grounded = bool(grounded_on) or not is_new
-    checks["grounding"] = grounded or confidence >= min_confidence
-    if not checks["grounding"]:
-        reasons.append(
-            f"ungrounded low-confidence guess (confidence={confidence:.2f}, "
-            f"grounded_on={grounded_on or []})")
+    # Kept in the signature for API compatibility and provenance only. GLM's
+    # self-reported confidence was empirically constant across opposing answers,
+    # so it must not decide whether a proposal is accepted.
+    _ = confidence, min_confidence, grounded_on
+    checks["confidence_not_used"] = True
+
+    if is_new:
+        contract_checks, contract_reasons = _new_concept_checks(
+            proposal, unit=unit, value=value)
+        checks.update(contract_checks)
+        reasons.extend(contract_reasons)
 
     checks["unit"] = True
     checks["range"] = True

@@ -6,11 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from react_review.dkb import FieldResolver, KnowledgeBase
+from react_review.checklist import Checklist, ChecklistItem
+from react_review.dkb import FieldResolver, KnowledgeBase, load_runtime_knowledge
+from react_review.core.exceptions import RunStopped
+from react_review.hitl import Decision, ScriptedCheckpoint, StepReporter, StepStage
 from react_review.llm.base import LLMBackend
 from react_review.parser.review_parser import ReviewParser, _study_slug
 
 SEED = Path(__file__).resolve().parents[2] / "configs" / "knowledge.seed.json"
+ONTOLOGY = Path(__file__).resolve().parents[2] / "configs" / "ontology"
 
 
 class QueueBackend(LLMBackend):
@@ -72,7 +76,9 @@ async def test_parse_produces_normalized_long_items(monkeypatch):
         ]},
         {"studies": []},
     ])
-    parser = ReviewParser(backend, _resolver())
+    gate = ScriptedCheckpoint()
+    parser = ReviewParser(
+        backend, _resolver(), reporter=StepReporter("parser-test", gate=gate))
     parsed = await parser.parse("dummy.pdf", research_context="EAT in T1DM")
 
     got = {(i.study_id, i.group, i.field_type, i.value, i.unit) for i in parsed.items}
@@ -95,8 +101,110 @@ async def test_parse_produces_normalized_long_items(monkeypatch):
 
     assert parsed.record.agent == "parser"
     assert [s.tool for s in parsed.record.steps] == [
-        "llm:table_capture", "llm:unpivot", "llm:stage_refs"]
+        "llm:table_capture", "llm:unpivot", "dkb:resolve_fields", "llm:stage_refs"]
     assert [t.table_id for t in parsed.tables.tables] == ["table_1"]
+
+    # Decisions are inspectable before any long row consumes them.  Rows link
+    # back to one run-level record instead of duplicating its model trace.
+    stages = [event.stage for event in gate.seen]
+    assert stages.index(StepStage.FIELD_RESOLUTION) < stages.index(StepStage.LONG_FORMAT_ROWS)
+    resolution_keys = {r.resolution_key for r in parsed.field_resolutions}
+    assert resolution_keys
+    assert all(i.resolution_key in resolution_keys for i in parsed.items if i.value is not None)
+    resolution_event = next(
+        event for event in gate.seen if event.stage is StepStage.FIELD_RESOLUTION)
+    assert resolution_event.payload["resolutions"]
+
+
+@pytest.mark.asyncio
+async def test_runtime_ontology_is_visible_in_field_gate_and_parsed_contract(monkeypatch):
+    monkeypatch.setattr("react_review.parser.review_parser._pdf_text", lambda p: "t")
+    backend = QueueBackend([
+        _capture([["Ahmad et al. [2022]", "100"]], ("Study", "N")),
+        {"rows": [_cell(0, 1, "Ahmad et al. [2022]", "N", "100")]},
+        {"studies": []},
+    ])
+    gate = ScriptedCheckpoint()
+    kb = load_runtime_knowledge(SEED, ONTOLOGY)
+    parsed = await ReviewParser(
+        backend, FieldResolver(kb),
+        reporter=StepReporter("ontology-test", gate=gate),
+    ).parse("d.pdf")
+
+    assert parsed.knowledge_fingerprint == kb.fingerprint()
+    assert parsed.knowledge_concept_count == 12
+    assert [record.source for record in parsed.knowledge_imports] == ["ontology:labs"]
+    event = next(e for e in gate.seen if e.stage is StepStage.FIELD_RESOLUTION)
+    snapshot = event.payload["knowledge_base"]
+    assert snapshot["fingerprint"] == parsed.knowledge_fingerprint
+    assert snapshot["concept_count"] == 12
+    assert snapshot["imports"][0]["source"] == "ontology:labs"
+    assert "labs.json" in event.render_blocks[0]
+
+
+@pytest.mark.asyncio
+async def test_checklist_gates_routed_long_rows_and_is_preserved(monkeypatch):
+    monkeypatch.setattr(
+        "react_review.parser.review_parser._pdf_text",
+        lambda p: "Methods: risk of bias was assessed.\nReferences\nSmith 2020")
+    backend = QueueBackend([
+        _capture([["Smith 2020", "100"]], ("Study", "N")),
+        {"rows": [_cell(0, 1, "Smith 2020", "N", "100")]},
+        {"studies": []},
+    ])
+    checklist = Checklist(name="test", source_file="checklist.yaml", sha256="hash", items=[
+        ChecklistItem(
+            id="risk", question="Risk assessed?", required=True,
+            scope="review", where=["review_text"], value_kind="presence",
+            aliases=["risk of bias"]),
+        ChecklistItem(
+            id="sample", question="Sample size per study?", required=True,
+            scope="per_study", value_kind="numeric", field_types=["sample_size"]),
+    ])
+    gate = ScriptedCheckpoint()
+    parsed = await ReviewParser(
+        backend, _resolver(), checklist=checklist,
+        reporter=StepReporter("checklist-test", gate=gate)).parse("d.pdf")
+
+    stages = [event.stage for event in gate.seen]
+    assert stages.index(StepStage.FIELD_RESOLUTION) < stages.index(StepStage.CHECKLIST)
+    assert stages.index(StepStage.CHECKLIST) < stages.index(StepStage.LONG_FORMAT_ROWS)
+    assert stages.index(StepStage.LONG_FORMAT_ROWS) < stages.index(StepStage.REFERENCE_COVERAGE)
+    assert parsed.checklist is not None and parsed.checklist.gaps == []
+    assert [a.status for a in parsed.checklist.assessments] == ["covered", "covered"]
+    event = next(e for e in gate.seen if e.stage is StepStage.CHECKLIST)
+    assert event.payload["sha256"] == "hash"
+    assert event.payload["routed_claims"][0]["field_type"] == "sample_size"
+    assert "2 item(s), 0 required gap(s)" in event.render_blocks[0]
+    assert parsed.items[0].origin == "checklist"
+    assert parsed.items[0].checklist_id == "sample"
+    assert [step.tool for step in parsed.record.steps][-2:] == [
+        "checklist:apply", "llm:stage_refs"]
+
+
+@pytest.mark.asyncio
+async def test_stopping_at_checklist_never_emits_routed_long_rows(monkeypatch):
+    monkeypatch.setattr(
+        "react_review.parser.review_parser._pdf_text",
+        lambda p: "Methods: risk of bias was assessed.")
+    backend = QueueBackend([
+        _capture([["Smith 2020", "100"]], ("Study", "N")),
+        {"rows": [_cell(0, 1, "Smith 2020", "N", "100")]},
+    ])
+    checklist = Checklist(name="test", items=[ChecklistItem(
+        id="sample", question="Sample size?", required=True,
+        scope="per_study", value_kind="numeric", field_types=["sample_size"])])
+    gate = ScriptedCheckpoint([
+        Decision.CONTINUE, Decision.CONTINUE, Decision.CONTINUE,
+        Decision.CONTINUE, Decision.STOP])
+    parser = ReviewParser(
+        backend, _resolver(), checklist=checklist,
+        reporter=StepReporter("checklist-stop", gate=gate))
+
+    with pytest.raises(RunStopped):
+        await parser.parse("d.pdf")
+    assert gate.seen[-1].stage is StepStage.CHECKLIST
+    assert StepStage.LONG_FORMAT_ROWS not in [event.stage for event in gate.seen]
 
 
 @pytest.mark.asyncio
@@ -119,6 +227,47 @@ async def test_study_level_field_collapses_to_one_row(monkeypatch):
     assert len(ss) == 1 and ss[0].group == "-"                      # collapsed
     eat_groups = {i.group for i in parsed.items if i.field_type == "eat_thickness"}
     assert eat_groups == {"t1dm", "control"}                        # cohort-level stays split
+
+
+@pytest.mark.asyncio
+async def test_stopping_at_field_resolution_never_emits_derived_long_rows(monkeypatch):
+    monkeypatch.setattr("react_review.parser.review_parser._pdf_text", lambda p: "t")
+    backend = QueueBackend([
+        _capture([["Ahmad et al. [2022]", "100"]], ("Study", "N")),
+        {"rows": [_cell(0, 1, "Ahmad et al. [2022]", "N", "100")]},
+    ])
+    gate = ScriptedCheckpoint([
+        Decision.CONTINUE, Decision.CONTINUE, Decision.CONTINUE, Decision.STOP])
+    parser = ReviewParser(
+        backend, _resolver(), reporter=StepReporter("stop-test", gate=gate))
+
+    with pytest.raises(RunStopped):
+        await parser.parse("d.pdf")
+
+    assert gate.seen[-1].stage is StepStage.FIELD_RESOLUTION
+    assert StepStage.LONG_FORMAT_ROWS not in [event.stage for event in gate.seen]
+
+
+@pytest.mark.asyncio
+async def test_unknown_column_has_one_resolution_record_for_all_numeric_rows(monkeypatch):
+    monkeypatch.setattr("react_review.parser.review_parser._pdf_text", lambda p: "t")
+    backend = QueueBackend([
+        _capture(
+            [["Smith 2020", "7.1"], ["Jones 2021", "8.2"]],
+            ("Study", "Novel marker")),
+        {"rows": [
+            _cell(0, 1, "Smith 2020", "Novel marker", "7.1", "%", "Treatment"),
+            _cell(1, 1, "Jones 2021", "Novel marker", "8.2", "%", "Treatment"),
+        ]},
+        {"studies": []},
+    ])
+    parsed = await ReviewParser(backend, _resolver()).parse("d.pdf")
+
+    assert len(parsed.items) == 2
+    assert len(parsed.field_resolutions) == 1
+    assert len(parsed.field_resolutions[0].affected_cells) == 2
+    assert {item.resolution_key for item in parsed.items} == {
+        parsed.field_resolutions[0].resolution_key}
 
 
 @pytest.mark.asyncio

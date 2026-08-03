@@ -1,0 +1,227 @@
+{
+  "version": 2,
+  "description": "Offline cases for cross-seed stability and deterministic self-contract checks on the DKB candidate path.",
+  "cases": [
+    {
+      "id": "new_numeric_concept_is_stable_and_recorded",
+      "raw_field_name": "Novel adiposity index",
+      "unit": "cm2/m2",
+      "research_context": "body-fat imaging outcomes",
+      "value": "12.4",
+      "repeat": 2,
+      "response": {
+        "field_type": "novel_adiposity_index",
+        "concept": "adiposity area indexed to body surface area",
+        "value_type": "numeric",
+        "default_unit": "cm2/m2",
+        "scope": "cohort",
+        "is_new": true,
+        "grounded_on": [],
+        "confidence": 0.8
+      },
+      "expected": {
+        "status": "candidate",
+        "field_type": "novel_adiposity_index",
+        "source": "retrieval_llm",
+        "llm_calls": 2,
+        "cache_hits": 1,
+        "attempts": 2,
+        "stability": "stable",
+        "consensus_count": 2,
+        "proposal": true,
+        "checks": {
+          "resampling_consistency": true,
+          "confidence_not_used": true,
+          "observed_value_type": true,
+          "declared_unit": true
+        }
+      }
+    },
+    {
+      "id": "known_concept_unit_conflict_is_visible",
+      "raw_field_name": "Mysterious fat measure",
+      "unit": "cm3",
+      "research_context": "epicardial fat imaging",
+      "value": "52.3",
+      "response": {
+        "field_type": "eat_thickness",
+        "concept": "epicardial fat thickness",
+        "value_type": "numeric",
+        "default_unit": "mm",
+        "scope": "cohort",
+        "is_new": false,
+        "grounded_on": ["eat_thickness"],
+        "confidence": 0.9
+      },
+      "expected": {
+        "status": "unresolved",
+        "field_type": null,
+        "source": "retrieval_llm",
+        "llm_calls": 2,
+        "attempts": 2,
+        "stability": "stable",
+        "proposal": false,
+        "checks": {"resampling_consistency": true, "unit": false}
+      }
+    },
+    {
+      "id": "confidence_is_provenance_not_a_gate",
+      "raw_field_name": "Wongabongo score",
+      "unit": "points",
+      "research_context": "critical care outcomes",
+      "value": "7",
+      "response": {
+        "field_type": "wongabongo_score",
+        "concept": "a synthetic score used only by this fixture",
+        "value_type": "numeric",
+        "default_unit": "points",
+        "scope": "cohort",
+        "is_new": true,
+        "grounded_on": [],
+        "confidence": 0.1
+      },
+      "expected": {
+        "status": "candidate",
+        "field_type": "wongabongo_score",
+        "source": "retrieval_llm",
+        "llm_calls": 2,
+        "attempts": 2,
+        "stability": "stable",
+        "proposal": true,
+        "checks": {"confidence_not_used": true, "observed_value_type": true}
+      }
+    },
+    {
+      "id": "authoritative_hit_never_calls_model",
+      "raw_field_name": "BMI",
+      "unit": "kg/m2",
+      "research_context": "participant characteristics",
+      "value": "24.1",
+      "response": {},
+      "expected": {
+        "status": "authoritative",
+        "field_type": "bmi",
+        "source": "deterministic",
+        "llm_calls": 0,
+        "attempts": 0,
+        "stability": "not_checked",
+        "proposal": false,
+        "checks": {"deterministic_match": true}
+      }
+    },
+    {
+      "id": "numeric_declaration_cannot_explain_a_cohort_label",
+      "raw_field_name": "control",
+      "unit": "",
+      "research_context": "randomized treatment table",
+      "value": "Control",
+      "response": {
+        "field_type": "control_group_size",
+        "concept": "number of participants in the control group",
+        "value_type": "numeric",
+        "default_unit": "count",
+        "scope": "cohort",
+        "is_new": true,
+        "grounded_on": [],
+        "confidence": 1.0
+      },
+      "expected": {
+        "status": "unresolved",
+        "field_type": null,
+        "llm_calls": 2,
+        "attempts": 2,
+        "stability": "stable",
+        "proposal": true,
+        "checks": {"observed_value_type": false}
+      }
+    },
+    {
+      "id": "new_concept_name_drift_is_not_semantic_disagreement",
+      "raw_field_name": "EAT/BSA index",
+      "unit": "cm2/m2",
+      "research_context": "body-fat imaging outcomes",
+      "value": "12.4",
+      "responses_by_seed": {
+        "42": {
+          "field_type": "eat_area_bsa_index",
+          "concept": "EAT area indexed to BSA",
+          "value_type": "numeric",
+          "default_unit": "cm2/m2",
+          "scope": "cohort",
+          "is_new": true,
+          "grounded_on": [],
+          "confidence": 1.0
+        },
+        "43": {
+          "field_type": "eat_area_to_bsa_ratio",
+          "concept": "EAT area indexed to BSA",
+          "value_type": "numeric",
+          "default_unit": "cm2/m2",
+          "scope": "cohort",
+          "is_new": true,
+          "grounded_on": [],
+          "confidence": 1.0
+        }
+      },
+      "expected": {
+        "status": "candidate",
+        "field_type": "eat_area_bsa_index",
+        "llm_calls": 2,
+        "attempts": 2,
+        "stability": "stable",
+        "consensus_count": 2,
+        "candidate_names": ["eat_area_bsa_index", "eat_area_to_bsa_ratio"],
+        "proposal": true,
+        "checks": {"resampling_consistency": true}
+      }
+    },
+    {
+      "id": "three_structural_answers_are_unstable",
+      "raw_field_name": "X outcome",
+      "unit": "%",
+      "research_context": "synthetic outcomes",
+      "value": "7",
+      "responses_by_seed": {
+        "42": {
+          "field_type": "x_numeric",
+          "concept": "X",
+          "value_type": "numeric",
+          "default_unit": "%",
+          "scope": "cohort",
+          "is_new": true,
+          "grounded_on": [],
+          "confidence": 1.0
+        },
+        "43": {
+          "field_type": "x_text",
+          "concept": "X",
+          "value_type": "text",
+          "default_unit": "",
+          "scope": "cohort",
+          "is_new": true,
+          "grounded_on": [],
+          "confidence": 1.0
+        },
+        "44": {
+          "field_type": "x_study",
+          "concept": "X",
+          "value_type": "numeric",
+          "default_unit": "%",
+          "scope": "study",
+          "is_new": true,
+          "grounded_on": [],
+          "confidence": 1.0
+        }
+      },
+      "expected": {
+        "status": "unresolved",
+        "field_type": null,
+        "llm_calls": 3,
+        "attempts": 3,
+        "stability": "unstable",
+        "proposal": false,
+        "checks": {"resampling_consistency": false}
+      }
+    }
+  ]
+}

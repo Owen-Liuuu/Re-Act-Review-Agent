@@ -254,6 +254,7 @@ class Collector:
             # the same study/cohort/field apart instead of guessing.
             table_id=review_item.table_id,
             cell_ref=review_item.cell_ref,
+            checklist_id=review_item.checklist_id,
             source_value=result.value,
             source_unit=result.unit,
             source_quote=result.quote,
@@ -269,7 +270,8 @@ class Collector:
         record = AgentRun(
             agent="collector",
             task={"study_id": review_item.study_id, "group": review_item.group,
-                  "field_type": review_item.field_type},
+                  "field_type": review_item.field_type,
+                  "checklist_id": review_item.checklist_id},
             steps=steps,
             status="finished",
             final=source_item.model_dump(mode="json"),

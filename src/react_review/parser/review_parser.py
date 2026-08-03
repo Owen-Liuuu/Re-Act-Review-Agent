@@ -9,6 +9,13 @@ from typing import Any
 import structlog
 from pydantic import BaseModel, Field
 
+from react_review.checklist import (
+    Checklist,
+    ChecklistApplication,
+    annotate_checklist_claims,
+    apply_checklist,
+    render_checklist,
+)
 from react_review.hitl.events import StepStage, SubjectKind
 from react_review.hitl.reporter import StepReporter
 from react_review.llm.base import LLMBackend, parse_llm_response
@@ -22,9 +29,11 @@ from react_review.normalize.study_key import study_key
 from react_review.parser.table_capture import TableCapturer
 from react_review.schemas.agent import AgentRun, StepRecord
 from react_review.schemas.evidence import ReviewDataItem
+from react_review.schemas.knowledge import KnowledgeImportRecord
 from react_review.schemas.reason import ReasonRecord
+from react_review.schemas.resolution import FieldResolutionRecord, ResolutionCellRef
 from react_review.schemas.table import CapturedTable, CapturedTableSet
-from react_review.dkb import FieldResolver, ResolvedField
+from react_review.dkb import FieldResolver, ResolvedField, resolution_key
 
 logger = structlog.get_logger(__name__)
 
@@ -100,6 +109,12 @@ class ParsedReview(BaseModel):
     tables: CapturedTableSet = Field(default_factory=CapturedTableSet)
     # The cohorts this review was found to report, in its own words.
     cohorts: CohortRegistry = Field(default_factory=CohortRegistry)
+    # Run-level decisions that explain how raw column names became field_types.
+    field_resolutions: list[FieldResolutionRecord] = Field(default_factory=list)
+    knowledge_imports: list[KnowledgeImportRecord] = Field(default_factory=list)
+    knowledge_fingerprint: str = ""
+    knowledge_concept_count: int = 0
+    checklist: ChecklistApplication | None = None
 
 
 def _pdf_text(pdf_path: Path | str) -> str:
@@ -198,6 +213,7 @@ class ReviewParser:
         drop_tables: set[str] | None = None,
         alt_backend: LLMBackend | None = None,
         cohort_aliases: dict[str, list[str]] | None = None,
+        checklist: Checklist | None = None,
     ) -> None:
         self._backend = backend
         self._resolver = resolver          # the parser holds NO domain knowledge itself
@@ -207,6 +223,7 @@ class ReviewParser:
         self._chunk_rows = max(1, chunk_rows)
         self._keep_tables = keep_tables
         self._drop_tables = drop_tables
+        self._checklist = checklist
         self._capturer = TableCapturer(backend, alt_backend=alt_backend)
         # Alias file only RE-KEYS a discovered cohort (benchmark compatibility);
         # it never introduces one, so a new domain stays domain-neutral.
@@ -263,7 +280,64 @@ class ReviewParser:
                        "as a single combined cohort"]),
         )
 
-        items = await self._postprocess(raw_rows, ctx, registry)
+        # 4. Resolve the UNIQUE field questions before applying any answer to a
+        # row.  The human sees and may stop at these decisions before the long
+        # table derived from them is presented as an output.
+        row_resolutions, field_resolutions = await self._resolve_fields(raw_rows, ctx)
+        knowledge_imports = [
+            record.model_copy(deep=True) for record in self._resolver.kb.imports]
+        kb_fingerprint = self._resolver.kb.version or self._resolver.kb.fingerprint()
+        await self._reporter.step_or_stop(
+            StepStage.FIELD_RESOLUTION,
+            title="Field concepts resolved",
+            subject=str(Path(pdf_path).resolve()),
+            subject_kind=SubjectKind.REVIEW_PDF,
+            payload={
+                "research_context": ctx,
+                "knowledge_base": {
+                    "fingerprint": kb_fingerprint,
+                    "concept_count": len(self._resolver.kb.entries),
+                    "imports": [r.model_dump(mode="json") for r in knowledge_imports],
+                },
+                "resolutions": [r.model_dump(mode="json") for r in field_resolutions],
+            },
+            render_blocks=[
+                self._render_knowledge(
+                    knowledge_imports, kb_fingerprint, len(self._resolver.kb.entries)),
+                self._render_resolutions(field_resolutions),
+            ],
+            warnings=[
+                *self._knowledge_warnings(knowledge_imports),
+                *self._resolution_warnings(field_resolutions),
+            ],
+        )
+
+        items = self._postprocess(raw_rows, row_resolutions, registry)
+
+        checklist_application = None
+        if self._checklist is not None:
+            checklist_application = apply_checklist(
+                self._checklist, items, table_set, review_text=full_text)
+            await self._reporter.step_or_stop(
+                StepStage.CHECKLIST,
+                title="Domain checklist coverage",
+                subject=str(Path(pdf_path).resolve()),
+                subject_kind=SubjectKind.REVIEW_PDF,
+                payload={
+                    **checklist_application.model_dump(mode="json"),
+                    "routed_claims": [
+                        evidence.model_dump(mode="json")
+                        for assessment in checklist_application.assessments
+                        for evidence in assessment.evidence
+                        if evidence.source == "review_item"
+                    ],
+                },
+                render_blocks=[render_checklist(checklist_application)],
+                warnings=[gap.reason for gap in checklist_application.gaps],
+            )
+            # Apply the approved routing identity only after the checkpoint.
+            # No rows are added: a checklist cannot manufacture a missing value.
+            items = annotate_checklist_claims(self._checklist, items)
 
         await self._reporter.step_or_stop(
             StepStage.LONG_FORMAT_ROWS,
@@ -274,7 +348,7 @@ class ReviewParser:
             warnings=self._unpivot_warnings(table_set, raw_rows, items),
         )
 
-        # 4. included-study references, extracted from the reference window (doc tail).
+        # 6. included-study references, extracted from the reference window (doc tail).
         studies = await self._extract_studies(_refs_window(full_text))
         studies = await self._review_coverage(studies, items)
 
@@ -288,7 +362,26 @@ class ReviewParser:
                                         "dropped": table_set.dropped}),
                 StepRecord(index=1, thought="unpivot the captured tables to long rows",
                            tool="llm:unpivot", observation={"n_rows": len(raw_rows)}),
-                StepRecord(index=2, thought="extract included-study references",
+                StepRecord(index=2, thought="resolve unique field concepts before applying them",
+                           tool="dkb:resolve_fields",
+                           observation={
+                               "n_resolutions": len(field_resolutions),
+                               "n_model_attempts": sum(
+                                   len(r.attempts) for r in field_resolutions),
+                               "kb_fingerprint": kb_fingerprint,
+                               "n_ontology_imports": len(knowledge_imports),
+                           }),
+                *([StepRecord(
+                    index=3, thought="check required clinical-review coverage",
+                    tool="checklist:apply",
+                    observation={
+                        "name": checklist_application.name,
+                        "n_items": len(checklist_application.assessments),
+                        "n_required_gaps": len(checklist_application.gaps),
+                        "sha256": checklist_application.sha256,
+                    })] if checklist_application is not None else []),
+                StepRecord(index=4 if checklist_application is not None else 3,
+                           thought="extract included-study references",
                            tool="llm:stage_refs", observation={"n_studies": len(studies)}),
             ],
             status="finished",
@@ -298,7 +391,12 @@ class ReviewParser:
                     n_items=len(items), n_studies=len(studies),
                     n_tables=len(table_set.tables))
         return ParsedReview(items=items, record=record, research_context=ctx,
-                            studies=studies, tables=table_set, cohorts=registry)
+                            studies=studies, tables=table_set, cohorts=registry,
+                            field_resolutions=field_resolutions,
+                            knowledge_imports=knowledge_imports,
+                            knowledge_fingerprint=kb_fingerprint,
+                            knowledge_concept_count=len(self._resolver.kb.entries),
+                            checklist=checklist_application)
 
     async def _unpivot(self, table: CapturedTable) -> list[dict[str, Any]]:
         """Convert one captured table to long rows, a chunk of rows at a time.
@@ -422,14 +520,129 @@ class ReviewParser:
             lines += [f"    {sid}" for sid in missing[:12]]
         return "\n".join(lines)
 
-    async def _postprocess(
+    @staticmethod
+    def _resolution_inputs(row: dict[str, Any]) -> tuple[str, object, str, str] | None:
+        """The signals that make one row a real field-resolution question.
+
+        Placeholders remain review evidence, but they do not ask the Resolver to
+        infer a concept from an absent value. Identifier/dimension columns are
+        likewise kept out of field normalisation.
+        """
+        if not isinstance(row, dict):
+            return None
+        raw_name = str(row.get("column_header") or "").strip()
+        value = row.get("value")
+        if not raw_name or value is None or _norm_col(raw_name) in _IDENTIFIER_COLUMNS:
+            return None
+        text = value.strip() if isinstance(value, str) else value
+        if isinstance(text, str) and (not text or text.lower() in _PLACEHOLDER):
+            return None
+        unit = str(row.get("unit") or "").strip() or _inline_unit(value)
+        modality = str(row.get("row_context") or "")
+        return raw_name, value, unit, modality
+
+    @staticmethod
+    def _merge_resolution(
+        records: dict[str, FieldResolutionRecord],
+        resolved: ResolvedField,
+        row: dict[str, Any],
+    ) -> None:
+        """Fold a per-row outcome into one auditable resolution record."""
+        reason = "; ".join(r.message or r.code for r in resolved.reasons)
+        cell = ResolutionCellRef(
+            table_id=str(row.get("table_id") or ""), cell_ref=_cell_ref(row),
+            study_id=_study_slug(_row_key_label(row.get("row_key"))),
+            column_header=str(row.get("column_header") or ""), unit=resolved.unit,
+            status=resolved.status, field_type=resolved.field_type or "", reason=reason,
+        )
+        incoming = FieldResolutionRecord.model_validate(
+            resolved.model_dump(mode="python", exclude={"affected_cells"}))
+        incoming.affected_cells = [cell]
+        incoming.statuses_seen = list(dict.fromkeys(
+            [*incoming.statuses_seen, resolved.status]))
+        incoming.field_types_seen = list(dict.fromkeys(
+            [*incoming.field_types_seen,
+             *([resolved.field_type] if resolved.field_type else [])]))
+
+        current = records.get(resolved.resolution_key)
+        if current is None:
+            records[resolved.resolution_key] = incoming
+            return
+
+        current.affected_cells.append(cell)
+        current.cache_hits += incoming.cache_hits
+        current.candidate_names = list(dict.fromkeys(
+            [*current.candidate_names, *incoming.candidate_names]))
+        current.consensus_count = max(current.consensus_count, incoming.consensus_count)
+        if incoming.stability != "not_checked":
+            if current.stability == "not_checked":
+                current.stability = incoming.stability
+            elif current.stability != incoming.stability:
+                current.stability = "unstable"
+        current.statuses_seen = list(dict.fromkeys(
+            [*current.statuses_seen, *incoming.statuses_seen]))
+        current.field_types_seen = list(dict.fromkeys(
+            [*current.field_types_seen, *incoming.field_types_seen]))
+        if len(current.statuses_seen) > 1 or len(current.field_types_seen) > 1:
+            current.status = "mixed"
+            current.source = "mixed"
+        if len(current.field_types_seen) > 1:
+            current.field_type = None
+        for name, passed in incoming.checks.items():
+            current.checks[name] = current.checks.get(name, True) and passed
+        known_reasons = {(r.code, r.message, r.source) for r in current.reasons}
+        current.reasons.extend(
+            r for r in incoming.reasons
+            if (r.code, r.message, r.source) not in known_reasons)
+        known_attempts = {(a.seed, a.model_id, a.response_sha256, a.error)
+                          for a in current.attempts}
+        current.attempts.extend(
+            a for a in incoming.attempts
+            if (a.seed, a.model_id, a.response_sha256, a.error) not in known_attempts)
+        current.proposal = current.proposal or incoming.proposal
+
+    async def _resolve_fields(
         self, raw_rows: list[dict[str, Any]], research_context: str,
+    ) -> tuple[dict[int, ResolvedField], list[FieldResolutionRecord]]:
+        """Resolve all field questions first; do not create review items yet."""
+        by_row: dict[int, ResolvedField] = {}
+        records: dict[str, FieldResolutionRecord] = {}
+        for index, row in enumerate(raw_rows):
+            inputs = self._resolution_inputs(row)
+            if inputs is None:
+                continue
+            raw_name, value, unit, modality = inputs
+            try:
+                resolved = await self._resolver.resolve(
+                    raw_name, unit=unit, modality=modality,
+                    research_context=research_context, value=value)
+            except Exception as exc:                         # noqa: BLE001
+                # Resolver errors are evidence too. Keep the row and make the
+                # exception visible at FIELD_RESOLUTION rather than dropping it.
+                logger.warning("resolve_failed", raw=raw_name, error=str(exc)[:120])
+                resolved = ResolvedField(
+                    resolution_key=resolution_key(
+                        raw_name, unit, research_context, modality),
+                    raw_field_name=raw_name, unit=unit, modality=modality,
+                    reasons=[ReasonRecord(
+                        code="concept_resolution_exception", stage="field_resolution",
+                        source="exception", message=str(exc)[:200])],
+                    statuses_seen=["unresolved"],
+                )
+            by_row[index] = resolved
+            self._merge_resolution(records, resolved, row)
+        return by_row, list(records.values())
+
+    def _postprocess(
+        self, raw_rows: list[dict[str, Any]],
+        row_resolutions: dict[int, ResolvedField],
         registry: CohortRegistry | None = None,
     ) -> list[ReviewDataItem]:
+        """Apply already-inspected resolution decisions to the raw long rows."""
         registry = registry or CohortRegistry()
         items: list[ReviewDataItem] = []
         seen_study_level: set[tuple[str, str]] = set()
-        for r in raw_rows:
+        for index, r in enumerate(raw_rows):
             if not isinstance(r, dict):
                 continue
             raw_name = str(r.get("column_header") or "").strip()
@@ -474,26 +687,22 @@ class ReviewParser:
                 ))
                 continue
 
-            # Parser applies NO domain knowledge — it asks the DKB Resolver.
-            # The value is passed so the resolver can range-check a candidate.
-            try:
-                rf = await self._resolver.resolve(
-                    raw_name, unit=unit, modality=str(r.get("row_context") or ""),
-                    research_context=research_context, value=value)
-            except Exception as exc:               # never drop on a resolver error
-                logger.warning("resolve_failed", raw=raw_name, error=str(exc)[:120])
-                rf = ResolvedField(raw_field_name=raw_name)   # → unresolved
+            # The decision was completed and shown at FIELD_RESOLUTION before
+            # this row is built. Missing here means the resolver could not even
+            # form a question; preserve that as an explicit unresolved outcome.
+            rf = row_resolutions.get(index) or ResolvedField(raw_field_name=raw_name)
 
             # UNRESOLVED: keep the raw item (field_type null) — the audit marks it
             # not_comparable / needs_review; the concept goes to proposals to learn.
             if rf.status == "unresolved":
+                resolution_reasons = list(rf.reasons) or [ReasonRecord(
+                    code="concept_unresolved", stage="parser",
+                    message=f"column {raw_name!r} did not map to a known concept")]
                 items.append(ReviewDataItem(
                     **common, group=group, cohort_status=cohort_status,
                     field_type="", value=value, resolution_status="unresolved",
-                    reasons=[ReasonRecord(
-                        code="concept_unresolved", stage="parser",
-                        message=f"column {raw_name!r} did not map to a known concept"),
-                        *cohort_reasons],
+                    resolution_key=rf.resolution_key,
+                    reasons=[*resolution_reasons, *cohort_reasons],
                 ))
                 continue
 
@@ -510,6 +719,7 @@ class ReviewParser:
             items.append(ReviewDataItem(
                 **common, group=group, cohort_status=cohort_status,
                 field_type=ft, value=value, reasons=cohort_reasons,
+                resolution_key=rf.resolution_key,
                 resolution_status=("resolved" if rf.status == "authoritative" else rf.status),
             ))
         return items
@@ -527,6 +737,75 @@ class ReviewParser:
             extra = f"  (also written: {', '.join(variants)})" if variants else ""
             lines.append(f"    {c.key:<22} “{c.display}”{extra}   [{c.source}]")
         return "\n".join(lines)
+
+    @staticmethod
+    def _render_resolutions(
+        resolutions: list[FieldResolutionRecord], limit: int = 30,
+    ) -> str:
+        """One concept-level line per unique field question."""
+        if not resolutions:
+            return "  (no measurement fields required resolution)"
+        counts: dict[str, int] = {}
+        for r in resolutions:
+            counts[r.status] = counts.get(r.status, 0) + 1
+        summary = ", ".join(f"{k}={v}" for k, v in sorted(counts.items()))
+        model_attempts = sum(len(r.attempts) for r in resolutions)
+        lines = [f"  {len(resolutions)} unique resolution question(s): {summary}; "
+                 f"{model_attempts} model attempt(s)"]
+        for r in resolutions[:limit]:
+            target = r.field_type or "UNRESOLVED"
+            bad = [name for name, passed in r.checks.items() if not passed]
+            suffix = f"; failed: {', '.join(bad)}" if bad else ""
+            sampled = (f"; {r.stability} {r.consensus_count}/{len(r.attempts)}"
+                       if r.attempts else "")
+            lines.append(
+                f"    {r.raw_field_name!r:<30} -> {target:<22} "
+                f"[{r.status}; {r.source}{sampled}; "
+                f"{len(r.affected_cells)} cell(s){suffix}]")
+        if len(resolutions) > limit:
+            lines.append(f"    … {len(resolutions) - limit} more")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _render_knowledge(
+        imports: list[KnowledgeImportRecord], fingerprint: str, concept_count: int,
+    ) -> str:
+        lines = [f"  knowledge base: {concept_count} concept(s); "
+                 f"fingerprint={fingerprint}"]
+        if not imports:
+            lines.append("    seed only; no ontology slices loaded")
+            return "\n".join(lines)
+        for record in imports:
+            lines.append(
+                f"    {record.source}: +{record.added}, merged={record.merged}, "
+                f"conflicts={len(record.conflicts)}; {record.path}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _knowledge_warnings(imports: list[KnowledgeImportRecord]) -> list[str]:
+        n_conflicts = sum(len(record.conflicts) for record in imports)
+        if not n_conflicts:
+            return []
+        return [
+            f"{n_conflicts} seed/ontology field conflict(s) were resolved by "
+            "the explicit ontology_override policy; inspect the import records"]
+
+    @staticmethod
+    def _resolution_warnings(resolutions: list[FieldResolutionRecord]) -> list[str]:
+        counts: dict[str, int] = {}
+        for r in resolutions:
+            counts[r.status] = counts.get(r.status, 0) + 1
+        warnings = []
+        if counts.get("candidate"):
+            warnings.append(
+                f"{counts['candidate']} provisional concept mapping(s) require review")
+        if counts.get("unresolved"):
+            warnings.append(
+                f"{counts['unresolved']} field question(s) could not be resolved")
+        if counts.get("mixed"):
+            warnings.append(
+                f"{counts['mixed']} field question(s) produced mixed row outcomes")
+        return warnings
 
     @staticmethod
     def _render_items(items: list[ReviewDataItem], limit: int = 25) -> str:

@@ -34,7 +34,7 @@ from react_review.audit.semantic_control import (
 from react_review.core.config import load_config
 from react_review.csv_io import load_included_studies
 from react_review.eval_accuracy import format_report, run_rows, score_rows
-from react_review.dkb import KnowledgeBase
+from react_review.dkb import load_runtime_knowledge
 from react_review.pipeline.factory import _create_llm_backend
 from react_review.retrieval.local_pdf import LocalPdfRetriever
 from react_review.steps.paper_verification.schemas import ReferenceEntry
@@ -99,7 +99,8 @@ def main(argv: list[str] | None = None) -> None:
     reg = ToolRegistry()
     reg.register(FetchFullTextTool(retriever))
     reg.register(ExtractSourceValueTool(backend))
-    kb = KnowledgeBase.from_json(ROOT / "configs" / "knowledge.seed.json")
+    kb = load_runtime_knowledge(
+        ROOT / "configs" / "knowledge.seed.json", ROOT / "configs" / "ontology")
     collector = Collector(reg, knowledge=kb)
 
     # One shared cache file across runs — a fresh empty cache per run would make

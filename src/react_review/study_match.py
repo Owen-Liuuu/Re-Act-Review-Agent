@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 
 from react_review.normalize.study_key import key_parts
 from react_review.schemas.evidence import IncludedStudy, ReviewDataItem
+from react_review.schemas.reason import ReasonRecord
+from react_review.schemas.resolution import FieldResolutionRecord
 from react_review.steps.paper_verification.schemas import ReferenceEntry
 
 if TYPE_CHECKING:
@@ -129,7 +131,12 @@ def build_reference_resolver(sid_to_study: dict[str, IncludedStudy]):
     return resolver
 
 
-def apply_modality_disambiguation(review_items, sid_to_study, kb):
+def apply_modality_disambiguation(
+    review_items,
+    sid_to_study,
+    kb,
+    field_resolutions: list[FieldResolutionRecord] | None = None,
+):
     """Relabel a field_type using the study's modality + the DKB disambiguation rule.
 
     The parser can't tell eat_thickness (echo) from eat_volume (CT) at parse time
@@ -138,6 +145,8 @@ def apply_modality_disambiguation(review_items, sid_to_study, kb):
     ``disambiguation`` (e.g. CT → eat_volume) — the A2 fix, driven by KB DATA.
     """
     out = []
+    resolutions = {r.resolution_key: r for r in (field_resolutions or [])}
+    changed_keys: set[str] = set()
     for item in review_items:
         study = sid_to_study.get(item.study_id)
         entry = kb.entries.get(item.field_type)
@@ -146,7 +155,48 @@ def apply_modality_disambiguation(review_items, sid_to_study, kb):
             m = study.modality.strip().lower()
             for signal, target in rule.items():
                 if signal in m and target in kb.entries and target != item.field_type:
+                    previous = item.field_type
                     item = item.model_copy(update={"field_type": target})
+                    record = resolutions.get(item.resolution_key)
+                    if record is not None:
+                        changed_keys.add(record.resolution_key)
+                        record.checks["study_modality_disambiguation"] = True
+                        record.field_types_seen = list(dict.fromkeys(
+                            [*record.field_types_seen, previous, target]))
+                        reason = ReasonRecord(
+                            code="modality_disambiguation", stage="field_resolution",
+                            message=(f"study modality {study.modality!r} changed "
+                                     f"{previous} to {target}"),
+                            detail={"study_id": item.study_id, "from": previous,
+                                    "to": target, "modality": study.modality},
+                        )
+                        known = {(r.code, r.message) for r in record.reasons}
+                        if (reason.code, reason.message) not in known:
+                            record.reasons.append(reason)
+                        for cell in record.affected_cells:
+                            same_cell = (
+                                bool(item.table_id) and item.cell_ref is not None
+                                and cell.table_id == item.table_id
+                                and cell.cell_ref == item.cell_ref)
+                            if same_cell:
+                                cell.field_type = target
+                                cell.status = "authoritative"
+                                cell.reason = reason.message
                     break
         out.append(item)
+
+    # Keep the run-level decision truthful after this downstream deterministic
+    # refinement.  One record can cover several studies: if their modalities
+    # diverge, the per-cell decisions remain explicit and the aggregate is mixed.
+    for key in changed_keys:
+        record = resolutions[key]
+        cell_types = {c.field_type for c in record.affected_cells if c.field_type}
+        if len(cell_types) == 1:
+            record.field_type = next(iter(cell_types))
+            record.status = "authoritative"
+            record.source = "deterministic_modality"
+        else:
+            record.field_type = None
+            record.status = "mixed"
+            record.source = "mixed"
     return out

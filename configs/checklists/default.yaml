@@ -1,0 +1,71 @@
+name: clinical-review-default
+version: "1"
+
+# Draft for clinician review.  "required" controls human-review gaps; optional
+# effect formats are checked when present but are not assumed to suit every
+# clinical question.
+items:
+  - id: risk_of_bias_assessment
+    question: "Does the review describe a risk-of-bias or study-quality assessment?"
+    required: true
+    scope: review
+    where: [review_text, review_table]
+    value_kind: presence
+    field_types: [overall_quality]
+    aliases: [risk of bias, quality assessment, study quality, Newcastle-Ottawa Scale]
+
+  - id: per_study_risk_of_bias
+    question: "What risk-of-bias or quality judgement is reported for each included study?"
+    required: true
+    scope: per_study
+    where: [review_table, source_paper]
+    value_kind: categorical
+    field_types: [overall_quality]
+    aliases: [overall quality, risk of bias, study quality, NOS]
+
+  - id: hazard_ratio
+    question: "Is a hazard ratio reported for this study or outcome?"
+    required: false
+    scope: per_study
+    where: [review_table, source_paper]
+    value_kind: numeric
+    field_types: [hazard_ratio]
+    aliases: [hazard ratio, HR]
+
+  - id: confidence_interval
+    question: "Does the reported effect estimate include its confidence interval?"
+    required: false
+    scope: per_study
+    where: [review_table, source_paper]
+    value_kind: numeric
+    field_types: [hazard_ratio, effect_size]
+    aliases: [confidence interval, 95% CI]
+    required_components: [ci]
+
+  - id: p_value
+    question: "Is a p-value reported for this study or outcome?"
+    required: false
+    scope: per_study
+    where: [review_table, source_paper]
+    value_kind: numeric
+    field_types: [p_value]
+    aliases: [p value, p-value]
+
+  - id: effect_size
+    question: "Is a quantitative effect size reported for this study or outcome?"
+    required: false
+    scope: per_study
+    where: [review_table, source_paper]
+    value_kind: numeric
+    field_types: [effect_size, odds_ratio, risk_ratio, mean_difference]
+    aliases: [effect size, odds ratio, risk ratio, mean difference, OR, RR, MD]
+
+  - id: events_over_total
+    question: "Are event counts and denominators reported together?"
+    required: false
+    scope: per_study
+    where: [review_table, source_paper]
+    value_kind: numeric
+    field_types: [events_over_total]
+    aliases: [events, event rate]
+    required_components: [events]

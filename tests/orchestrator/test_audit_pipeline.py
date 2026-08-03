@@ -5,12 +5,15 @@ import json
 
 import pytest
 
+from react_review.checklist.schema import ChecklistApplication
 from react_review.agents.collector import Collector
 from react_review.audit import ToleranceTable
 from react_review.core.enums import ReportVerdict
 from react_review.llm.base import LLMBackend
 from react_review.orchestrator import AuditOrchestrator, AuditPipeline, Judge
 from react_review.schemas.evidence import ReviewDataItem
+from react_review.schemas.knowledge import KnowledgeImportRecord
+from react_review.schemas.resolution import FieldResolutionRecord
 from react_review.steps.data_extraction.schemas import PaperDocument
 from react_review.steps.paper_verification.interfaces import PaperRetriever
 from react_review.steps.paper_verification.schemas import ReferenceEntry
@@ -60,9 +63,17 @@ _REF = lambda sid: ReferenceEntry(title=sid, doi="10.1/" + sid)
 
 @pytest.mark.asyncio
 async def test_pipeline_match_pass(tmp_path):
+    field_resolution = FieldResolutionRecord(
+        resolution_key="resolution-eat", raw_field_name="EFT/ EAT", unit="mm",
+        field_type="eat_thickness", status="authoritative", source="deterministic")
+    knowledge_import = KnowledgeImportRecord(
+        source="ontology:labs", path="labs.json", sha256="hash", added=3)
+    checklist = ChecklistApplication(
+        name="clinical", version="1", source_file="checklist.yaml", sha256="check-hash")
     review = [
         ReviewDataItem(study_id="ahmad_2022", group="t1dm",
-                       field_type="eat_thickness", value="6.60 ± 0.71", unit="mm"),
+                       field_type="eat_thickness", value="6.60 ± 0.71", unit="mm",
+                       resolution_key="resolution-eat"),
     ]
     backend = _KeyedBackend({"eat_thickness": {
         "found": True, "value": "6.60 ± 0.71", "unit": "mm",
@@ -71,14 +82,29 @@ async def test_pipeline_match_pass(tmp_path):
     pipe = _pipeline(backend)
     pipe._store = store
 
-    pkg = await pipe.run(review, _REF, research_context="EAT in T1DM", run_id="r1")
+    pkg = await pipe.run(
+        review, _REF, research_context="EAT in T1DM", run_id="r1",
+        field_resolutions=[field_resolution], knowledge_imports=[knowledge_import],
+        knowledge_fingerprint="effective-kb-hash", knowledge_concept_count=12,
+        checklist=checklist)
 
     assert pkg.report.n_match == 1
     assert pkg.final_verification.verdict == ReportVerdict.PASS
     assert pkg.final_verification.human_review_flags == []
     assert pkg.source_items[0].source_value == "6.60 ± 0.71"
+    assert pkg.field_resolutions[0].resolution_key == "resolution-eat"
+    assert pkg.knowledge_imports[0].source == "ontology:labs"
+    assert pkg.knowledge_fingerprint == "effective-kb-hash"
+    assert pkg.knowledge_concept_count == 12
+    assert pkg.checklist.sha256 == "check-hash"
     # persisted + round-trips
-    assert store.load("r1").final_verification.verdict == ReportVerdict.PASS
+    loaded = store.load("r1")
+    assert loaded.final_verification.verdict == ReportVerdict.PASS
+    assert loaded.field_resolutions[0].field_type == "eat_thickness"
+    assert loaded.knowledge_imports[0].added == 3
+    assert loaded.knowledge_fingerprint == "effective-kb-hash"
+    assert loaded.knowledge_concept_count == 12
+    assert loaded.checklist.name == "clinical"
     # a collector processing record is attached
     assert any(r.agent == "collector" for r in pkg.processing_records)
 

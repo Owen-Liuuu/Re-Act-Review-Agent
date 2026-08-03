@@ -47,6 +47,13 @@ class ReviewDataItem(BaseModel):
     cohort_status: str = "resolved"
     timepoint_label: str = ""                  # the review's OWN word, "" if none
     origin: str = "review_table"               # review_table | checklist
+    # Stable identity for a checklist-authored concrete claim. Empty for normal
+    # table cells and for presence/gap checks, which never enter value matching.
+    checklist_id: str = ""
+    # Joins this row to the run-level FieldResolutionRecord that explains how
+    # ``raw_field_name`` became ``field_type``.  Empty for placeholders and
+    # hand-built/CSV fixtures that never went through the Resolver.
+    resolution_key: str = ""
     reasons: list[ReasonRecord] = Field(default_factory=list)
 
 
@@ -64,6 +71,7 @@ class SourceEvidenceItem(BaseModel):
     # a study/cohort/field can still be told apart when they are paired.
     table_id: str = ""
     cell_ref: tuple[int, int] | None = None
+    checklist_id: str = ""
     source_value: Value = None
     source_unit: str = ""
     source_quote: str = ""

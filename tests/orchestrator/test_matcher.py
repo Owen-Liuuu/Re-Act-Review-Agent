@@ -78,6 +78,25 @@ def test_same_coordinates_in_different_tables_do_not_collide():
     assert {(r.table_id, r.value) for r, _ in pairs} == {("t1", "24"), ("t2", "99")}
 
 
+def test_checklist_id_disambiguates_claims_without_table_cells():
+    review = [
+        ReviewDataItem(study_id="s1", group="-", field_type="effect_size",
+                       value="0.4", origin="checklist", checklist_id="primary_effect"),
+        ReviewDataItem(study_id="s1", group="-", field_type="effect_size",
+                       value="0.2", origin="checklist", checklist_id="secondary_effect"),
+    ]
+    source = [
+        SourceEvidenceItem(study_id="s1", group="-", field_type="effect_size",
+                           source_value="0.2", checklist_id="secondary_effect"),
+        SourceEvidenceItem(study_id="s1", group="-", field_type="effect_size",
+                           source_value="0.4", checklist_id="primary_effect"),
+    ]
+    pairs, ur, us = build_pairs(review, source)
+    assert len(pairs) == 2 and not ur and not us
+    assert all(r.checklist_id == s.checklist_id for r, s in pairs)
+    assert all(r.value == s.source_value for r, s in pairs)
+
+
 def test_partial_cell_information_still_refuses():
     # One side knows its cell, the other does not: not enough to pair safely.
     review = [_rv("s1", "t1dm", "bmi", table_id="t1", cell_ref=(0, 3)),

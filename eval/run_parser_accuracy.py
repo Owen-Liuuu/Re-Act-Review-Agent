@@ -24,7 +24,7 @@ from react_review.audit import ToleranceTable, compare_values
 from react_review.core.config import load_config
 from react_review.core.enums import AuditLabel
 from react_review.csv_io import load_included_studies
-from react_review.dkb import FieldResolver, KnowledgeBase
+from react_review.dkb import FieldResolver, load_runtime_knowledge
 from react_review.parser.review_parser import ReviewParser
 from react_review.pipeline.factory import _create_llm_backend
 from react_review.study_match import apply_modality_disambiguation, resolve_studies
@@ -55,14 +55,16 @@ def _load_gt() -> list[dict[str, str]]:
 
 async def _run(args) -> None:
     backend = _create_llm_backend(load_config(args.config))
-    kb = KnowledgeBase.from_json(ROOT / "configs" / "knowledge.seed.json")
+    kb = load_runtime_knowledge(
+        ROOT / "configs" / "knowledge.seed.json", ROOT / "configs" / "ontology")
     parser = ReviewParser(backend, FieldResolver(kb, backend=backend))
 
     print(f"parsing review PDF (slow) … {args.pdf}")
     parsed = await parser.parse(args.pdf, research_context=args.context)
     studies = load_included_studies(BENCH / "included_studies.csv")
     items, sid_map = resolve_studies(parsed.items, studies)     # canonicalise study_ids
-    items = apply_modality_disambiguation(items, sid_map, kb)   # CT EAT → eat_volume
+    items = apply_modality_disambiguation(
+        items, sid_map, kb, parsed.field_resolutions)           # CT EAT → eat_volume
     print(f"parser produced {len(items)} items")
 
     gt = {_key(r["study_id"], r.get("group"), r["field_type"]): r for r in _load_gt()}

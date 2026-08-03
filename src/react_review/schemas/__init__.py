@@ -20,6 +20,12 @@ from react_review.schemas.report import (
 )
 from react_review.schemas.agent import AgentRun, StepRecord
 from react_review.schemas.package import EvidencePackage
+from react_review.schemas.resolution import (
+    FieldResolutionRecord,
+    ResolutionAttempt,
+    ResolutionCellRef,
+)
+from react_review.schemas.knowledge import KnowledgeConflictRecord, KnowledgeImportRecord
 
 __all__ = [
     "ReviewDataItem",
@@ -33,4 +39,9 @@ __all__ = [
     "AgentRun",
     "StepRecord",
     "EvidencePackage",
+    "FieldResolutionRecord",
+    "ResolutionAttempt",
+    "ResolutionCellRef",
+    "KnowledgeConflictRecord",
+    "KnowledgeImportRecord",
 ]

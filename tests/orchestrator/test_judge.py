@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from react_review.core.enums import AuditLabel, CollectionOutcome, ReportVerdict
+from react_review.checklist.schema import ChecklistApplication, ChecklistGap
 from react_review.orchestrator.judge import Judge
 from react_review.schemas.audit import MatchResult
 from react_review.schemas.evidence import SourceEvidenceItem
@@ -48,6 +49,23 @@ def test_falls_back_to_not_comparable_without_source_outcome():
 def test_clean_match_produces_no_flag():
     fv = Judge().adjudicate(_report(AuditLabel.MATCH), [_source(CollectionOutcome.FOUND)])
     assert fv.human_review_flags == []
+
+
+def test_required_checklist_gap_is_flagged_and_prevents_pass():
+    report = AuditReport(run_id="r", n_match=1, verdict=ReportVerdict.PASS)
+    checklist = ChecklistApplication(
+        name="clinical", version="1", source_file="checklist.yaml", sha256="hash",
+        gaps=[ChecklistGap(
+            checklist_id="risk_of_bias", question="Risk of bias for each study?",
+            scope="per_study", study_id="smith_2020",
+            reason="required checklist item was not found for study smith_2020")])
+    fv = Judge().adjudicate(report, checklist=checklist)
+    assert fv.verdict == ReportVerdict.PARTIAL
+    assert len(fv.human_review_flags) == 1
+    flag = fv.human_review_flags[0]
+    assert flag.label == "checklist_gap"
+    assert flag.checklist_id == "risk_of_bias"
+    assert flag.study_id == "smith_2020"
 
 
 def test_concept_status_flags_candidate_and_unresolved():
@@ -126,3 +144,25 @@ def test_candidate_contradicted_by_source_evidence_escalates_flag():
     flags = Judge().adjudicate(rep, source, review).human_review_flags
     assert [f.label for f in flags] == ["concept_contradicted"]
     assert "contradicts" in flags[0].reason
+
+
+def test_candidate_flag_is_one_per_resolution_not_one_per_cell():
+    from react_review.schemas.evidence import ReviewDataItem
+    rep = AuditReport(run_id="r", verdict=ReportVerdict.PASS)
+    review = [
+        ReviewDataItem(
+            study_id="a_2020", group="treatment", field_type="novel_marker",
+            raw_field_name="Novel marker", value="7", resolution_status="candidate",
+            resolution_key="resolution-novel", table_id="t1", cell_ref=(0, 2)),
+        ReviewDataItem(
+            study_id="b_2021", group="control", field_type="novel_marker",
+            raw_field_name="Novel marker", value="8", resolution_status="candidate",
+            resolution_key="resolution-novel", table_id="t1", cell_ref=(1, 2)),
+    ]
+
+    flags = Judge().adjudicate(rep, None, review).human_review_flags
+    assert len(flags) == 1
+    assert flags[0].label == "provisional_concept"
+    assert flags[0].resolution_key == "resolution-novel"
+    assert flags[0].affected_cells == 2
+    assert "2 review cell(s)" in flags[0].reason

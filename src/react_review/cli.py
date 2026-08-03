@@ -454,8 +454,9 @@ def _run_main(argv: list[str] | None = None) -> None:
     import sys
     import uuid
 
+    from react_review.checklist import Checklist
     from react_review.core.exceptions import RunStopped
-    from react_review.dkb import FieldResolver, KnowledgeBase
+    from react_review.dkb import FieldResolver, load_runtime_knowledge
     from react_review.hitl import (
         AutoContinue,
         CheckpointPolicy,
@@ -500,6 +501,14 @@ def _run_main(argv: list[str] | None = None) -> None:
                          "(default: all of them; the checkpoint can also drop one)")
     ap.add_argument("--drop-tables", default="",
                     help="exclude these captured tables, e.g. table_s1")
+    checklist_group = ap.add_mutually_exclusive_group()
+    checklist_group.add_argument(
+        "--checklist", type=Path, default=None,
+        help="clinician-editable coverage checklist YAML "
+             "(default: configs/checklists/default.yaml)")
+    checklist_group.add_argument(
+        "--no-checklist", action="store_true",
+        help="disable the domain checklist for this run")
     ap.add_argument("--semantic", choices=("off", "cache-only", "on"), default="on",
                     help="judge text values the numeric comparison cannot read: "
                          "on = ask the model (costs tokens), cache-only = replay a "
@@ -533,13 +542,19 @@ def _run_main(argv: list[str] | None = None) -> None:
         _safe_print("[unattended] no one is gating this run; every step is still "
                     f"journalled to {journal.run_dir}")
 
-    seed = Path(__file__).resolve().parents[2] / "configs" / "knowledge.seed.json"
-    kb = KnowledgeBase.from_json(seed)
+    project_root = Path(__file__).resolve().parents[2]
+    seed = project_root / "configs" / "knowledge.seed.json"
+    kb = load_runtime_knowledge(seed, project_root / "configs" / "ontology")
+    checklist = None
+    if not args.no_checklist:
+        checklist = Checklist.from_yaml(
+            args.checklist or project_root / "configs" / "checklists" / "default.yaml")
     # audit mode: KB is read-only — candidates become proposals, not KB writes.
     resolver = FieldResolver(kb, backend=backend, write_back=False)
     review_parser = ReviewParser(
         backend, resolver, reporter=reporter,
         keep_tables=_id_set(args.tables), drop_tables=_id_set(args.drop_tables),
+        checklist=checklist,
     )
 
     try:
@@ -619,7 +634,8 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
     if args.studies:
         studies = load_included_studies(args.studies)
         review_items, sid_map = resolve_studies(parsed.items, studies)
-        review_items = apply_modality_disambiguation(review_items, sid_map, kb)
+        review_items = apply_modality_disambiguation(
+            review_items, sid_map, kb, parsed.field_resolutions)
         base_dir = args.pdf_dir or args.studies.parent
         doi_to_path = {s.doi: s.source_pdf for s in studies if s.doi and s.source_pdf}
         retriever = LocalPdfRetriever(doi_to_path, base_dir=base_dir)
@@ -671,6 +687,11 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
         review_items, reference_resolver,
         research_context=args.context, run_id=run_id, parser_record=parsed.record,
         captured_tables=parsed.tables, cohorts=parsed.cohorts,
+        field_resolutions=parsed.field_resolutions,
+        knowledge_imports=parsed.knowledge_imports,
+        knowledge_fingerprint=parsed.knowledge_fingerprint,
+        knowledge_concept_count=parsed.knowledge_concept_count,
+        checklist=parsed.checklist,
     ))
 
     fv = pkg.final_verification

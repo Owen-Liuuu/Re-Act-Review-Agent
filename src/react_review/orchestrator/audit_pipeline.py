@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Callable
 
 import structlog
 
+from react_review.checklist.schema import ChecklistApplication
 from react_review.hitl.events import StepStage, SubjectKind
 from react_review.hitl.reporter import StepReporter
 from react_review.normalize.cohorts import CohortRegistry
@@ -27,7 +28,9 @@ from react_review.orchestrator.judge import Judge
 from react_review.orchestrator.pipeline import AuditOrchestrator
 from react_review.schemas.agent import AgentRun
 from react_review.schemas.evidence import ReviewDataItem
+from react_review.schemas.knowledge import KnowledgeImportRecord
 from react_review.schemas.package import EvidencePackage
+from react_review.schemas.resolution import FieldResolutionRecord
 from react_review.schemas.table import CapturedTableSet
 from react_review.store.evidence_package import EvidencePackageStore
 
@@ -81,6 +84,11 @@ class AuditPipeline:
         parser_record: AgentRun | None = None,
         captured_tables: CapturedTableSet | None = None,
         cohorts: CohortRegistry | None = None,
+        field_resolutions: list[FieldResolutionRecord] | None = None,
+        knowledge_imports: list[KnowledgeImportRecord] | None = None,
+        knowledge_fingerprint: str = "",
+        knowledge_concept_count: int = 0,
+        checklist: ChecklistApplication | None = None,
     ) -> EvidencePackage:
         run_id = run_id or uuid.uuid4().hex[:12]
         self._reporter.run_id = self._reporter.run_id or run_id
@@ -104,7 +112,15 @@ class AuditPipeline:
             if self._store is not None:
                 self._store.save_partial(EvidencePackage(
                     run_id=run_id, review_items=review_items, source_items=source_items,
-                    processing_records=records, status="in_progress",
+                    processing_records=records,
+                    captured_tables=captured_tables or CapturedTableSet(),
+                    cohorts=cohorts or CohortRegistry(),
+                    field_resolutions=field_resolutions or [],
+                    knowledge_imports=knowledge_imports or [],
+                    knowledge_fingerprint=knowledge_fingerprint,
+                    knowledge_concept_count=knowledge_concept_count,
+                    checklist=checklist,
+                    status="in_progress",
                 ))
 
             collected = source_items[-len(claims):]
@@ -146,7 +162,8 @@ class AuditPipeline:
             render_blocks=[report.summary],
         )
 
-        final = self._judge.adjudicate(report, source_items, review_items)
+        final = self._judge.adjudicate(
+            report, source_items, review_items, checklist=checklist)
         await self._reporter.step_or_stop(
             StepStage.JUDGE_FLAGS, title="Flagged for human review",
             payload=final.model_dump(mode="json"),
@@ -162,6 +179,11 @@ class AuditPipeline:
             processing_records=records,
             captured_tables=captured_tables or CapturedTableSet(),
             cohorts=cohorts or CohortRegistry(),
+            field_resolutions=field_resolutions or [],
+            knowledge_imports=knowledge_imports or [],
+            knowledge_fingerprint=knowledge_fingerprint,
+            knowledge_concept_count=knowledge_concept_count,
+            checklist=checklist,
         )
         if self._store is not None:
             self._store.save(package)

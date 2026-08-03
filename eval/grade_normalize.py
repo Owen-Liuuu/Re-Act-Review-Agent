@@ -16,7 +16,7 @@ import csv
 from collections import Counter
 from pathlib import Path
 
-from react_review.dkb import FieldResolver, KnowledgeBase
+from react_review.dkb import FieldResolver, load_runtime_knowledge
 
 ROOT = Path(__file__).resolve().parents[1]
 SEED = ROOT / "configs" / "knowledge.seed.json"
@@ -29,7 +29,8 @@ async def main() -> int:
         rows = [r for r in csv.DictReader(f) if r["source_location"] == "Table 1"]
 
     # backend=None → deterministic KB resolution only; a miss stays unresolved.
-    resolver = FieldResolver(KnowledgeBase.from_json(SEED))
+    kb = load_runtime_knowledge(SEED, ROOT / "configs" / "ontology")
+    resolver = FieldResolver(kb)
     correct = 0
     sources: Counter[str] = Counter()
     wrong: list[tuple[str, str, str, str]] = []
@@ -49,6 +50,8 @@ async def main() -> int:
 
     n = len(rows)
     print(f"FieldResolver on {n} Table-1 columns")
+    print(f"  runtime KB: {len(kb.entries)} concepts, fingerprint {kb.version}")
+    print(f"  ontology imports: {[r.source for r in kb.imports]}")
     print(f"  correct: {correct}/{n} ({correct / n:.0%})")
     print(f"  by path: {dict(sources)}")
     for raw, unit, exp, got in wrong:
