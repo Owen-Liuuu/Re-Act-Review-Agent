@@ -125,9 +125,14 @@ class CollectionOutcome(str, Enum):
                             in it — a potential fabrication in the review.
     - UNRESOLVED_SOURCE:    the source paper could not even be identified from its
                             citation (no DOI printed and no confident online match).
+    - UNKNOWN_COHORT:       the review's claim could not be tied to a cohort, so
+                            there was nothing specific to look for. Kept separate
+                            from MISSING_SOURCE, which reads as possible
+                            fabrication and would be the wrong accusation here.
     """
 
     FOUND = "found"
     SOURCE_ACCESS_FAILED = "source_access_failed"
     MISSING_SOURCE = "missing_source"
     UNRESOLVED_SOURCE = "unresolved_source"
+    UNKNOWN_COHORT = "unknown_cohort"

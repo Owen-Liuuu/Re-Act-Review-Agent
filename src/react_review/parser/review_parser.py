@@ -12,8 +12,13 @@ from pydantic import BaseModel, Field
 from react_review.hitl.events import StepStage, SubjectKind
 from react_review.hitl.reporter import StepReporter
 from react_review.llm.base import LLMBackend, parse_llm_response
+from react_review.normalize.cohorts import (
+    CohortRegistry,
+    build_cohort_registry,
+    load_aliases,
+)
 from react_review.normalize.doi import normalize_doi
-from react_review.normalize.groups import normalize_group
+from react_review.normalize.study_key import study_key
 from react_review.parser.table_capture import TableCapturer
 from react_review.schemas.agent import AgentRun, StepRecord
 from react_review.schemas.evidence import ReviewDataItem
@@ -93,6 +98,8 @@ class ParsedReview(BaseModel):
     # The verbatim tables everything above was derived from — kept so a reader can
     # check any extracted value back against the table a human approved.
     tables: CapturedTableSet = Field(default_factory=CapturedTableSet)
+    # The cohorts this review was found to report, in its own words.
+    cohorts: CohortRegistry = Field(default_factory=CohortRegistry)
 
 
 def _pdf_text(pdf_path: Path | str) -> str:
@@ -107,13 +114,9 @@ def _pdf_text(pdf_path: Path | str) -> str:
         doc.close()
 
 
-def _study_slug(raw: str) -> str:
-    """"Ahmad et al. [2022]" -> "ahmad_2022" (first alpha word + first 4-digit year)."""
-    s = (raw or "").strip()
-    word = re.search(r"[A-Za-z][A-Za-z\-]+", s)
-    year = re.search(r"(19|20)\d{2}", s)
-    parts = [p for p in (word.group(0).lower() if word else "", year.group(0) if year else "") if p]
-    return "_".join(parts) or re.sub(r"[^a-z0-9]+", "_", s.lower()).strip("_") or "study"
+# The parser and the matcher must derive the SAME id from the same citation —
+# it is the key the whole audit joins on. One implementation, in normalize/.
+_study_slug = study_key
 
 
 def _refs_window(text: str, tail: int = 20000) -> str:
@@ -129,6 +132,8 @@ def _refs_window(text: str, tail: int = 20000) -> str:
         return text[last:]
     return text[-tail:]
 
+
+_ALIASES = Path(__file__).resolve().parents[3] / "configs" / "cohort_aliases.json"
 
 _PLACEHOLDER = {"", "null", "none", "n/a", "na", "-", "—", "nr", "not reported"}
 
@@ -192,6 +197,7 @@ class ReviewParser:
         keep_tables: set[str] | None = None,
         drop_tables: set[str] | None = None,
         alt_backend: LLMBackend | None = None,
+        cohort_aliases: dict[str, list[str]] | None = None,
     ) -> None:
         self._backend = backend
         self._resolver = resolver          # the parser holds NO domain knowledge itself
@@ -202,6 +208,10 @@ class ReviewParser:
         self._keep_tables = keep_tables
         self._drop_tables = drop_tables
         self._capturer = TableCapturer(backend, alt_backend=alt_backend)
+        # Alias file only RE-KEYS a discovered cohort (benchmark compatibility);
+        # it never introduces one, so a new domain stays domain-neutral.
+        self._cohort_aliases = (load_aliases(_ALIASES) if cohort_aliases is None
+                                else cohort_aliases)
 
     async def parse(
         self, pdf_path: Path | str, *, research_context: str = ""
@@ -235,7 +245,25 @@ class ReviewParser:
         raw_rows: list[dict[str, Any]] = []
         for table in table_set.tables:
             raw_rows.extend(await self._unpivot(table))
-        items = await self._postprocess(raw_rows, ctx)
+
+        # 3. Discover this review's cohorts from the labels it actually used —
+        #    BEFORE any resolution, so nothing has been folded into a default.
+        registry = build_cohort_registry(
+            [str(r.get("cohort_label") or "") for r in raw_rows]
+            + [c for t in table_set.tables for c in t.cohort_labels_seen],
+            aliases=self._cohort_aliases,
+        )
+        await self._reporter.step_or_stop(
+            StepStage.COHORT_REGISTRY,
+            title="Cohorts found in this review",
+            payload={"cohorts": [c.model_dump(mode="json") for c in registry.labels]},
+            render_blocks=[self._render_cohorts(registry)],
+            warnings=([] if registry.labels else
+                      ["no cohort labels were found — every value will be treated "
+                       "as a single combined cohort"]),
+        )
+
+        items = await self._postprocess(raw_rows, ctx, registry)
 
         await self._reporter.step_or_stop(
             StepStage.LONG_FORMAT_ROWS,
@@ -246,8 +274,9 @@ class ReviewParser:
             warnings=self._unpivot_warnings(table_set, raw_rows, items),
         )
 
-        # 3. included-study references, extracted from the reference window (doc tail).
+        # 4. included-study references, extracted from the reference window (doc tail).
         studies = await self._extract_studies(_refs_window(full_text))
+        studies = await self._review_coverage(studies, items)
 
         record = AgentRun(
             agent="parser",
@@ -269,7 +298,7 @@ class ReviewParser:
                     n_items=len(items), n_studies=len(studies),
                     n_tables=len(table_set.tables))
         return ParsedReview(items=items, record=record, research_context=ctx,
-                            studies=studies, tables=table_set)
+                            studies=studies, tables=table_set, cohorts=registry)
 
     async def _unpivot(self, table: CapturedTable) -> list[dict[str, Any]]:
         """Convert one captured table to long rows, a chunk of rows at a time.
@@ -341,9 +370,63 @@ class ReviewParser:
             ))
         return studies
 
+    async def _review_coverage(
+        self, studies: list[ParsedStudy], items: list[ReviewDataItem],
+    ) -> list[ParsedStudy]:
+        """Show which studies have a citation, and let a human drop the rest.
+
+        A reference list holds every work the review cites, not just the studies
+        it included — on the benchmark that is 34 references for 9 included
+        studies. Fetching all of them would audit papers the review never claimed
+        anything about, so the coverage is shown and the extras can be removed.
+        """
+        claimed = {i.study_id for i in items}
+        missing = sorted(claimed - {s.study_id for s in studies})
+
+        await self._reporter.step_or_stop(
+            StepStage.REFERENCE_COVERAGE,
+            title="Source papers for the studies in the table",
+            payload={"references": [
+                {"id": s.study_id, "label": f"{s.study_id}  {s.citation[:70]}"
+                                            f"{'  [doi]' if s.doi else '  [no doi]'}",
+                 **s.model_dump(mode="json")} for s in studies]},
+            render_blocks=[self._render_coverage(studies, claimed, missing)],
+            warnings=([f"{len(missing)} study/studies in the table have no citation: "
+                       + ", ".join(missing[:8])] if missing else []),
+            selectable="references",
+        )
+        event = self._reporter.last_event
+        if event is None or not event.dropped:
+            return studies
+        kept = {r["id"] for r in event.selectable_items()}
+        logger.info("references_dropped",
+                    ids=[s.study_id for s in studies if s.study_id not in kept])
+        return [s for s in studies if s.study_id in kept]
+
+    @staticmethod
+    def _render_coverage(studies: list[ParsedStudy], claimed: set[str],
+                         missing: list[str]) -> str:
+        used = [s for s in studies if s.study_id in claimed]
+        extra = [s for s in studies if s.study_id not in claimed]
+        lines = [f"  {len(studies)} reference(s) extracted; "
+                 f"{len(used)} match a study in the data table, "
+                 f"{len(extra)} do not; {len(missing)} table study/studies have none."]
+        if extra:
+            lines.append("  references with no claim in the table "
+                         "(cited works, not included studies):")
+            lines += [f"    {s.study_id:<24} {s.citation[:64]}" for s in extra[:12]]
+            if len(extra) > 12:
+                lines.append(f"    … {len(extra) - 12} more")
+        if missing:
+            lines.append("  studies in the table with NO citation found:")
+            lines += [f"    {sid}" for sid in missing[:12]]
+        return "\n".join(lines)
+
     async def _postprocess(
-        self, raw_rows: list[dict[str, Any]], research_context: str
+        self, raw_rows: list[dict[str, Any]], research_context: str,
+        registry: CohortRegistry | None = None,
     ) -> list[ReviewDataItem]:
+        registry = registry or CohortRegistry()
         items: list[ReviewDataItem] = []
         seen_study_level: set[tuple[str, str]] = set()
         for r in raw_rows:
@@ -362,12 +445,15 @@ class ReviewParser:
             table_id = str(r.get("table_id") or "")
             cell_ref = _cell_ref(r)
             study_id = _study_slug(_row_key_label(r.get("row_key")))
-            group = normalize_group(cohort_label)
+            cohort = registry.resolve(cohort_label)
+            group, cohort_status = cohort.key, cohort.status
             common = dict(
                 study_id=study_id, raw_field_name=raw_name, unit=unit,
                 table_id=table_id, cell_ref=cell_ref, column_header=raw_name,
                 cohort_label=cohort_label, timepoint_label=timepoint_label,
             )
+            cohort_reasons = ([] if cohort.known else [ReasonRecord(
+                code="cohort_unknown", stage="parser", message=cohort.reason)])
 
             # A written placeholder is REPORTED, not dropped: "NR" in an oncology
             # table may mean "median not reached" — a result, not an absence — and
@@ -379,12 +465,12 @@ class ReviewParser:
                 continue
             if isinstance(text, str) and text.lower() in _PLACEHOLDER:
                 items.append(ReviewDataItem(
-                    **common, group=group, field_type="", value=None,
-                    resolution_status="unresolved",
+                    **common, group=group, cohort_status=cohort_status,
+                    field_type="", value=None, resolution_status="unresolved",
                     reasons=[ReasonRecord(
                         code="placeholder_cell", stage="parser",
                         message=f"the table cell reads {value.strip()!r}; "
-                                "no value was reported here")],
+                                "no value was reported here"), *cohort_reasons],
                 ))
                 continue
 
@@ -402,28 +488,45 @@ class ReviewParser:
             # not_comparable / needs_review; the concept goes to proposals to learn.
             if rf.status == "unresolved":
                 items.append(ReviewDataItem(
-                    **common, group=group, field_type="", value=value,
-                    resolution_status="unresolved",
+                    **common, group=group, cohort_status=cohort_status,
+                    field_type="", value=value, resolution_status="unresolved",
                     reasons=[ReasonRecord(
                         code="concept_unresolved", stage="parser",
-                        message=f"column {raw_name!r} did not map to a known concept")],
+                        message=f"column {raw_name!r} did not map to a known concept"),
+                        *cohort_reasons],
                 ))
                 continue
 
             ft = rf.field_type
             # Parser APPLIES scope, using the knowledge the Resolver provided.
+            # A study-level field has no cohort dimension at all — that is not
+            # the same as a cohort we failed to place, so it gets its own status.
             if rf.scope == "study":
-                group = "-"
+                group, cohort_status = "-", "not_applicable"
+                cohort_reasons = []
                 if (study_id, ft) in seen_study_level:
                     continue
                 seen_study_level.add((study_id, ft))
             items.append(ReviewDataItem(
-                **common, group=group, field_type=ft, value=value,
+                **common, group=group, cohort_status=cohort_status,
+                field_type=ft, value=value, reasons=cohort_reasons,
                 resolution_status=("resolved" if rf.status == "authoritative" else rf.status),
             ))
         return items
 
     # --- rendering + warnings for the long-format checkpoint ---
+
+    @staticmethod
+    def _render_cohorts(registry: CohortRegistry) -> str:
+        """The arms this review reports, in its own words — for a human to confirm."""
+        if not registry.labels:
+            return "  (this review reports no cohort split)"
+        lines = [f"  {len(registry.labels)} cohort(s) found in the review's own table:"]
+        for c in registry.labels:
+            variants = [v for v in c.raw_variants if v != c.display]
+            extra = f"  (also written: {', '.join(variants)})" if variants else ""
+            lines.append(f"    {c.key:<22} “{c.display}”{extra}   [{c.source}]")
+        return "\n".join(lines)
 
     @staticmethod
     def _render_items(items: list[ReviewDataItem], limit: int = 25) -> str:

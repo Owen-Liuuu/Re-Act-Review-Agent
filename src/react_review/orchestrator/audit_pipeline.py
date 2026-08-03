@@ -22,6 +22,7 @@ import structlog
 
 from react_review.hitl.events import StepStage, SubjectKind
 from react_review.hitl.reporter import StepReporter
+from react_review.normalize.cohorts import CohortRegistry
 from react_review.orchestrator.judge import Judge
 from react_review.orchestrator.pipeline import AuditOrchestrator
 from react_review.schemas.agent import AgentRun
@@ -79,6 +80,7 @@ class AuditPipeline:
         run_id: str | None = None,
         parser_record: AgentRun | None = None,
         captured_tables: CapturedTableSet | None = None,
+        cohorts: CohortRegistry | None = None,
     ) -> EvidencePackage:
         run_id = run_id or uuid.uuid4().hex[:12]
         self._reporter.run_id = self._reporter.run_id or run_id
@@ -158,6 +160,7 @@ class AuditPipeline:
             final_verification=final,
             processing_records=records,
             captured_tables=captured_tables or CapturedTableSet(),
+            cohorts=cohorts or CohortRegistry(),
         )
         if self._store is not None:
             self._store.save(package)

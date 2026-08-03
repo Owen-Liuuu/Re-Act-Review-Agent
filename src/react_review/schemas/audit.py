@@ -41,6 +41,11 @@ class MatchResult(BaseModel):
     audit_id: str = ""
     study_id: str = ""
     group: str = "-"
+    # Part of the join key, plus the cell the review value came from. A result
+    # that cannot say WHICH row it judged cannot be re-checked by a human.
+    timepoint: str = "single"
+    table_id: str = ""
+    cell_ref: tuple[int, int] | None = None
     field_type: str = ""
     review_value: Value = None
     review_unit: str = ""

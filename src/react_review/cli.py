@@ -637,7 +637,8 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
     reg.register(ResolveReferenceTool(reconciler))          # no-DOI refs → gated online DOI
     reg.register(CompareValuesTool(tol))
     pipeline = AuditPipeline(
-        Collector(reg, knowledge=kb), AuditOrchestrator(reg), Judge(),
+        Collector(reg, knowledge=kb, cohorts=parsed.cohorts),
+        AuditOrchestrator(reg), Judge(),
         store=store, reporter=reporter,
     )
 
@@ -645,7 +646,7 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
     pkg = asyncio.run(pipeline.run(
         review_items, reference_resolver,
         research_context=args.context, run_id=run_id, parser_record=parsed.record,
-        captured_tables=parsed.tables,
+        captured_tables=parsed.tables, cohorts=parsed.cohorts,
     ))
 
     fv = pkg.final_verification

@@ -27,7 +27,31 @@ _OUTCOME_FLAG = {
         "unresolved_source",
         "could not identify the source paper from its citation "
         "(no DOI and no confident online match)"),
+    CollectionOutcome.UNKNOWN_COHORT: (
+        "unknown_cohort",
+        "the claim could not be tied to a cohort this review reports, so there "
+        "was nothing specific to look for in the paper"),
 }
+
+
+def _locator(item) -> tuple:
+    """The full identity of one audited cell — the key plus where it came from."""
+    return (
+        item.study_id, item.group, getattr(item, "timepoint", "single"),
+        item.field_type, getattr(item, "table_id", "") or "",
+        getattr(item, "cell_ref", None),
+    )
+
+
+def _flag(item, label: str, reason: str, *, field_type: str | None = None) -> HumanReviewFlag:
+    """A flag that points at ONE cell, so a human can go and check it."""
+    return HumanReviewFlag(
+        study_id=item.study_id, group=item.group,
+        timepoint=getattr(item, "timepoint", "single"),
+        field_type=item.field_type if field_type is None else field_type,
+        table_id=getattr(item, "table_id", "") or "",
+        cell_ref=getattr(item, "cell_ref", None), label=label, reason=reason,
+    )
 
 
 class Judge:
@@ -39,13 +63,15 @@ class Judge:
         source_items: list[SourceEvidenceItem] | None = None,
         review_items: list["ReviewDataItem"] | None = None,
     ) -> FinalVerification:
+        # Keyed on the FULL locator, not (study, group, field): two rows of the
+        # same study/cohort/field would otherwise overwrite each other here, and
+        # the report would show one row's evidence beside the other's number.
         outcome_by_key = {
-            (s.study_id, s.group, s.field_type): s.collection_outcome
-            for s in (source_items or [])
+            _locator(s): s.collection_outcome for s in (source_items or [])
         }
         # Source evidence that refutes a candidate translation (unit/range).
         mismatch_by_key = {
-            (s.study_id, s.group, s.field_type): s.concept_mismatch_reason
+            _locator(s): s.concept_mismatch_reason
             for s in (source_items or []) if s.concept_mismatch
         }
         flags: list[HumanReviewFlag] = []
@@ -55,27 +81,50 @@ class Judge:
                 continue
             label, reason = r.label.value, r.reason
             if r.label == AuditLabel.NOT_COMPARABLE:
-                refined = _OUTCOME_FLAG.get(
-                    outcome_by_key.get((r.study_id, r.group, r.field_type)))
+                refined = _OUTCOME_FLAG.get(outcome_by_key.get(_locator(r)))
                 if refined:
                     label, reason = refined
-            flags.append(HumanReviewFlag(
-                study_id=r.study_id, group=r.group, field_type=r.field_type,
-                label=label, reason=reason,
-            ))
+            flags.append(_flag(r, label, reason))
 
-        for key in report.unmatched_review:
-            parts = key.split("/")
-            study = parts[0] if parts else ""
-            group = parts[1] if len(parts) > 1 else "-"
-            field_type = parts[3] if len(parts) > 3 else ""
-            refined = _OUTCOME_FLAG.get(outcome_by_key.get((study, group, field_type)))
-            label, reason = refined or (
-                "unmatched", "no source evidence for this review claim")
-            flags.append(HumanReviewFlag(
-                study_id=study, group=group, field_type=field_type,
-                label=label, reason=reason,
-            ))
+        for claim in report.unmatched_review:
+            refined = _OUTCOME_FLAG.get(outcome_by_key.get(_locator(claim)))
+            if claim.reason_code == "ambiguous_match_key":
+                # Refusing to pair is its own finding — never dress it up as a
+                # missing source, which would read as a possible fabrication.
+                label, reason = "ambiguous_match_key", claim.message
+            else:
+                label, reason = refined or ("unmatched", claim.message or
+                                            "no source evidence for this review claim")
+            flags.append(_flag(claim, label, reason))
+
+        # Cohort guardrail: a claim whose arm could not be placed, or whose
+        # evidence could not be confirmed to belong to that arm, is kept — and
+        # said out loud. Neither may be presented as a checked result.
+        cohort_flag = {
+            "unknown": ("unknown_cohort",
+                        "the review's cohort label could not be matched to any "
+                        "cohort this review reports"),
+            "ambiguous": ("cohort_ambiguous",
+                          "which cohort this value belongs to could not be confirmed"),
+        }
+        for item in (review_items or []):
+            entry = cohort_flag.get(getattr(item, "cohort_status", "resolved"))
+            if entry is None:
+                continue
+            label, default = entry
+            detail = next((str(r) for r in getattr(item, "reasons", [])
+                           if r.code.startswith("cohort")), "")
+            flags.append(_flag(
+                item, label,
+                f"cohort {item.cohort_label!r}: {detail or default}",
+                field_type=item.field_type or item.raw_field_name))
+
+        for s in (source_items or []):
+            if s.cohort_check == "ambiguous":
+                detail = next((str(r) for r in s.reasons
+                               if r.code == "cohort_ambiguous"), "")
+                flags.append(_flag(s, "cohort_ambiguous", detail or
+                                   "the source cohort could not be confirmed"))
 
         # DKB guardrail: the concept mapping's own certainty, independent of the
         # value check. A CANDIDATE (LLM-proposed, not-yet-authoritative) must be
@@ -83,8 +132,7 @@ class Judge:
         for item in (review_items or []):
             status = getattr(item, "resolution_status", "resolved")
             if status == "candidate":
-                contradiction = mismatch_by_key.get(
-                    (item.study_id, item.group, item.field_type))
+                contradiction = mismatch_by_key.get(_locator(item))
                 if contradiction:
                     label, reason = "concept_contradicted", (
                         f"field '{item.raw_field_name or item.field_type}' was "
@@ -95,18 +143,15 @@ class Judge:
                         f"field '{item.raw_field_name or item.field_type}' was "
                         f"auto-classified as {item.field_type} (provisional) — "
                         "confirm the concept mapping")
-                flags.append(HumanReviewFlag(
-                    study_id=item.study_id, group=item.group, field_type=item.field_type,
-                    label=label, reason=reason,
-                ))
+                flags.append(_flag(item, label, reason))
             elif status == "unresolved":
-                flags.append(HumanReviewFlag(
-                    study_id=item.study_id, group=item.group,
-                    field_type=item.field_type or item.raw_field_name,
-                    label="needs_review",
-                    reason=f"field '{item.raw_field_name}' could not be mapped to a known "
-                           "concept — not comparable, needs human review",
-                ))
+                # No concept to name it by — show the review's own column header
+                # so the flag still says WHICH field a human should look at.
+                flags.append(_flag(
+                    item, "needs_review",
+                    f"field '{item.raw_field_name}' could not be mapped to a known "
+                    "concept — not comparable, needs human review",
+                    field_type=item.field_type or item.raw_field_name))
 
         summary = (
             f"[{report.verdict.value}] {report.n_match} match, {report.n_mismatch} "

@@ -1,0 +1,12 @@
+{
+  "_comment": "Surface form -> stable cohort key. This file exists ONLY so a benchmark whose answer key uses fixed cohort ids keeps joining after cohorts became self-discovered. It must never be used to pre-seed cohorts for a domain: a review with Treatment and Placebo arms has no entry here and gets two distinct discovered keys, which is the correct answer. Add an entry only when an existing answer key requires a specific id.",
+
+  "t1dm": [
+    "t1dm", "t1d", "type 1 diabetes", "type 1 diabetic", "type-1 diabetes",
+    "diabetic", "diabetics", "diabetic children", "diabetic group", "dm group"
+  ],
+  "control": [
+    "control", "controls", "control group", "healthy control", "healthy controls",
+    "healthy", "non-diabetic", "nondiabetic", "non diabetic", "comparison group"
+  ]
+}

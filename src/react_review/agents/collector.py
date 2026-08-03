@@ -18,7 +18,10 @@ from pydantic import BaseModel
 
 from react_review.core.enums import CollectionOutcome, ReflectionDecision
 from react_review.dkb import KnowledgeBase, evidence_contradicts
+from react_review.normalize.cohorts import CohortRegistry
 from react_review.orchestrator.reflection import ReflectionDecider, ReflectionSignals
+from react_review.schemas.reason import ReasonRecord
+from react_review.study_match import is_resolvable
 from react_review.schemas.agent import AgentRun, StepRecord
 from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
 from react_review.steps.paper_verification.schemas import ReferenceEntry
@@ -33,6 +36,47 @@ class CollectResult(BaseModel):
     decision: ReflectionDecision
 
 
+# Where a retriever records the document's location. Each tier uses its own key,
+# so they are normalised to one field rather than left for the reader to guess.
+_URI_KEYS = ("path", "oa_url", "pdf_url", "url", "pmc_id", "pmid", "openalex_id")
+
+
+def _provenance(document) -> dict[str, str]:
+    """Which document was actually read — path or URL, plus the retriever tier."""
+    if document is None:
+        return {}
+    meta = getattr(document, "metadata", None) or {}
+    uri = next((str(meta[k]) for k in _URI_KEYS if meta.get(k)), "")
+    reference = getattr(document, "reference", None)
+    return {
+        "source_file": str(meta.get("path") or ""),
+        "source_uri": uri,
+        "source_paper_id": str(getattr(document, "paper_id", "") or ""),
+        "source_doi": str(getattr(reference, "doi", "") or ""),
+        "retriever_kind": str(meta.get("source") or ""),
+    }
+
+
+def _reasons_for(result: SourceValueResult, outcome: CollectionOutcome) -> list[ReasonRecord]:
+    """Everything that explains this outcome, in words a reader can act on."""
+    reasons: list[ReasonRecord] = []
+    if result.error:
+        reasons.append(ReasonRecord(code="extraction_error", source="exception",
+                                    stage="collector", message=result.error))
+    if result.not_found_reason and outcome is not CollectionOutcome.FOUND:
+        reasons.append(ReasonRecord(code=outcome.value, source="llm",
+                                    stage="collector", message=result.not_found_reason))
+    if result.cohort_check == "ambiguous" and result.cohort_reason:
+        # The value is kept, but nobody has confirmed which arm it belongs to.
+        reasons.append(ReasonRecord(code="cohort_ambiguous", source="deterministic",
+                                    stage="collector", message=result.cohort_reason))
+    if result.cohorts_seen:
+        reasons.append(ReasonRecord(
+            code="cohorts_seen", source="llm", stage="collector",
+            message="the paper distinguishes: " + ", ".join(result.cohorts_seen)))
+    return reasons
+
+
 class Collector:
     """Collect the source value for review claims via fetch + directed extract."""
 
@@ -41,6 +85,7 @@ class Collector:
         catalogue: ToolRegistry,
         *,
         knowledge: KnowledgeBase | None = None,
+        cohorts: CohortRegistry | None = None,
         decider: ReflectionDecider | None = None,
         max_attempts: int = 3,
     ) -> None:
@@ -49,6 +94,7 @@ class Collector:
         # Optional: resolve a citation with no printed DOI to a gated DOI (online).
         self._resolve = catalogue.get("resolve_reference") if "resolve_reference" in catalogue else None
         self._kb = knowledge
+        self._cohorts = cohorts
         self._max_attempts = max(1, max_attempts)
         self._decider = decider or ReflectionDecider(max_attempts=self._max_attempts)
 
@@ -56,6 +102,12 @@ class Collector:
         if self._kb and field_type in self._kb.entries:
             return self._kb.entries[field_type].concept
         return ""
+
+    def _cohort_variants(self) -> dict[str, list[str]]:
+        """key → the review's own words for that cohort (for the guard)."""
+        if self._cohorts is None:
+            return {}
+        return {c.key: [c.display, *c.raw_variants] for c in self._cohorts.labels}
 
     async def collect(
         self,
@@ -65,6 +117,30 @@ class Collector:
         research_context: str = "",
     ) -> CollectResult:
         steps: list[StepRecord] = []
+
+        # A claim whose cohort could not be placed has nothing specific to look
+        # for. Sending it anyway would ask the paper for an unnamed arm and read
+        # back whatever is nearest — so it stops here, as its own outcome rather
+        # than as MISSING_SOURCE, which would imply the paper omitted the value.
+        if getattr(review_item, "cohort_status", "resolved") in ("unknown", "ambiguous"):
+            reason = next((str(r) for r in getattr(review_item, "reasons", [])
+                           if r.code.startswith("cohort")),
+                          f"the cohort {review_item.cohort_label!r} could not be placed")
+            return self._result(
+                review_item, SourceValueResult(found=False, not_found_reason=reason),
+                steps, ReflectionDecision.ESCALATE, CollectionOutcome.UNKNOWN_COHORT)
+
+        # The review's reference list yielded nothing for this study, so there is
+        # no citation to look up. Searching on the study id would just match some
+        # unrelated paper; say so instead.
+        if not is_resolvable(reference):
+            return self._result(
+                review_item,
+                SourceValueResult(found=False, not_found_reason=(
+                    "the review's reference list contains no citation for this "
+                    "study, so the source paper could not be identified")),
+                steps, ReflectionDecision.ESCALATE,
+                CollectionOutcome.UNRESOLVED_SOURCE)
 
         # 0. No printed DOI → resolve the citation to a GATED DOI online before
         # fetching. A low-confidence / no match is UNRESOLVED_SOURCE (we refuse
@@ -88,25 +164,25 @@ class Collector:
 
         # 1. Fetch the source paper (deterministic; document held in Python).
         fetched = await self._fetch.run(reference)
+        provenance = _provenance(fetched.document)
         steps.append(StepRecord(
-            index=0, thought="fetch source full text", tool="fetch_fulltext",
+            index=len(steps), thought="fetch source full text", tool="fetch_fulltext",
             args={"doi": reference.doi or "", "title": reference.title[:60]},
-            observation={
-                "retrieved": fetched.retrieved,
-                "source": (fetched.document.metadata.get("source")
-                           if fetched.document else None),
-            },
+            observation={"retrieved": fetched.retrieved, **provenance},
         ))
         if not fetched.retrieved or fetched.document is None:
             out = self._decider.decide(ReflectionSignals(retrieval_ok=False, attempt=0))
-            return self._result(review_item, SourceValueResult(found=False),
-                                 steps, out.decision,
-                                 CollectionOutcome.SOURCE_ACCESS_FAILED)
+            return self._result(
+                review_item,
+                SourceValueResult(found=False, not_found_reason=out.reason),
+                steps, out.decision, CollectionOutcome.SOURCE_ACCESS_FAILED,
+                provenance=provenance)
 
         # 2. Directed extraction, with a bounded reflection-driven retry loop.
         concept = self._concept_for(review_item.field_type)
         result = SourceValueResult(found=False)
         decision = ReflectionDecision.ESCALATE
+        reflection_reason = ""
         for attempt in range(self._max_attempts):
             result = await self._extract.run(ExtractSourceValueInput(
                 document=fetched.document,
@@ -116,6 +192,8 @@ class Collector:
                 raw_field_name=review_item.raw_field_name,
                 unit_hint=review_item.unit,
                 research_context=research_context,
+                cohort_display=review_item.cohort_label,
+                cohorts=self._cohort_variants(),
             ))
             steps.append(StepRecord(
                 index=len(steps),
@@ -126,9 +204,11 @@ class Collector:
                 observation=result.model_dump(),
             ))
             # Reflection: a found value is accepted; otherwise retry then escalate.
-            decision = self._decider.decide(
-                ReflectionSignals(retrieval_ok=result.found, attempt=attempt)
-            ).decision
+            # Keep the decider's REASON — it was being generated and discarded,
+            # so "retries exhausted" never reached anyone reading the report.
+            outcome_of = self._decider.decide(
+                ReflectionSignals(retrieval_ok=result.found, attempt=attempt))
+            decision, reflection_reason = outcome_of.decision, outcome_of.reason
             # A wrong-cohort rejection is deterministic — retrying the same prompt
             # just repeats it, so escalate immediately instead of burning attempts.
             if result.wrong_group_rejected:
@@ -139,6 +219,8 @@ class Collector:
         # Retrieved but the value was never located → potential fabrication.
         outcome = (CollectionOutcome.FOUND if result.found
                    else CollectionOutcome.MISSING_SOURCE)
+        if not result.found and not result.not_found_reason and reflection_reason:
+            result = result.model_copy(update={"not_found_reason": reflection_reason})
 
         # Back-check: for a CANDIDATE (LLM-guessed) concept, let the SOURCE
         # evidence validate the translation — if the extracted unit/value is a
@@ -151,7 +233,7 @@ class Collector:
                 review_item.field_type, kb=self._kb,
                 unit=result.unit, value=result.value)
         return self._result(review_item, result, steps, decision, outcome,
-                            mismatch_reason=mismatch_reason)
+                            mismatch_reason=mismatch_reason, provenance=provenance)
 
     def _result(
         self,
@@ -161,12 +243,17 @@ class Collector:
         decision: ReflectionDecision,
         outcome: CollectionOutcome = CollectionOutcome.FOUND,
         mismatch_reason: str = "",
+        provenance: dict[str, str] | None = None,
     ) -> CollectResult:
         source_item = SourceEvidenceItem(
             study_id=review_item.study_id,
             group=review_item.group,
             timepoint=review_item.timepoint,
             field_type=review_item.field_type,
+            # Carry the review cell forward so the join can tell two claims on
+            # the same study/cohort/field apart instead of guessing.
+            table_id=review_item.table_id,
+            cell_ref=review_item.cell_ref,
             source_value=result.value,
             source_unit=result.unit,
             source_quote=result.quote,
@@ -174,6 +261,10 @@ class Collector:
             collection_outcome=outcome,
             concept_mismatch=bool(mismatch_reason),
             concept_mismatch_reason=mismatch_reason,
+            cohort_check=result.cohort_check,
+            cohorts_seen=result.cohorts_seen,
+            reasons=_reasons_for(result, outcome),
+            **(provenance or {}),
         )
         record = AgentRun(
             agent="collector",

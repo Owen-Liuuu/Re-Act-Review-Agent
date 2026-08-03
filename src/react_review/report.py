@@ -27,7 +27,41 @@ _LABEL = {
     "provisional_concept": ("Provisional concept", "accent"),
     "concept_contradicted": ("Concept contradicted by source", "bad"),
     "needs_review": ("Unresolved — needs review", "warn"),
+    "unresolved_source": ("Source paper not identified", "muted"),
+    "unknown_cohort": ("Cohort not identified", "warn"),
+    "cohort_ambiguous": ("Cohort unconfirmed", "warn"),
+    "ambiguous_match_key": ("Ambiguous — not paired", "warn"),
 }
+
+
+def _locator(item) -> tuple:
+    """The full identity of one audited cell (see Judge._locator)."""
+    return (
+        item.study_id, item.group, getattr(item, "timepoint", "single"),
+        item.field_type, getattr(item, "table_id", "") or "",
+        getattr(item, "cell_ref", None),
+    )
+
+
+def _provenance_html(item) -> str:
+    """WHICH document this evidence was read from — the point of recording it."""
+    if item is None:
+        return ""
+    where = item.source_file or item.source_uri or item.source_doi
+    if not where:
+        return ""
+    kind = f" · {escape(item.retriever_kind)}" if item.retriever_kind else ""
+    return f'<div class="src">read from: <code>{escape(where)}</code>{kind}</div>'
+
+
+def _reasons_html(item) -> str:
+    """Why this outcome — including whatever the model said about its difficulty."""
+    reasons = getattr(item, "reasons", None) or []
+    if not reasons:
+        return ""
+    rows = "".join(f'<li><b>{escape(r.code)}</b> ({escape(r.source)}): '
+                   f'{escape(r.message)}</li>' for r in reasons)
+    return f'<ul class="why">{rows}</ul>'
 
 
 def _chip(label: str) -> str:
@@ -54,7 +88,9 @@ def render_html_report(pkg: EvidencePackage) -> str:
     fv = pkg.final_verification or FinalVerification(
         run_id=pkg.run_id, verdict=rep.verdict, summary=rep.summary)
     v_text, v_cls = _VERDICT.get(rep.verdict.value, (rep.verdict.value, "muted"))
-    src = {(s.study_id, s.group, s.field_type): s for s in pkg.source_items}
+    # Keyed on the full locator: two rows of the same study/cohort/field would
+    # otherwise collapse here, showing one row's quote next to the other's number.
+    src = {_locator(s): s for s in pkg.source_items}
 
     tiles = [("Match", rep.n_match, "good"), ("Mismatch", rep.n_mismatch, "bad"),
              ("Unit mismatch", rep.n_unit_mismatch, "warn"),
@@ -88,11 +124,12 @@ def render_html_report(pkg: EvidencePackage) -> str:
         flagged = sum(1 for r in results if r.label.value != "match")
         body_rows = ""
         for r in results:
-            s = src.get((r.study_id, r.group, r.field_type))
+            s = src.get(_locator(r))
             quote = escape(s.source_quote) if s and s.source_quote else ""
             loc = escape(s.source_location_in_paper) if s and s.source_location_in_paper else ""
             ev = (f'<div class="q">“{quote}”</div>' if quote else "") + \
-                 (f'<div class="loc">{loc}</div>' if loc else "")
+                 (f'<div class="loc">{loc}</div>' if loc else "") + \
+                 _provenance_html(s) + _reasons_html(s)
             body_rows += (
                 f'<tr class="r-{_LABEL.get(r.label.value, ("", "muted"))[1]}">'
                 f'<td>{escape(r.group)}</td>'
@@ -288,6 +325,10 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}.u{color:var(--faint
 tr.r-bad td{background:var(--bad-bg)}tr.r-warn td{background:var(--warn-bg)}
 .ev{max-width:280px}.ev .q{color:var(--muted);font-size:12.5px;font-style:italic}
 .ev .loc{color:var(--faint);font-family:var(--mono);font-size:11px;margin-top:3px}
+.ev .src{color:var(--faint);font-size:11px;margin-top:4px;word-break:break-all}
+.ev .src code{font-family:var(--mono);font-size:10.5px}
+.ev .why{margin:4px 0 0;padding-left:14px;color:var(--muted);font-size:11px}
+.ev .why b{font-family:var(--mono);font-weight:600}
 footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:var(--faint);
 font-family:var(--mono);font-size:11px}
 """

@@ -33,7 +33,9 @@ def _resolver() -> FieldResolver:
 
 def test_study_slug():
     assert _study_slug("Ahmad et al. [2022]") == "ahmad_2022"
-    assert _study_slug("de Gonzalo-Calvo et al. (2018)") == "de_2018"
+    # Surname particles are kept: a first-word rule made "van den Berg 2020" and
+    # "van Rooij 2020" the same study. See normalize/study_key.py.
+    assert _study_slug("de Gonzalo-Calvo et al. (2018)") == "degonzalocalvo_2018"
 
 
 def _capture(rows, columns=("Study", "N", "EFT/ EAT")) -> dict:

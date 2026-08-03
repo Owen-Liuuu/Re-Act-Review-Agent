@@ -66,6 +66,53 @@ def test_concept_status_flags_candidate_and_unresolved():
     assert flags[1].field_type == "Novel Score"        # unresolved shows the raw name
 
 
+def test_two_cells_of_the_same_field_do_not_overwrite_each_other():
+    # Both rows are study/cohort/field-identical and differ only by cell. Keyed
+    # on three fields, the second source item would replace the first and one
+    # row's evidence would be attributed to the other row's number.
+    from react_review.schemas.evidence import SourceEvidenceItem
+    rep = AuditReport(
+        run_id="r",
+        results=[
+            MatchResult(study_id="ahmad_2022", group="t1dm", field_type="eat_thickness",
+                        table_id="t1", cell_ref=(0, 3), label=AuditLabel.NOT_COMPARABLE,
+                        reason="no source value"),
+            MatchResult(study_id="ahmad_2022", group="t1dm", field_type="eat_thickness",
+                        table_id="t1", cell_ref=(1, 3), label=AuditLabel.NOT_COMPARABLE,
+                        reason="no source value"),
+        ],
+        n_not_comparable=2, verdict=ReportVerdict.PARTIAL)
+    source = [
+        SourceEvidenceItem(study_id="ahmad_2022", group="t1dm", field_type="eat_thickness",
+                           table_id="t1", cell_ref=(0, 3),
+                           collection_outcome=CollectionOutcome.SOURCE_ACCESS_FAILED),
+        SourceEvidenceItem(study_id="ahmad_2022", group="t1dm", field_type="eat_thickness",
+                           table_id="t1", cell_ref=(1, 3),
+                           collection_outcome=CollectionOutcome.MISSING_SOURCE),
+    ]
+    flags = Judge().adjudicate(rep, source).human_review_flags
+
+    # each cell keeps ITS OWN outcome
+    assert [f.label for f in flags] == ["source_access_failed", "missing_source"]
+    assert [f.cell_ref for f in flags] == [(0, 3), (1, 3)]
+
+
+def test_refusing_to_pair_is_not_reported_as_a_missing_source():
+    # An ambiguous key must not read as "the paper doesn't say this", which the
+    # report presents as a possible fabrication.
+    from react_review.schemas.report import UnmatchedClaim
+    rep = AuditReport(
+        run_id="r", verdict=ReportVerdict.PARTIAL,
+        unmatched_review=[UnmatchedClaim(
+            study_id="ahmad_2022", group="t1dm", field_type="bmi",
+            reason_code="ambiguous_match_key",
+            message="2 claims share the key; refusing to guess")],
+    )
+    flag = Judge().adjudicate(rep).human_review_flags[0]
+    assert flag.label == "ambiguous_match_key"
+    assert "refusing to guess" in flag.reason
+
+
 def test_candidate_contradicted_by_source_evidence_escalates_flag():
     from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
     rep = AuditReport(run_id="r", verdict=ReportVerdict.PASS)

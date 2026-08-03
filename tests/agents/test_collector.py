@@ -17,7 +17,8 @@ from react_review.tools.extract import FetchFullTextTool
 from react_review.tools.extract_source import (
     ExtractSourceValueInput,
     ExtractSourceValueTool,
-    _group_mismatch,
+    cohort_conflicts,
+    cohort_description,
 )
 from react_review.tools.registry import ToolRegistry
 
@@ -92,21 +93,52 @@ async def test_extract_tool_unparseable_is_not_found():
     assert out.found is False
 
 
-# --- group-confusion guard ---
+# --- cohort guard: checked against the REVIEW's own labels, not a disease list ---
 
-@pytest.mark.parametrize("target, label, mismatch", [
-    ("control", "Diabetic children", True),    # read the T1DM column for a control ask
-    ("control", "Controls", False),
-    ("control", "healthy controls", False),
-    ("control", "control patients", False),     # "control" wins over generic words
-    ("t1dm", "Control group", True),
-    ("t1dm", "T1DM patients", False),
-    ("t1dm", "Diabetic children", False),
-    ("control", "", False),                      # no reported label → no guard
-    ("all", "Diabetic children", False),         # non-split group → skip
+# What this review was found to report — no diabetes vocabulary in the code.
+_COHORTS = {"t1dm": ["T1DM", "Diabetic children"],
+            "control": ["Control", "Healthy controls"]}
+
+
+@pytest.mark.parametrize("target, label, verdict", [
+    ("control", "Diabetic children", "wrong_cohort"),   # read the other arm's column
+    ("t1dm", "Control group", "wrong_cohort"),
+    ("control", "Controls", "ok"),
+    ("control", "healthy controls", "ok"),
+    ("t1dm", "T1DM patients", "ok"),
+    ("t1dm", "Diabetic children", "ok"),
+    ("control", "", "ok"),                              # no reported label → no guard
+    ("all", "Diabetic children", "ok"),                 # non-split ask → skip
+    # NOT ok: the guard could not confirm the arm, so it must not pass as clean.
+    ("control", "Cohort B", "ambiguous"),
+    ("placebo", "Placebo arm", "ambiguous"),            # target not in this registry
 ])
-def test_group_mismatch(target, label, mismatch):
-    assert _group_mismatch(target, label) is mismatch
+def test_cohort_conflicts(target, label, verdict):
+    assert cohort_conflicts(target, label, cohorts=_COHORTS)[0] == verdict
+
+
+def test_no_registry_means_the_guard_is_not_configured_not_that_it_failed():
+    # Auditing two CSVs whose groups are already canonical supplies no cohorts.
+    # That is "nothing to check against", not "could not confirm" — flagging
+    # every row there would bury the cases that genuinely need a look.
+    assert cohort_conflicts("control", "Diabetic children", cohorts={})[0] == "ok"
+    # But a registry that does NOT contain the target IS suspicious.
+    assert cohort_conflicts("placebo", "Placebo arm", cohorts=_COHORTS)[0] == "ambiguous"
+
+
+def test_cohort_description_uses_the_reviews_own_words():
+    desc = cohort_description("treatment", display="Nivolumab arm",
+                              variants=["Nivolumab arm", "Treatment"])
+    assert '"Nivolumab arm" cohort' in desc and "Treatment" in desc
+    assert "diabet" not in desc.lower()          # no disease vocabulary anywhere
+
+
+def test_unidentified_cohort_is_not_described_as_the_whole_study():
+    # Saying "whole study cohort" here would have the model fetch a pooled
+    # number for a claim that is about one arm.
+    desc = cohort_description("")
+    assert "did not identify" in desc and "whole study" not in desc
+    assert "whole study cohort" in cohort_description("all")
 
 
 @pytest.mark.asyncio
@@ -116,9 +148,42 @@ async def test_extract_tool_rejects_wrong_cohort_value():
                            "quote": "Age 12.90 ± 1.30", "location": "Table 1"})
     out = await ExtractSourceValueTool(backend).run(ExtractSourceValueInput(
         document=PaperDocument(paper_id="x", reference=_REF),
-        field_type="age", group="control"))
+        field_type="age", group="control", cohorts=_COHORTS))
     assert out.found is False and out.value is None      # rejected as wrong cohort
     assert out.group_label_in_paper == "Diabetic children"
+    assert out.cohort_check == "wrong_cohort"
+    assert "Diabetic children" in out.not_found_reason   # says WHY it was rejected
+
+
+@pytest.mark.asyncio
+async def test_unverifiable_cohort_is_kept_but_marked_not_passed_as_clean():
+    # The paper names a cohort this review does not report. The value is still
+    # useful evidence, but nobody has confirmed which arm it belongs to, so it
+    # must not read as a clean result.
+    backend = StubBackend({"found": True, "value": "12.90 ± 1.30", "unit": "years",
+                           "group_label_in_paper": "Cohort B", "quote": "Age 12.90"})
+    out = await ExtractSourceValueTool(backend).run(ExtractSourceValueInput(
+        document=PaperDocument(paper_id="x", reference=_REF),
+        field_type="age", group="control", cohorts=_COHORTS))
+    assert out.found is True                      # evidence kept
+    assert out.cohort_check == "ambiguous"        # but explicitly unconfirmed
+    assert out.cohort_reason
+
+
+@pytest.mark.asyncio
+async def test_a_quote_that_resembles_no_cohort_name_is_not_treated_as_a_problem():
+    # A quote is prose. Not matching a short cohort label is normal for a
+    # sentence and must not downgrade a correct extraction — only positive
+    # evidence of ANOTHER arm counts against it.
+    backend = StubBackend({"found": True, "value": "12.90 ± 1.30", "unit": "years",
+                           "group_label_in_paper": "T1DM",
+                           "quote": "The mean age of the study population was "
+                                    "12.90 ± 1.30 years overall."})
+    out = await ExtractSourceValueTool(backend).run(ExtractSourceValueInput(
+        document=PaperDocument(paper_id="x", reference=_REF),
+        field_type="age", group="t1dm", cohorts={"t1dm": ["T1DM"],
+                                                 "control": ["Control"]}))
+    assert out.found is True and out.cohort_check == "ok"
 
 
 @pytest.mark.asyncio
@@ -142,7 +207,7 @@ async def test_extract_tool_rejects_when_quote_names_wrong_cohort():
                                     "12.90 ± 1.30 years.", "location": "Results"})
     out = await ExtractSourceValueTool(backend).run(ExtractSourceValueInput(
         document=PaperDocument(paper_id="x", reference=_REF),
-        field_type="age", group="control"))
+        field_type="age", group="control", cohorts=_COHORTS))
     assert out.found is False and out.value is None
 
 

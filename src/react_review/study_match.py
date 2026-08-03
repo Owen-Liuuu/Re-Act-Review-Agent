@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+from react_review.normalize.study_key import key_parts
 from react_review.schemas.evidence import IncludedStudy, ReviewDataItem
 from react_review.steps.paper_verification.schemas import ReferenceEntry
 
@@ -18,13 +19,12 @@ if TYPE_CHECKING:
     from react_review.parser.review_parser import ParsedStudy
 
 
-def _parts(study_id: str) -> tuple[str, str]:
-    """(surname, year) from a study_id like 'yazici_2011' -> ('yazici', '2011')."""
-    sid = (study_id or "").strip().lower()
-    year_m = re.search(r"(19|20)\d{2}", sid)
-    # strip hyphens/punctuation so "el-baky" matches canonical "elbaky"
-    surname = re.sub(r"[^a-z0-9]", "", sid.split("_")[0]) if sid else ""
-    return surname, (year_m.group(0) if year_m else "")
+# Same derivation the parser uses — see normalize/study_key.py.
+_parts = key_parts
+
+# Marks a reference the review's list did not actually supply, so downstream can
+# tell "no citation for this study" from "a citation we have yet to resolve".
+_UNRESOLVED_PREFIX = "[no citation for] "
 
 
 def _best_match(query_sid: str, candidate_ids: list[str]) -> str | None:
@@ -81,6 +81,21 @@ def resolve_studies(
     return relabelled, sid_to_study
 
 
+def is_resolvable(reference: ReferenceEntry) -> bool:
+    """Whether this reference is worth trying to fetch.
+
+    A DOI is not required — a real citation with authors and a year can still be
+    reconciled online through the gated resolver, and refusing those would throw
+    away most of a review whose reference list prints no DOIs. What cannot work
+    is a PLACEHOLDER: an id standing in for a citation the parser never found,
+    where a title search has nothing to search for.
+    """
+    if (reference.doi or "").strip():
+        return True
+    title = (reference.title or "").strip()
+    return bool(title) and not title.startswith(_UNRESOLVED_PREFIX)
+
+
 def build_reference_resolver_from_parsed(studies: "list[ParsedStudy]"):
     """A study_id -> ReferenceEntry resolver built from the PARSER's own reference
     list (no included_studies.csv). The citation becomes the title and any printed
@@ -90,14 +105,16 @@ def build_reference_resolver_from_parsed(studies: "list[ParsedStudy]"):
     ids = list(by_id)
 
     def resolver(study_id: str) -> ReferenceEntry:
-        # exact id first (fast path), then fuzzy year+surname; ambiguous → minimal
-        # entry so the Collector flags it (unresolved_source) rather than mis-pairing.
+        # exact id first (fast path), then fuzzy year+surname.
         s = by_id.get(study_id)
         if s is None:
             best = _best_match(study_id, ids)
             s = by_id.get(best) if best else None
         if s is None:
-            return ReferenceEntry(title=study_id)
+            # No citation for this study. Returning a bare ReferenceEntry whose
+            # title is the study id looks like a real reference and sends the
+            # resolver hunting for a paper called "ahmad_2022"; mark it instead.
+            return ReferenceEntry(title=f"{_UNRESOLVED_PREFIX}{study_id}")
         return ReferenceEntry(title=s.citation or study_id, doi=(s.doi or None))
     return resolver
 

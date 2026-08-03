@@ -41,6 +41,10 @@ class ReviewDataItem(BaseModel):
     cell_ref: tuple[int, int] | None = None    # (row, column) in the captured table
     column_header: str = ""                    # the header path, verbatim
     cohort_label: str = ""                     # the review's OWN word for the cohort
+    # How that label was placed: resolved | alias | combined | ambiguous |
+    # unknown | not_applicable (a study-level field has no cohort dimension).
+    # "unknown"/"ambiguous" must reach a human — never be treated as a cohort.
+    cohort_status: str = "resolved"
     timepoint_label: str = ""                  # the review's OWN word, "" if none
     origin: str = "review_table"               # review_table | checklist
     reasons: list[ReasonRecord] = Field(default_factory=list)
@@ -56,15 +60,32 @@ class SourceEvidenceItem(BaseModel):
     group: str = "-"
     timepoint: str = "single"
     field_type: str
+    # Which review cell this evidence answers. Carried so two claims that share
+    # a study/cohort/field can still be told apart when they are paired.
+    table_id: str = ""
+    cell_ref: tuple[int, int] | None = None
     source_value: Value = None
     source_unit: str = ""
     source_quote: str = ""
     source_location_in_paper: str = ""
+    # WHERE this was read from. ``source_location_in_paper`` says "Table 2" — of
+    # WHICH document was never recorded, so a reader could not go and check.
+    # A local run has a file; an online one has a URL; both always have a kind.
+    source_file: str = ""          # absolute path, when read from disk
+    source_uri: str = ""           # URL / PMC id / DOI — the online equivalent
+    source_paper_id: str = ""
+    source_doi: str = ""
+    retriever_kind: str = ""       # local_pdf | pmc | unpaywall | openalex_pdf | …
     collection_outcome: CollectionOutcome = CollectionOutcome.FOUND
     # Back-check: source evidence (unit/value) contradicts a CANDIDATE translation
     # → the auto-classified field_type is likely wrong. Set only for candidates.
     concept_mismatch: bool = False
     concept_mismatch_reason: str = ""
+    # ok | wrong_cohort | ambiguous — whether the paper's own cohort label could
+    # be confirmed against the one asked for. "ambiguous" must reach a human.
+    cohort_check: str = "ok"
+    cohorts_seen: list[str] = Field(default_factory=list)
+    reasons: list[ReasonRecord] = Field(default_factory=list)
 
 
 class IncludedStudy(BaseModel):

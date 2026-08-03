@@ -13,6 +13,7 @@ from react_review.parser.review_parser import ParsedStudy
 from react_review.study_match import (
     build_reference_resolver,
     build_reference_resolver_from_parsed,
+    is_resolvable,
     resolve_studies,
     resolve_study,
 )
@@ -88,8 +89,12 @@ def test_build_reference_resolver_from_parsed():
     assert ahmad.title.startswith("Ahmad A.") and ahmad.doi == "10.1/x"
     aslan = resolve("aslan_2015")
     assert aslan.doi is None                       # no printed DOI → reconciled online later
+    # No citation for this study: the entry is MARKED rather than given the study
+    # id as a title, which would send the resolver hunting for a paper by that name.
     missing = resolve("not_a_study_2000")
-    assert missing.title == "not_a_study_2000" and missing.doi is None
+    assert missing.doi is None
+    assert not is_resolvable(missing)
+    assert "not_a_study_2000" in missing.title
 
 
 def test_reference_resolver_from_parsed_fuzzy_matches_slug_variants():
@@ -112,7 +117,18 @@ def test_reference_resolver_from_parsed_ambiguous_does_not_guess():
     ]
     resolve = build_reference_resolver_from_parsed(studies)
     ref = resolve("smit_2020")                          # prefix of BOTH → ambiguous
-    assert ref.title == "smit_2020" and ref.doi is None  # minimal fallback, no wrong guess
+    assert ref.doi is None and not is_resolvable(ref)   # marked, never a wrong guess
+
+
+def test_a_citation_without_a_doi_is_still_worth_resolving():
+    # Most reference lists print no DOIs; refusing those would discard the review.
+    # Only a PLACEHOLDER (no citation at all) is unresolvable.
+    studies = [ParsedStudy(study_id="aslan_2015",
+                           citation="Aslan B. EFT and endothelial dysfunction. 2015.",
+                           doi="")]
+    resolve = build_reference_resolver_from_parsed(studies)
+    assert is_resolvable(resolve("aslan_2015"))
+    assert not is_resolvable(resolve("never_cited_1999"))
 
 
 # --- LocalPdfRetriever ---

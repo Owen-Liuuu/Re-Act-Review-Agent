@@ -13,10 +13,10 @@ from collections import Counter
 import structlog
 
 from react_review.core.enums import AuditLabel, ReportVerdict
-from react_review.orchestrator.matcher import build_pairs, match_key
+from react_review.orchestrator.matcher import build_pairs
 from react_review.schemas.audit import MatchResult
 from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
-from react_review.schemas.report import AuditReport
+from react_review.schemas.report import AuditReport, UnmatchedClaim
 from react_review.tools.models import CompareInput
 from react_review.tools.registry import ToolRegistry
 
@@ -70,18 +70,13 @@ class AuditOrchestrator:
                 continue
             res.study_id = review.study_id
             res.group = review.group
+            res.timepoint = review.timepoint
+            res.table_id = review.table_id
+            res.cell_ref = review.cell_ref
             results.append(res)
 
-        for r in unmatched_review:
-            flags.append(
-                f"no source evidence for review claim "
-                f"{r.study_id}/{r.group}/{r.field_type}"
-            )
-        for s in unmatched_source:
-            flags.append(
-                f"source value unclaimed by the review "
-                f"{s.study_id}/{s.group}/{s.field_type}"
-            )
+        for u in (*unmatched_review, *unmatched_source):
+            flags.append(f"{u.reason_code}: {u.key_text} — {u.message}")
 
         report = self._aggregate(results, unmatched_review, unmatched_source, flags, run_id)
         logger.info(
@@ -97,8 +92,8 @@ class AuditOrchestrator:
     @staticmethod
     def _aggregate(
         results: list[MatchResult],
-        unmatched_review: list[ReviewDataItem],
-        unmatched_source: list[SourceEvidenceItem],
+        unmatched_review: list[UnmatchedClaim],
+        unmatched_source: list[UnmatchedClaim],
         flags: list[str],
         run_id: str,
     ) -> AuditReport:
@@ -129,10 +124,6 @@ class AuditOrchestrator:
             f"Unmatched: {len(unmatched_review)} review / {len(unmatched_source)} source."
         )
 
-        def _key_str(item) -> str:
-            k = match_key(item.study_id, item.group, item.timepoint, item.field_type)
-            return "/".join(k)
-
         return AuditReport(
             run_id=run_id,
             results=results,
@@ -140,8 +131,8 @@ class AuditOrchestrator:
             n_mismatch=n_mismatch,
             n_unit_mismatch=n_unit,
             n_not_comparable=n_nc,
-            unmatched_review=[_key_str(r) for r in unmatched_review],
-            unmatched_source=[_key_str(s) for s in unmatched_source],
+            unmatched_review=unmatched_review,
+            unmatched_source=unmatched_source,
             verdict=verdict,
             flags=flags,
             summary=summary,

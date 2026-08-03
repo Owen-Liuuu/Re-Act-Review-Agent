@@ -14,6 +14,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from react_review.normalize.cohorts import CohortRegistry
 from react_review.schemas.agent import AgentRun
 from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
 from react_review.schemas.report import AuditReport, FinalVerification
@@ -33,6 +34,9 @@ class EvidencePackage(BaseModel):
     # The verbatim tables the review claims were read from, as approved at the
     # capture checkpoint — so any audited value can be traced back to its cell.
     captured_tables: CapturedTableSet = Field(default_factory=CapturedTableSet)
+    # The cohorts this review was found to report — so a reader can see what the
+    # arms were called and how each claim's group was arrived at.
+    cohorts: CohortRegistry = Field(default_factory=CohortRegistry)
     # How the run ended: complete | stopped_by_user | interrupted | error.
     # A partial package is still evidence — it records what HAD been checked.
     status: str = "complete"

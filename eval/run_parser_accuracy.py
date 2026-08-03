@@ -34,11 +34,16 @@ ROOT = BENCH.parent.parent
 
 
 def _key(sid: str, group: str, ft: str) -> tuple[str, str, str]:
-    # Study-level fields use "-" in the ground truth and often "all" from the
-    # parser — treat them as the same cohort so it isn't double-counted as both
-    # missed AND spurious.
+    """The join key for scoring.
+
+    ``-`` (study-level) and ``all`` (one combined cohort) are folded together
+    because the ground truth writes one and the parser may write the other for
+    the same cell. An EMPTY group is NOT folded in: it means the parser could not
+    place the cohort, and hiding that here would conceal the very failure the
+    cohort registry exists to surface — it is scored separately below.
+    """
     g = (group or "-").strip().lower()
-    if g in ("-", "all", ""):
+    if g in ("-", "all"):
         g = "all"
     return (sid, g, ft)
 
@@ -95,6 +100,14 @@ async def _run(args) -> None:
         "parser_rows": [{"study_id": it.study_id, "group": it.group,
                          "field_type": it.field_type, "raw_field_name": it.raw_field_name,
                          "value": it.value, "unit": it.unit} for it in items],
+        # Cohort health — the field accuracy above cannot see any of this.
+        "cohorts_discovered": sorted({it.cohort_label for it in items if it.cohort_label}),
+        "cohort_status": dict(Counter(it.cohort_status for it in items)),
+        "unknown_cohort_rows": [
+            {"study_id": it.study_id, "label": it.cohort_label,
+             "field_type": it.field_type or it.raw_field_name}
+            for it in items if it.cohort_status in ("unknown", "ambiguous")],
+        "provenance_missing": 0,   # source-side; populated by run_full_accuracy
     }
 
     print("\n================ PARSER accuracy vs review_ground_truth ================")
@@ -105,6 +118,14 @@ async def _run(args) -> None:
     print(f"value match (aligned)  : {stats['value_match'] * 100:5.1f}%  ({vmatch}/{len(tp)})")
     print(f"\nmissed field_types     : {stats['missed']}")
     print(f"spurious field_types   : {stats['spurious']}")
+    print("-- cohorts (the field metrics above are blind to these) --")
+    print(f"  discovered           : {stats['cohorts_discovered']}")
+    print(f"  status               : {stats['cohort_status']}")
+    unknown = stats["unknown_cohort_rows"]
+    print(f"  unplaced cohorts     : {len(unknown)}"
+          + (f"  ← must not silently become 'all'" if unknown else "  (none)"))
+    for row in unknown[:8]:
+        print(f"      {row['study_id']}/{row['label']!r}: {row['field_type']}")
     print("========================================================================")
 
     if args.html:
