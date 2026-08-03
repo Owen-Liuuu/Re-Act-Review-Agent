@@ -64,19 +64,26 @@ def _excerpt(text: str, needles: list[str], width: int = 120) -> str:
 
 
 def _expected_targets(
-    item: ChecklistItem, review_items: list[ReviewDataItem], study_ids: list[str],
+    item: ChecklistItem, review_items: list[ReviewDataItem],
+    study_ids: list[str] | None,
 ) -> list[tuple[str, str]]:
+    # ``None`` means no authoritative reference decision is available yet, so
+    # direct callers retain the Phase-5 fallback to observed review claims.
+    # A supplied list (including an empty one) is authoritative: do not quietly
+    # re-introduce table-derived studies after REFERENCE_COVERAGE approved them.
     studies = list(dict.fromkeys(
-        [sid for sid in study_ids if sid]
-        + [claim.study_id for claim in review_items if claim.study_id]))
+        [claim.study_id for claim in review_items if claim.study_id]
+        if study_ids is None else [sid for sid in study_ids if sid]))
     if item.scope == "review":
         return [("", "-")]
     if item.scope == "per_study":
-        return [(study_id, "-") for study_id in studies] or [("", "-")]
+        return [(study_id, "-") for study_id in studies]
+    approved = set(studies)
     cohorts = list(dict.fromkeys(
         (claim.study_id, claim.group) for claim in review_items
-        if claim.study_id and claim.group not in ("", "-")))
-    return cohorts or [("", "-")]
+        if claim.study_id and claim.group not in ("", "-")
+        and (study_ids is None or claim.study_id in approved)))
+    return cohorts
 
 
 def _target_for(item: ChecklistItem, claim: ReviewDataItem) -> tuple[str, str]:
@@ -94,6 +101,8 @@ def apply_checklist(
     *,
     review_text: str = "",
     study_ids: list[str] | None = None,
+    scopes: set[str] | None = None,
+    evaluation_pass: str = "full",
 ) -> ChecklistApplication:
     """Assess coverage; never manufacture a review value for a missing item.
 
@@ -101,29 +110,34 @@ def apply_checklist(
     ReviewDataItems. Other questions are covered only by an existing concrete
     study/value claim, which already follows the normal Collector/Auditor path.
     """
+    checklist.require_supported_execution_contract()
     table_text = _table_text(captured_tables)
     assessments: list[ChecklistAssessment] = []
     gaps: list[ChecklistGap] = []
-    known_studies = study_ids or []
 
     for item in checklist.items:
-        expected = _expected_targets(item, review_items, known_studies)
+        if scopes is not None and item.scope not in scopes:
+            continue
+        expected = _expected_targets(item, review_items, study_ids)
         evidence_by_target: dict[tuple[str, str], list[ChecklistEvidence]] = defaultdict(list)
 
         if item.value_kind == "presence":
             needles = _selectors(item)
             if "review_text" in item.where and _contains(review_text, needles):
                 evidence_by_target[("", "-")].append(ChecklistEvidence(
-                    source="review_text", excerpt=_excerpt(review_text, needles)))
+                    source="review_text", checklist_id=item.id,
+                    excerpt=_excerpt(review_text, needles)))
             elif "review_table" in item.where and _contains(table_text, needles):
                 evidence_by_target[("", "-")].append(ChecklistEvidence(
-                    source="captured_table", excerpt=_excerpt(table_text, needles)))
+                    source="captured_table", checklist_id=item.id,
+                    excerpt=_excerpt(table_text, needles)))
         elif "review_table" in item.where:
             for claim in review_items:
                 if not _claim_matches(item, claim):
                     continue
                 evidence_by_target[_target_for(item, claim)].append(ChecklistEvidence(
-                    source="review_item", study_id=claim.study_id, group=claim.group,
+                    source="review_item", checklist_id=item.id,
+                    study_id=claim.study_id, group=claim.group,
                     field_type=claim.field_type, table_id=claim.table_id,
                     cell_ref=claim.cell_ref, excerpt=str(claim.value)))
 
@@ -144,7 +158,9 @@ def apply_checklist(
                 reason=f"required checklist item was not found{target}"))
 
         n_expected, n_found = len(expected), len(covered)
-        if not missing:
+        if not expected:
+            status = "not_applicable"
+        elif not missing:
             status = "covered"
         elif covered:
             status = "partial"
@@ -157,8 +173,11 @@ def apply_checklist(
             checklist_id=item.id, question=item.question, required=item.required,
             scope=item.scope, value_kind=item.value_kind, status=status,
             expected=n_expected, found=n_found, evidence=evidence,
-            reason=("all expected targets covered" if not missing else
+            reason=("no approved target exists for this checklist scope"
+                    if not expected else
+                    "all expected targets covered" if not missing else
                     f"{len(missing)} of {n_expected} expected target(s) missing"),
+            evaluation_pass=evaluation_pass,
         ))
 
     return ChecklistApplication(
@@ -166,6 +185,63 @@ def apply_checklist(
         source_file=checklist.source_file, sha256=checklist.sha256,
         items=[item.model_copy(deep=True) for item in checklist.items],
         assessments=assessments, gaps=gaps,
+        completed_passes=[evaluation_pass],
+    )
+
+
+def checklist_claim_evidence(
+    checklist: Checklist, review_items: list[ReviewDataItem],
+) -> list[ChecklistEvidence]:
+    """Preview concrete claims that will receive checklist routing identity."""
+    checklist.require_supported_execution_contract()
+    evidence: list[ChecklistEvidence] = []
+    for claim in review_items:
+        owner = next((item for item in checklist.items if
+            item.value_kind != "presence"
+            and "review_table" in item.where
+            and _claim_matches(item, claim)
+        ), None)
+        if owner is None:
+            continue
+        evidence.append(ChecklistEvidence(
+            source="review_item", checklist_id=owner.id,
+            study_id=claim.study_id, group=claim.group,
+            field_type=claim.field_type, table_id=claim.table_id,
+            cell_ref=claim.cell_ref, excerpt=str(claim.value)))
+    return evidence
+
+
+def merge_checklist_applications(
+    *applications: ChecklistApplication,
+) -> ChecklistApplication:
+    """Combine non-overlapping checklist passes into one final run artifact."""
+    if not applications:
+        raise ValueError("at least one checklist application is required")
+    first = applications[0]
+    for application in applications[1:]:
+        if (application.name, application.version, application.sha256) != (
+                first.name, first.version, first.sha256):
+            raise ValueError("cannot merge checklist applications from different artifacts")
+
+    by_id: dict[str, ChecklistAssessment] = {}
+    gaps: list[ChecklistGap] = []
+    passes: list[str] = []
+    for application in applications:
+        for assessment in application.assessments:
+            if assessment.checklist_id in by_id:
+                raise ValueError(
+                    f"checklist item {assessment.checklist_id!r} was evaluated twice")
+            by_id[assessment.checklist_id] = assessment.model_copy(deep=True)
+        gaps.extend(gap.model_copy(deep=True) for gap in application.gaps)
+        passes.extend(application.completed_passes)
+
+    ordered = [by_id[item.id] for item in first.items if item.id in by_id]
+    return ChecklistApplication(
+        name=first.name, version=first.version,
+        source_file=first.source_file, sha256=first.sha256,
+        items=[item.model_copy(deep=True) for item in first.items],
+        assessments=ordered, gaps=gaps,
+        completed_passes=list(dict.fromkeys(passes)),
     )
 
 
@@ -178,6 +254,7 @@ def annotate_checklist_claims(
     The first matching non-presence item owns the routing identity; every match
     remains visible in ``ChecklistAssessment.evidence``.
     """
+    checklist.require_supported_execution_contract()
     annotated: list[ReviewDataItem] = []
     for claim in review_items:
         owner = next((item for item in checklist.items
@@ -197,6 +274,7 @@ def render_checklist(application: ChecklistApplication) -> str:
     lines = [
         f"  checklist {application.name} v{application.version}: "
         f"{len(application.assessments)} item(s), {len(application.gaps)} required gap(s)",
+        f"  completed passes: {', '.join(application.completed_passes) or '(none)'}",
         f"  source: {application.source_file}",
         f"  sha256: {application.sha256}",
     ]

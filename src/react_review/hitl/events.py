@@ -26,9 +26,13 @@ class StepStage(str, Enum):
     TABLE_CAPTURE = "review_table_capture"
     COHORT_REGISTRY = "cohort_registry"
     FIELD_RESOLUTION = "field_resolution"
+    CHECKLIST_REVIEW = "checklist_review"
     LONG_FORMAT_ROWS = "long_format_rows"
-    CHECKLIST = "checklist"
     REFERENCE_COVERAGE = "reference_coverage"
+    CHECKLIST_STUDY_COVERAGE = "checklist_study_coverage"
+    # Historical Phase-5 journals used this value.  Keep it readable, but new
+    # runs emit the two explicit passes above.
+    CHECKLIST = "checklist"
     # Per-paper evidence: SHOWN in full as it is collected, but not gated — a
     # review may include 9 source papers or 80, and the checkpoint count must
     # not scale with it. The aggregate below is where the run pauses.

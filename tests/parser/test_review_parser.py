@@ -150,7 +150,7 @@ async def test_checklist_gates_routed_long_rows_and_is_preserved(monkeypatch):
     backend = QueueBackend([
         _capture([["Smith 2020", "100"]], ("Study", "N")),
         {"rows": [_cell(0, 1, "Smith 2020", "N", "100")]},
-        {"studies": []},
+        {"studies": [{"citation": "Smith 2020", "doi": None}]},
     ])
     checklist = Checklist(name="test", source_file="checklist.yaml", sha256="hash", items=[
         ChecklistItem(
@@ -167,19 +167,30 @@ async def test_checklist_gates_routed_long_rows_and_is_preserved(monkeypatch):
         reporter=StepReporter("checklist-test", gate=gate)).parse("d.pdf")
 
     stages = [event.stage for event in gate.seen]
-    assert stages.index(StepStage.FIELD_RESOLUTION) < stages.index(StepStage.CHECKLIST)
-    assert stages.index(StepStage.CHECKLIST) < stages.index(StepStage.LONG_FORMAT_ROWS)
+    assert stages.index(StepStage.FIELD_RESOLUTION) < stages.index(
+        StepStage.CHECKLIST_REVIEW)
+    assert stages.index(StepStage.CHECKLIST_REVIEW) < stages.index(
+        StepStage.LONG_FORMAT_ROWS)
     assert stages.index(StepStage.LONG_FORMAT_ROWS) < stages.index(StepStage.REFERENCE_COVERAGE)
+    assert stages.index(StepStage.REFERENCE_COVERAGE) < stages.index(
+        StepStage.CHECKLIST_STUDY_COVERAGE)
     assert parsed.checklist is not None and parsed.checklist.gaps == []
     assert [a.status for a in parsed.checklist.assessments] == ["covered", "covered"]
-    event = next(e for e in gate.seen if e.stage is StepStage.CHECKLIST)
+    assert parsed.checklist.completed_passes == ["review", "study_coverage"]
+    event = next(e for e in gate.seen if e.stage is StepStage.CHECKLIST_REVIEW)
     assert event.payload["sha256"] == "hash"
     assert event.payload["routed_claims"][0]["field_type"] == "sample_size"
-    assert "2 item(s), 0 required gap(s)" in event.render_blocks[0]
+    assert event.payload["routed_claims"][0]["checklist_id"] == "sample"
+    assert "1 item(s), 0 required gap(s)" in event.render_blocks[0]
+    late = next(
+        e for e in gate.seen if e.stage is StepStage.CHECKLIST_STUDY_COVERAGE)
+    assert late.payload["approved_study_ids"] == ["smith_2020"]
+    assert late.payload["pass_assessments"][0]["checklist_id"] == "sample"
     assert parsed.items[0].origin == "checklist"
     assert parsed.items[0].checklist_id == "sample"
-    assert [step.tool for step in parsed.record.steps][-2:] == [
-        "checklist:apply", "llm:stage_refs"]
+    assert [step.tool for step in parsed.record.steps][-3:] == [
+        "checklist:review_coverage", "llm:stage_refs",
+        "checklist:study_coverage"]
 
 
 @pytest.mark.asyncio
@@ -203,7 +214,7 @@ async def test_stopping_at_checklist_never_emits_routed_long_rows(monkeypatch):
 
     with pytest.raises(RunStopped):
         await parser.parse("d.pdf")
-    assert gate.seen[-1].stage is StepStage.CHECKLIST
+    assert gate.seen[-1].stage is StepStage.CHECKLIST_REVIEW
     assert StepStage.LONG_FORMAT_ROWS not in [event.stage for event in gate.seen]
 
 

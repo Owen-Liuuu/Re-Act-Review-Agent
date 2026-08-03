@@ -52,6 +52,20 @@ class Checklist(BaseModel):
     sha256: str = ""
     items: list[ChecklistItem] = Field(default_factory=list)
 
+    def require_supported_execution_contract(self) -> None:
+        """Reject locations the current executor cannot actually inspect.
+
+        ``source_paper`` remains in the serialized Literal so historical
+        evidence packages stay readable.  New YAML and every live execution
+        fail loudly instead of silently ignoring that location.
+        """
+        unsupported = [item.id for item in self.items if "source_paper" in item.where]
+        if unsupported:
+            raise ValueError(
+                "checklist where=source_paper is not supported by the current "
+                "review-side checklist executor; affected item(s): "
+                + ", ".join(unsupported))
+
     @classmethod
     def from_yaml(cls, path: Path | str) -> "Checklist":
         source = Path(path).resolve()
@@ -68,6 +82,7 @@ class Checklist(BaseModel):
         duplicates = sorted({item_id for item_id in ids if ids.count(item_id) > 1})
         if duplicates:
             raise ValueError(f"duplicate checklist item id(s): {', '.join(duplicates)}")
+        checklist.require_supported_execution_contract()
         return checklist
 
 
@@ -75,6 +90,7 @@ class ChecklistEvidence(BaseModel):
     """Why one checklist question is considered covered."""
 
     source: str                         # review_item | review_text | captured_table
+    checklist_id: str = ""
     study_id: str = ""
     group: str = "-"
     field_type: str = ""
@@ -96,6 +112,7 @@ class ChecklistAssessment(BaseModel):
     found: int = 0
     evidence: list[ChecklistEvidence] = Field(default_factory=list)
     reason: str = ""
+    evaluation_pass: str = ""
 
 
 class ChecklistGap(BaseModel):
@@ -119,3 +136,4 @@ class ChecklistApplication(BaseModel):
     items: list[ChecklistItem] = Field(default_factory=list)
     assessments: list[ChecklistAssessment] = Field(default_factory=list)
     gaps: list[ChecklistGap] = Field(default_factory=list)
+    completed_passes: list[str] = Field(default_factory=list)

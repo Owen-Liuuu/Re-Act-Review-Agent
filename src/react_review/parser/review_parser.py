@@ -14,6 +14,8 @@ from react_review.checklist import (
     ChecklistApplication,
     annotate_checklist_claims,
     apply_checklist,
+    checklist_claim_evidence,
+    merge_checklist_applications,
     render_checklist,
 )
 from react_review.hitl.events import StepStage, SubjectKind
@@ -314,26 +316,27 @@ class ReviewParser:
 
         items = self._postprocess(raw_rows, row_resolutions, registry)
 
+        checklist_review_application = None
         checklist_application = None
         if self._checklist is not None:
-            checklist_application = apply_checklist(
-                self._checklist, items, table_set, review_text=full_text)
+            # First pass: route existing concrete claims and settle only review-
+            # level coverage.  Study completeness cannot be known before the
+            # human approves REFERENCE_COVERAGE below.
+            checklist_review_application = apply_checklist(
+                self._checklist, items, table_set, review_text=full_text,
+                scopes={"review"}, evaluation_pass="review")
+            routed_claims = checklist_claim_evidence(self._checklist, items)
             await self._reporter.step_or_stop(
-                StepStage.CHECKLIST,
-                title="Domain checklist coverage",
+                StepStage.CHECKLIST_REVIEW,
+                title="Review-level checklist coverage and claim routing",
                 subject=str(Path(pdf_path).resolve()),
                 subject_kind=SubjectKind.REVIEW_PDF,
                 payload={
-                    **checklist_application.model_dump(mode="json"),
-                    "routed_claims": [
-                        evidence.model_dump(mode="json")
-                        for assessment in checklist_application.assessments
-                        for evidence in assessment.evidence
-                        if evidence.source == "review_item"
-                    ],
+                    **checklist_review_application.model_dump(mode="json"),
+                    "routed_claims": [e.model_dump(mode="json") for e in routed_claims],
                 },
-                render_blocks=[render_checklist(checklist_application)],
-                warnings=[gap.reason for gap in checklist_application.gaps],
+                render_blocks=[render_checklist(checklist_review_application)],
+                warnings=[gap.reason for gap in checklist_review_application.gaps],
             )
             # Apply the approved routing identity only after the checkpoint.
             # No rows are added: a checklist cannot manufacture a missing value.
@@ -352,38 +355,78 @@ class ReviewParser:
         studies = await self._extract_studies(_refs_window(full_text))
         studies = await self._review_coverage(studies, items)
 
+        if self._checklist is not None and checklist_review_application is not None:
+            # Second pass: the approved references are now the authoritative
+            # expected-study set.  This pass only finalises coverage/gaps; it
+            # never creates or re-routes a ReviewDataItem.
+            study_application = apply_checklist(
+                self._checklist, items, table_set, review_text=full_text,
+                study_ids=[study.study_id for study in studies],
+                scopes={"per_study", "per_cohort"},
+                evaluation_pass="study_coverage")
+            checklist_application = merge_checklist_applications(
+                checklist_review_application, study_application)
+            await self._reporter.step_or_stop(
+                StepStage.CHECKLIST_STUDY_COVERAGE,
+                title="Checklist coverage for approved studies",
+                subject=str(Path(pdf_path).resolve()),
+                subject_kind=SubjectKind.REVIEW_PDF,
+                payload={
+                    **checklist_application.model_dump(mode="json"),
+                    "approved_study_ids": [study.study_id for study in studies],
+                    "pass_assessments": [
+                        assessment.model_dump(mode="json")
+                        for assessment in study_application.assessments],
+                },
+                render_blocks=[render_checklist(checklist_application)],
+                warnings=[gap.reason for gap in study_application.gaps],
+            )
+
+        run_steps = [
+            StepRecord(index=0, thought="capture the review's tables verbatim",
+                       tool="llm:table_capture",
+                       observation={"tables": [t.table_id for t in table_set.tables],
+                                    "dropped": table_set.dropped}),
+            StepRecord(index=1, thought="unpivot the captured tables to long rows",
+                       tool="llm:unpivot", observation={"n_rows": len(raw_rows)}),
+            StepRecord(index=2, thought="resolve unique field concepts before applying them",
+                       tool="dkb:resolve_fields",
+                       observation={
+                           "n_resolutions": len(field_resolutions),
+                           "n_model_attempts": sum(
+                               len(r.attempts) for r in field_resolutions),
+                           "kb_fingerprint": kb_fingerprint,
+                           "n_ontology_imports": len(knowledge_imports),
+                       }),
+        ]
+        if checklist_review_application is not None:
+            run_steps.append(StepRecord(
+                index=len(run_steps), thought="check review-level coverage and route claims",
+                tool="checklist:review_coverage",
+                observation={
+                    "name": checklist_review_application.name,
+                    "n_items": len(checklist_review_application.assessments),
+                    "n_required_gaps": len(checklist_review_application.gaps),
+                    "sha256": checklist_review_application.sha256,
+                }))
+        run_steps.append(StepRecord(
+            index=len(run_steps), thought="extract and approve included-study references",
+            tool="llm:stage_refs", observation={"n_studies": len(studies)}))
+        if checklist_application is not None:
+            run_steps.append(StepRecord(
+                index=len(run_steps), thought="finalise checklist coverage for approved studies",
+                tool="checklist:study_coverage",
+                observation={
+                    "n_items": len(checklist_application.assessments),
+                    "n_required_gaps": len(checklist_application.gaps),
+                    "approved_study_ids": [study.study_id for study in studies],
+                    "sha256": checklist_application.sha256,
+                }))
+
         record = AgentRun(
             agent="parser",
             task={"pdf": str(pdf_path)},
-            steps=[
-                StepRecord(index=0, thought="capture the review's tables verbatim",
-                           tool="llm:table_capture",
-                           observation={"tables": [t.table_id for t in table_set.tables],
-                                        "dropped": table_set.dropped}),
-                StepRecord(index=1, thought="unpivot the captured tables to long rows",
-                           tool="llm:unpivot", observation={"n_rows": len(raw_rows)}),
-                StepRecord(index=2, thought="resolve unique field concepts before applying them",
-                           tool="dkb:resolve_fields",
-                           observation={
-                               "n_resolutions": len(field_resolutions),
-                               "n_model_attempts": sum(
-                                   len(r.attempts) for r in field_resolutions),
-                               "kb_fingerprint": kb_fingerprint,
-                               "n_ontology_imports": len(knowledge_imports),
-                           }),
-                *([StepRecord(
-                    index=3, thought="check required clinical-review coverage",
-                    tool="checklist:apply",
-                    observation={
-                        "name": checklist_application.name,
-                        "n_items": len(checklist_application.assessments),
-                        "n_required_gaps": len(checklist_application.gaps),
-                        "sha256": checklist_application.sha256,
-                    })] if checklist_application is not None else []),
-                StepRecord(index=4 if checklist_application is not None else 3,
-                           thought="extract included-study references",
-                           tool="llm:stage_refs", observation={"n_studies": len(studies)}),
-            ],
+            steps=run_steps,
             status="finished",
             final={"n_items": len(items), "n_studies": len(studies)},
         )
