@@ -53,6 +53,18 @@ def test_score_rows_empty():
     assert score_rows([])["n"] == 0
 
 
+def test_review_required_match_is_visible_but_not_strict_detection():
+    row = _row("mismatch", "match")
+    row.review_required = True
+
+    metrics = score_rows([row])
+
+    assert metrics["discrepancy"]["fn"] == 1
+    assert metrics["safety"]["silent_release_count"] == 0
+    assert metrics["safety"]["visible_discrepancies"] == 1
+    assert metrics["safety"]["review_visibility_rate"] == 1.0
+
+
 class _FakeCollector:
     """Returns a preset (value, unit, outcome) per (study, group, field_type)."""
 
@@ -76,6 +88,8 @@ class _FakeCollector:
 async def test_run_rows_predicts_labels_and_extraction():
     rows = [
         {"study_id": "ahmad_2022", "group": "t1dm", "field_type": "eat_thickness",
+         "audit_id": "A1", "column_header": "EAT thickness",
+         "expected_match_mode": "numeric", "expected_review_required": "false",
          "review_value": "6.60 ± 0.71", "unit": "mm",
          "source_value": "6.60 ± 0.71", "source_unit": "mm", "expected_label": "match"},
         {"study_id": "ahmad_2022", "group": "t1dm", "field_type": "bmi",
@@ -95,6 +109,9 @@ async def test_run_rows_predicts_labels_and_extraction():
     assert res[0].source_file == "C:/papers/source.pdf"
     assert res[0].source_unit == "mm" and res[0].review_unit == "mm"
     assert res[0].value_origin == "verbatim"
+    assert res[0].audit_id == "A1" and res[0].column_header == "EAT thickness"
+    assert res[0].expected_match_mode == "numeric"
+    assert res[0].expected_review_required is False
     assert res[0].match_mode == "numeric" and res[0].match_reason
     assert res[0].review_numeric["primary"] == 6.60
     assert res[0].source_numeric["spread"] == 0.71
@@ -126,3 +143,26 @@ async def test_missing_source_with_residual_unit_is_null_and_visible():
     assert safety["silent_release_count"] == 0
     assert safety["review_visibility_rate"] == 1.0
     assert safety["escalated_not_comparable"] == 1
+
+
+@pytest.mark.asyncio
+async def test_partial_structured_extraction_does_not_earn_value_match_credit():
+    rows = [{
+        "study_id": "trial", "group": "arm", "field_type": "hazard_ratio",
+        "review_value": "0.42 (95% CI 0.31-0.57)", "unit": "ratio",
+        "source_value": "0.42 (99.5% CI 0.31-0.57)", "source_unit": "ratio",
+        "expected_label": "match",
+    }]
+    smap = {
+        ("trial", "arm", "hazard_ratio"):
+            ("0.42", "ratio", CollectionOutcome.FOUND),
+    }
+
+    result = (await run_rows(
+        rows, _FakeCollector(smap), ToleranceTable(),
+        lambda sid: ReferenceEntry(title=sid),
+    ))[0]
+
+    assert result.predicted_label == "match"
+    assert result.review_required is True
+    assert result.extraction_correct is False

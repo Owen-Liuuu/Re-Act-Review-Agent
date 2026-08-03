@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "artifact_kind": "sanitized_phase6b_cross_domain_result",
+  "generated_on": "2026-08-03",
+  "benchmark_id": "melanoma_checkpoint_2017",
+  "code_base_before_phase6b": "aa5da13",
+  "model": "glm-4.5-flash",
+  "scope": {
+    "studies": 1,
+    "rows": 15,
+    "expected_modes": {
+      "semantic": 4,
+      "numeric": 4,
+      "structured": 7
+    },
+    "declared_known_gap_audit_ids": ["MA012", "MA015"]
+  },
+  "privacy": {
+    "contains_source_quotes": false,
+    "contains_raw_model_responses": false,
+    "contains_local_absolute_paths": false,
+    "private_artifacts_remain_gitignored": true
+  },
+  "runs": {
+    "live": {
+      "kind": "independent_live_variance_observation",
+      "label_accuracy": 0.6666666666666666,
+      "discrepancy": {
+        "tp": 1,
+        "fp": 3,
+        "fn": 2,
+        "tn": 9,
+        "precision": 0.25,
+        "recall": 0.3333333333333333,
+        "f1": 0.28571428571428575
+      },
+      "safety_rescored": {
+        "silent_release_count": 0,
+        "review_visibility_rate": 1.0
+      },
+      "semantic_expected": 4,
+      "semantic_reached": 4,
+      "unexpected_label_differences": 4,
+      "semantic_relation_differences": 2
+    },
+    "recorded_replay_after_metric_fix": {
+      "kind": "deterministic_replay_of_one_recorded_live_run",
+      "label_accuracy": 0.6,
+      "discrepancy": {
+        "tp": 1,
+        "fp": 4,
+        "fn": 2,
+        "tn": 8,
+        "precision": 0.2,
+        "recall": 0.3333333333333333,
+        "f1": 0.25
+      },
+      "safety": {
+        "expected_discrepancies": 3,
+        "silent_release_count": 0,
+        "visible_discrepancies": 3,
+        "review_visibility_rate": 1.0
+      },
+      "extraction": {
+        "found_rate": 1.0,
+        "complete_value_match_rate": 0.4
+      },
+      "semantic_expected": 4,
+      "semantic_reached": 4,
+      "observed_mode_counts": {
+        "semantic": 4,
+        "numeric": 4,
+        "structured": 7
+      },
+      "unexpected_label_audit_ids": ["MA005", "MA007", "MA011", "MA013", "MA014"],
+      "semantic_relation_difference_audit_ids": ["MA003", "MA005", "MA007"],
+      "review_required_difference_audit_ids": [
+        "MA003", "MA005", "MA007", "MA009", "MA011", "MA012", "MA013", "MA014", "MA015"
+      ],
+      "status": "fail_unexpected_differences"
+    }
+  },
+  "known_gap_outcomes": {
+    "MA012": "exposed",
+    "MA015": "masked_by_incomplete_or_wrong_extraction"
+  },
+  "live_record_variance": {
+    "different_source_value_audit_ids": ["MA010"],
+    "different_label_or_semantic_relation_audit_ids": ["MA005"],
+    "live_label_accuracy": 0.6666666666666666,
+    "record_label_accuracy": 0.6
+  },
+  "reproducibility": {
+    "recorded_extraction_cache_entries": 14,
+    "replay_extraction_hits": 15,
+    "replay_extraction_misses": 0,
+    "recorded_semantic_cache_entries": 4,
+    "replay_semantic_hits": 4,
+    "replay_semantic_misses": 0,
+    "record_replay_canonical_rows_metrics_diagnostics_equal_before_metric_fix": true,
+    "post_metric_fix_replay_repeat_byte_equal": true
+  },
+  "private_artifacts": {
+    "phase6b_live.json": {
+      "bytes": 63202,
+      "sha256": "A643B927BAF7E110D3163D148BBB55E72FD5A9DA845DA4BF5FFE77CC926FB22A"
+    },
+    "phase6b_record.json": {
+      "bytes": 64181,
+      "sha256": "3F1AFDA30CC91A05F7466433C1111DDE4A9E2F33451A22CE4E8BFC591657AE78"
+    },
+    "phase6b_replay.json": {
+      "bytes": 64189,
+      "sha256": "391678782C8171E856CD19382601F540271B9F47098CE0DBF4C421D23C83F778"
+    },
+    "phase6b_replay_postmetricfix.json": {
+      "bytes": 67213,
+      "sha256": "5D47D074E7A8F688771F41CC733E75EB67D5239CFBFFDEDB5A8728992103FB26"
+    },
+    "phase6b_extraction_cache.json": {
+      "bytes": 18399,
+      "sha256": "17BA00D23FBA62585BB690B8CE6324D31B9C680368DA5F3B63BD68F58D967A34"
+    },
+    "phase6b_live_semantic_cache.json": {
+      "bytes": 2911,
+      "sha256": "2D1D7781F675FA4DB34EDF3E05F67DAD6EF79F0CF067F902EFD929B5954BE773"
+    },
+    "phase6b_record_semantic_cache.json": {
+      "bytes": 2871,
+      "sha256": "0F85EE3E4FF711261CBA788E18132B80FD2B6735BD4F7BCC641604A2134F955E"
+    }
+  },
+  "acceptance": {
+    "entry_gate": "pass",
+    "semantic_escalation_gt_zero": true,
+    "all_expected_modes_reached": true,
+    "silent_release_count_zero": true,
+    "unexpected_differences_zero": false,
+    "result": "mechanism_cross_domain_paths_exercised_but_accuracy_gate_failed"
+  },
+  "conclusions": [
+    "All four expected semantic rows reached controlled semantic comparison.",
+    "The multi-arm extractor repeatedly selected the first nearby arm or effect estimate for later targets.",
+    "Incomplete CI extraction caused structured comparisons to return MATCH with review_required rather than a complete automatic verdict.",
+    "MATCH plus review_required is visible to production review and is not a silent release, but remains a false negative in strict automatic discrepancy recall.",
+    "One declared confidence-level gap was exposed; the other was masked by an incomplete or wrong extraction.",
+    "The cross-domain mechanism ran end to end, but this run does not establish cross-domain accuracy."
+  ]
+}

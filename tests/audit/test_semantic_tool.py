@@ -151,6 +151,7 @@ async def test_a_judgement_is_recorded_and_then_reused(tmp_path):
     await tool.run(_text_pair())
     await tool.run(_text_pair())
     assert backend.calls == 1 and cache.hits == 1
+    assert cache.misses == 1
     assert cache.save().is_file()
 
 

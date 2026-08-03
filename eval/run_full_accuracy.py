@@ -34,6 +34,11 @@ from react_review.audit.semantic_control import (
 from react_review.core.config import load_config
 from react_review.csv_io import load_included_studies
 from react_review.eval_accuracy import format_report, run_rows, score_rows
+from react_review.eval_benchmark import (
+    benchmark_diagnostics,
+    format_benchmark_diagnostics,
+    validate_frozen_benchmark,
+)
 from react_review.dkb import load_runtime_knowledge
 from react_review.pipeline.factory import _create_llm_backend
 from react_review.retrieval.local_pdf import LocalPdfRetriever
@@ -45,8 +50,8 @@ from react_review.tools.extraction_cache import ExtractionCache
 from react_review.tools.registry import ToolRegistry
 from react_review.tools.semantic_compare import SemanticCompareTool
 
-BENCH = Path(__file__).resolve().parent / "benchmark"
-ROOT = BENCH.parent.parent
+DEFAULT_BENCH = Path(__file__).resolve().parent / "benchmark"
+ROOT = DEFAULT_BENCH.parent.parent
 
 
 def _load_answer_key(path: Path) -> list[dict[str, str]]:
@@ -58,10 +63,18 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description="C1 full-pipeline accuracy eval.")
     ap.add_argument("--config", type=Path, default=None,
                     help="LLM config with an api_key (required unless --dry-run)")
+    ap.add_argument("--benchmark", type=Path, default=DEFAULT_BENCH,
+                    help="benchmark directory (default: the legacy EAT benchmark)")
+    ap.add_argument("--studies-file", type=Path, default=None,
+                    help="included-study CSV; relative paths are resolved inside "
+                         "the benchmark (default: included_studies.csv, then "
+                         "selected_studies.csv)")
     ap.add_argument("--limit", type=int, default=0, help="score only the first N rows")
     ap.add_argument("--studies", default="", help="comma-separated study_id filter")
     ap.add_argument("--fields", default="", help="comma-separated field_type filter")
-    ap.add_argument("--context", default="EAT thickness/volume in T1DM vs healthy controls")
+    ap.add_argument("--context", default=None,
+                    help="research context for extraction and semantic comparison; "
+                         "defaults to the frozen manifest domain when available")
     ap.add_argument("--tolerances", type=Path, default=None)
     ap.add_argument("--out", type=Path, default=None, help="write a JSON report")
     ap.add_argument("--html", type=Path, default=None, help="write an HTML test report")
@@ -70,18 +83,55 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--semantic", choices=("off", "cache-only", "on"), default="off",
                     help="judge text the numeric comparison cannot read "
                          "(default off: the eval stays deterministic)")
-    ap.add_argument("--semantic-cache", type=Path, default=BENCH / "semantic_cache.json",
+    ap.add_argument("--semantic-cache", type=Path, default=None,
                     help="the recording both `on` and `cache-only` runs share, so a "
                          "replay reproduces the run that recorded it")
     ap.add_argument("--extraction", choices=("live", "record", "replay"), default="live",
                     help="live calls the LLM; record also saves raw model JSON; "
                          "replay makes no extraction LLM calls")
-    ap.add_argument("--extraction-cache", type=Path,
-                    default=ROOT / "output" / "baselines" / "extraction_replay.json",
+    ap.add_argument("--extraction-cache", type=Path, default=None,
                     help="raw extraction recording used by record/replay")
     args = ap.parse_args(argv)
 
-    rows = _load_answer_key(BENCH / "audit_template.csv")
+    benchmark = args.benchmark.resolve()
+    legacy_default = benchmark == DEFAULT_BENCH.resolve()
+    if not benchmark.is_dir():
+        ap.error(f"benchmark directory does not exist: {benchmark}")
+    answer_key = benchmark / "audit_template.csv"
+    if not answer_key.is_file():
+        ap.error(f"benchmark answer key does not exist: {answer_key}")
+
+    if args.studies_file is None:
+        candidates = (benchmark / "included_studies.csv",
+                      benchmark / "selected_studies.csv")
+        studies_path = next((path for path in candidates if path.is_file()), candidates[0])
+    else:
+        studies_path = (args.studies_file if args.studies_file.is_absolute()
+                        else benchmark / args.studies_file)
+    if not studies_path.is_file():
+        ap.error(f"included-study CSV does not exist: {studies_path}")
+
+    artifact_dir = ROOT / "output" / "baselines" / benchmark.name
+    semantic_cache_path = (args.semantic_cache
+                           or (DEFAULT_BENCH / "semantic_cache.json" if legacy_default
+                               else artifact_dir / "semantic_cache.json"))
+    extraction_cache_path = (args.extraction_cache
+                             or (ROOT / "output" / "baselines" /
+                                 "extraction_replay.json" if legacy_default
+                                 else artifact_dir / "extraction_replay.json"))
+
+    manifest_path = benchmark / "manifest.json"
+    manifest = (json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+                if manifest_path.is_file() else {})
+    context = args.context or str(
+        manifest.get("domain") or "EAT thickness/volume in T1DM vs healthy controls")
+
+    all_rows = _load_answer_key(answer_key)
+    gate = validate_frozen_benchmark(benchmark, all_rows)
+    if gate["status"] == "failed":
+        ap.error("frozen benchmark entry gate failed: " + "; ".join(gate["errors"]))
+
+    rows = list(all_rows)
     if args.studies:
         keep = {s.strip() for s in args.studies.split(",") if s.strip()}
         rows = [r for r in rows if r["study_id"] in keep]
@@ -91,28 +141,34 @@ def main(argv: list[str] | None = None) -> None:
     if args.limit:
         rows = rows[: args.limit]
 
+    print(f"benchmark: {benchmark} [{gate['status']}]")
     if args.dry_run:
         print(f"rows: {len(rows)}")
         print("by study        :", dict(Counter(r["study_id"] for r in rows)))
         print("by expected_label:", dict(Counter(r["expected_label"] for r in rows)))
+        modes = Counter((r.get("expected_match_mode") or "") for r in rows)
+        if any(key for key in modes):
+            print("by expected mode :", dict(modes))
+            print("known gaps       :", [r.get("audit_id") for r in rows
+                                          if (r.get("known_gap") or "").strip()])
         return
 
     needs_backend = args.extraction != "replay" or args.semantic == "on"
     if args.config is None and needs_backend:
         ap.error("--config is required for live extraction or live semantic comparison")
 
-    studies = load_included_studies(BENCH / "included_studies.csv")
+    studies = load_included_studies(studies_path)
     by_id = {s.study_id: s for s in studies}
 
     backend = (_create_llm_backend(load_config(args.config))
                if args.config is not None else None)
     tol = ToleranceTable.from_yaml(args.tolerances) if args.tolerances else ToleranceTable()
     retriever = LocalPdfRetriever(
-        {s.doi: s.source_pdf for s in studies if s.doi and s.source_pdf}, base_dir=BENCH)
+        {s.doi: s.source_pdf for s in studies if s.doi and s.source_pdf}, base_dir=benchmark)
     reg = ToolRegistry()
     reg.register(FetchFullTextTool(retriever))
     extraction_cache = (None if args.extraction == "live"
-                        else ExtractionCache(args.extraction_cache))
+                        else ExtractionCache(extraction_cache_path))
     reg.register(ExtractSourceValueTool(
         backend, cache=extraction_cache, cache_mode=args.extraction))
     kb = load_runtime_knowledge(
@@ -121,7 +177,7 @@ def main(argv: list[str] | None = None) -> None:
 
     # One shared cache file across runs — a fresh empty cache per run would make
     # `cache-only` miss everything the `on` run just recorded.
-    cache = None if args.semantic == "off" else SemanticCache(args.semantic_cache)
+    cache = None if args.semantic == "off" else SemanticCache(semantic_cache_path)
     comparator = CompareValuesTool(
         tol, semantic=SemanticCompareTool(backend) if args.semantic == "on" else None,
         semantic_mode=args.semantic, semantic_cache=cache,
@@ -133,14 +189,14 @@ def main(argv: list[str] | None = None) -> None:
                               doi=(s.doi if s else None))
 
     print(f"running {len(rows)} rows through Collector + audit …")
-    results = asyncio.run(run_rows(rows, collector, tol, reference_for, args.context,
+    results = asyncio.run(run_rows(rows, collector, tol, reference_for, context,
                                    comparator=comparator))
     if extraction_cache is not None:
         if args.extraction == "record":
             extraction_cache.save()
         print(f"extraction: mode={args.extraction} "
               f"{extraction_cache.hits} reused / {extraction_cache.misses} cache misses "
-              f"({len(extraction_cache)} recorded) -> {args.extraction_cache}")
+              f"({len(extraction_cache)} recorded) -> {extraction_cache_path}")
     else:
         print("extraction: mode=live; model variance is not hidden by a replay")
     if cache is not None:
@@ -148,7 +204,7 @@ def main(argv: list[str] | None = None) -> None:
         print(f"semantic: mode={args.semantic} "
               f"min_confidence={tol.semantic_min_confidence} "
               f"{cache.hits} reused / {cache.misses} new "
-              f"({cache.hit_rate:.0%} from cache) -> {args.semantic_cache}")
+              f"({cache.hit_rate:.0%} from cache) -> {semantic_cache_path}")
         vs = cache.verdicts()
         line = format_threshold_sensitivity(threshold_sensitivity(vs), len(vs))
         if line:
@@ -162,16 +218,27 @@ def main(argv: list[str] | None = None) -> None:
 
     metrics = score_rows(results)
     print(format_report(metrics))
+    diagnostics = benchmark_diagnostics(results)
+    diagnostic_report = format_benchmark_diagnostics(diagnostics)
+    if diagnostic_report:
+        print(diagnostic_report)
 
     if args.html:
         from react_review.report import render_eval_report
+        args.html.parent.mkdir(parents=True, exist_ok=True)
         args.html.write_text(render_eval_report(metrics, results), encoding="utf-8")
         print(f"[html] {args.html.resolve()}")
 
     if args.out:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
         run_meta = {
+            "benchmark": str(benchmark),
+            "benchmark_id": str(manifest.get("benchmark_id") or benchmark.name),
+            "benchmark_gate": gate,
+            "studies_file": str(studies_path.resolve()),
+            "research_context": context,
             "extraction_mode": args.extraction,
-            "extraction_cache": str(args.extraction_cache.resolve())
+            "extraction_cache": str(extraction_cache_path.resolve())
                                 if extraction_cache is not None else "",
             "extraction_model_id": (getattr(backend, "model_id", "")
                                     or getattr(extraction_cache, "model_id", "")),
@@ -180,9 +247,17 @@ def main(argv: list[str] | None = None) -> None:
             "extraction_cache_misses": (extraction_cache.misses
                                         if extraction_cache is not None else 0),
             "semantic_mode": args.semantic,
+            "semantic_cache": str(semantic_cache_path.resolve())
+                              if cache is not None else "",
+            "semantic_model_id": (getattr(backend, "model_id", "")
+                                  or getattr(cache, "model_id", "")),
+            "semantic_cache_hits": cache.hits if cache is not None else 0,
+            "semantic_cache_misses": cache.misses if cache is not None else 0,
+            "semantic_cache_entries": len(cache) if cache is not None else 0,
         }
         args.out.write_text(
             json.dumps({"run": run_meta, "metrics": metrics,
+                        "benchmark_diagnostics": diagnostics,
                         "rows": [asdict(r) for r in results]},
                        ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"[report] {args.out.resolve()}")

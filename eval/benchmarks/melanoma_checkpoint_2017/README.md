@@ -73,3 +73,25 @@ Phase 6B may start only if all of the following hold:
 4. semantic comparison is expected on at least the four rows marked
    `expected_match_mode=semantic`;
 5. known gaps are reported rather than adjusted away.
+
+## Phase 6B result
+
+The entry gate passed and the frozen 15 rows were run once live, once in record
+mode, and once by deterministic replay of the recording. All four expected text
+rows reached controlled semantic comparison; the observed mode counts were the
+frozen 4 semantic, 4 numeric, and 7 structured rows.
+
+The cross-domain accuracy gate did not pass. The recorded replay produced 60%
+label accuracy, 20% strict discrepancy precision, and 33.3% strict discrepancy
+recall. Safety remained visible: all three expected discrepancies either
+received a non-MATCH verdict or a MATCH carrying `review_required`, so the
+silent-release count was zero and review visibility was 100%.
+
+The dominant failure was multi-arm directed extraction. Later treatment, PFS,
+and hazard-ratio targets were sometimes assigned the first nearby arm or effect
+estimate. Incomplete CI extraction also turned determinate structured checks
+into partial `MATCH + review_required` results. One frozen confidence-level gap
+was exposed; the second was masked by an incomplete or wrong extraction. The
+quote-free metrics and private-artifact hashes are published in
+`docs/baselines/melanoma_phase6b_metrics.json`; reports containing source quotes
+and raw model responses remain under ignored `output/baselines/`.

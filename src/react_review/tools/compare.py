@@ -94,7 +94,10 @@ class CompareValuesTool(Tool):
             "source_quote": payload.source_quote, "seed": 42,
         })
 
-        verdict = self._cache.get(key) if self._cache else None
+        # SemanticCache implements ``__len__``; an empty cache is therefore
+        # falsey.  Test identity instead so the first lookup is recorded as a
+        # miss and run telemetry agrees with the number of stored judgements.
+        verdict = self._cache.get(key) if self._cache is not None else None
         if verdict is None:
             if self._mode == "cache-only":
                 # Fail loudly: a "reproduce the recording" run that quietly calls

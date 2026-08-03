@@ -63,6 +63,19 @@ class RowResult:
     components_unconsumed: list[str] = field(default_factory=list)
     review_numeric: dict[str, Any] = field(default_factory=dict)
     source_numeric: dict[str, Any] = field(default_factory=dict)
+    # Benchmark contract carried into the result artifact.  These fields let a
+    # reader distinguish a declared capability gap from a new regression
+    # without joining the JSON back to the answer-key CSV by row position.
+    audit_id: str = ""
+    column_header: str = ""
+    expected_match_mode: str = ""
+    expected_review_required: bool = False
+    expected_semantic_relation: str = ""
+    known_gap: str = ""
+    review_required: bool = False
+    semantic_relation: str = ""
+    semantic_controls: dict[str, bool] = field(default_factory=dict)
+    semantic: dict[str, Any] = field(default_factory=dict)
 
 
 class _CollectorLike(Protocol):
@@ -71,7 +84,8 @@ class _CollectorLike(Protocol):
 
 
 async def _compare(comparator, field_type: str, rv: Any, sv: Any, ru: str, su: str,
-                   *, quote: str = "", research_context: str = "") -> MatchResult:
+                   *, column_header: str = "", quote: str = "",
+                   research_context: str = "") -> MatchResult:
     """Score through the TOOL, so the eval exercises the same path a run does.
 
     Calling ``compare_values`` directly here meant the eval could never reach the
@@ -80,8 +94,21 @@ async def _compare(comparator, field_type: str, rv: Any, sv: Any, ru: str, su: s
     """
     return await comparator.run(CompareInput(
         field_type=field_type, review_value=rv, source_value=sv,
-        review_unit=ru, source_unit=su, source_quote=quote,
+        review_unit=ru, source_unit=su, column_header=column_header,
+        source_quote=quote,
         research_context=research_context))
+
+
+def _as_bool(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _semantic_dict(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    return dict(value) if isinstance(value, dict) else {}
 
 
 async def run_rows(
@@ -94,6 +121,10 @@ async def run_rows(
 ) -> list[RowResult]:
     """Collect + audit each answer-key row into a scored RowResult."""
     comparator = comparator or CompareValuesTool(tol)
+    # Extraction accuracy is a separate question from audit equivalence.  It
+    # must not create extra semantic judgements with no source quote, nor make
+    # the audit's semantic-call count depend on how the scorer grades extraction.
+    extraction_comparator = CompareValuesTool(tol)
     results: list[RowResult] = []
     for r in rows:
         review = ReviewDataItem(
@@ -107,16 +138,25 @@ async def run_rows(
 
         match = await _compare(
             comparator, review.field_type, review.value, si.source_value,
-            review.unit, si.source_unit, quote=si.source_quote,
+            review.unit, si.source_unit,
+            column_header=(r.get("column_header") or ""), quote=si.source_quote,
             research_context=research_context)
         predicted = match.label
         # Extraction is "correct" when the extracted value matches the human's
-        # hand-labeled source value within tolerance.
+        # hand-labeled source value within tolerance.  A partial structured
+        # match still needs review and therefore is not a complete extraction:
+        # extracting only ``0.42`` from ``0.42 (99.5% CI 0.31-0.57)`` must not
+        # earn the same credit as extracting the point estimate and interval.
         expected_source = r.get("source_value") or None
-        extraction_correct = si.source_value is not None and (await _compare(
-            comparator, review.field_type, expected_source, si.source_value,
+        extraction_match = await _compare(
+            extraction_comparator, review.field_type, expected_source, si.source_value,
             (r.get("source_unit") or ""), si.source_unit,
-            research_context=research_context)).label == AuditLabel.MATCH
+            research_context=research_context)
+        extraction_correct = (
+            si.source_value is not None
+            and extraction_match.label == AuditLabel.MATCH
+            and not extraction_match.review_required
+        )
 
         results.append(RowResult(
             study_id=review.study_id, group=review.group, field_type=review.field_type,
@@ -140,6 +180,16 @@ async def run_rows(
             components_unconsumed=list(match.components_unconsumed),
             review_numeric=dataclass_asdict(parse_numeric(review.value)),
             source_numeric=dataclass_asdict(parse_numeric(si.source_value)),
+            audit_id=(r.get("audit_id") or ""),
+            column_header=(r.get("column_header") or ""),
+            expected_match_mode=(r.get("expected_match_mode") or ""),
+            expected_review_required=_as_bool(r.get("expected_review_required")),
+            expected_semantic_relation=(r.get("expected_semantic_relation") or ""),
+            known_gap=(r.get("known_gap") or ""),
+            review_required=match.review_required,
+            semantic_relation=match.semantic_relation,
+            semantic_controls=dict(match.semantic_controls),
+            semantic=_semantic_dict(match.semantic),
         ))
     return results
 
@@ -160,7 +210,12 @@ def score_rows(results: list[RowResult]) -> dict[str, Any]:
         exp_pos = r.expected_label in FLAG_LABELS
         if exp_pos:
             expected_discrepancies += 1
-            if r.predicted_label == AuditLabel.MATCH.value:
+            # MATCH + review_required is visible in the production Judge and
+            # cannot be called a silent release.  It remains a strict-recall FN
+            # above: safety visibility and automatic detection are deliberately
+            # separate metrics.
+            if (r.predicted_label == AuditLabel.MATCH.value
+                    and not r.review_required):
                 silent_releases += 1
             else:
                 visible_discrepancies += 1

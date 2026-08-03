@@ -22,3 +22,9 @@ score using the corrected comparison semantics.
 
 `eat_phase6_manifest.json` records the code/input identities, private-artifact
 hashes, acceptance result, and the one-live-run policy.
+
+`melanoma_phase6b_metrics.json` publishes the quote-free result of the frozen
+oncology run. It records one independent live observation and one recorded
+live run with its deterministic replay. The mechanism reached all four
+semantic rows and all expected comparison modes, but the accuracy gate failed:
+multi-arm extraction repeatedly selected a neighbouring arm/effect estimate.
