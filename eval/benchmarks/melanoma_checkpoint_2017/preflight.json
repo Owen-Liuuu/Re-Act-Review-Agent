@@ -1,0 +1,62 @@
+{
+  "benchmark_id": "melanoma_checkpoint_2017",
+  "phase": "6A",
+  "run_date": "2026-08-03",
+  "mode": "live capture, captured-table replay, live unpivot only",
+  "research_context": "Randomized trials of immune checkpoint inhibitors for unresectable stage III or IV malignant melanoma; efficacy, survival, tumor response, and tolerability outcomes.",
+  "capture": {
+    "first_attempt_tables": 6,
+    "first_attempt_warning_count": 8,
+    "excluded": {
+      "table_2": "eligibility criteria are review-level prose and outside the selected comparison scope",
+      "table_5": "risk-of-bias symbols are not Phase 6B target claims",
+      "table_6": "graph was transcribed into estimated percentages; shape errors and non-verbatim values make it inadmissible"
+    },
+    "frozen_whitelist": ["table_1", "table_3", "table_4"],
+    "whitelist_warning_count": 0,
+    "table_rows": {
+      "table_1": 7,
+      "table_3": 7,
+      "table_4": 3
+    }
+  },
+  "unpivot": {
+    "raw_rows": 85,
+    "by_table": {
+      "table_1": 35,
+      "table_3": 41,
+      "table_4": 9
+    },
+    "numeric_parser_unconsumed_nonplaceholder_values": 48,
+    "genuine_text_semantic_candidates": 7,
+    "private_use_checkmark_cells_excluded_from_semantic_count": 41,
+    "structured_components_in_table_cells": 0
+  },
+  "frozen_ground_truth": {
+    "review_claims": 17,
+    "audit_rows": 15,
+    "expected_modes": {
+      "semantic": 4,
+      "numeric": 4,
+      "structured": 7
+    },
+    "expected_labels": {
+      "match": 12,
+      "mismatch": 3
+    },
+    "structured_claims_from_visually_checked_narrative_or_figure": 7
+  },
+  "freeze_gate": {
+    "multi_arm": true,
+    "source_pdf_visually_verified": true,
+    "semantic_escalation_expected_gt_zero": true,
+    "structured_numeric_ground_truth_gt_zero": true,
+    "decision": "pass_with_declared_limitations"
+  },
+  "limitations": [
+    "The current table capturer does not capture forest plots; HR/CI rows are manually frozen ground truth and should expose that parser gap.",
+    "Only Larkin 2015 has a locally frozen source PDF in Phase 6A.",
+    "Live model output is not a deterministic regression baseline.",
+    "The current numeric schema does not represent the confidence level (95% versus 99.5%); two natural mismatch rows are expected to expose this gap."
+  ]
+}

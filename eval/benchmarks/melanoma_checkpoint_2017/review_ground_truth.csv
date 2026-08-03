@@ -1,0 +1,18 @@
+review_data_id,study_id,group,timepoint,field_type,raw_field_name,value,unit,source_location,cell_ref,value_origin,derivation
+M001,larkin_2015,-,baseline,study_design,Design,Randomized controlled double-blinded Phase III study,,Table 1; PDF p3; printed p327,table_1:r1c1,explicit,
+M002,larkin_2015,-,baseline,sample_size,"Randomized patients, n",945,count,Table 1; PDF p3; printed p327,table_1:r1c2,explicit,
+M003,larkin_2015,nivolumab_plus_ipilimumab,baseline,treatment_arm,"Intervention arm drug, dose, n",Nivolumab (1 mg/kg) + ipilimumab (3 mg/kg),,Table 1; PDF p3; printed p327,table_1:r1c3#label,explicit_component,split label from explicit arm cell
+M004,larkin_2015,ipilimumab_plus_placebo,baseline,treatment_arm,"Control arm drug, dose, n",Ipilimumab (3 mg/kg) + placebo,,Table 1; PDF p3; printed p327,table_1:r1c4#label,explicit_component,split label from explicit arm cell
+M005,larkin_2015,nivolumab_plus_placebo,baseline,treatment_arm,"Additional arm drug, dose, n",Nivolumab (3 mg/kg) + placebo,,Table 1; PDF p3; printed p327,table_1:r1c5#label,explicit_component,split label from explicit arm cell
+M006,larkin_2015,nivolumab_plus_ipilimumab,baseline,cohort_n,"Intervention arm drug, dose, n",314,count,Table 1; PDF p3; printed p327,table_1:r1c3#n,explicit_component,split trailing n from explicit arm cell
+M007,larkin_2015,ipilimumab_plus_placebo,baseline,cohort_n,"Control arm drug, dose, n",315,count,Table 1; PDF p3; printed p327,table_1:r1c4#n,explicit_component,split trailing n from explicit arm cell
+M008,larkin_2015,nivolumab_plus_placebo,baseline,cohort_n,"Additional arm drug, dose, n",316,count,Table 1; PDF p3; printed p327,table_1:r1c5#n,explicit_component,split trailing n from explicit arm cell
+M009,larkin_2015,nivolumab_plus_ipilimumab,median_pfs,progression_free_survival,PFS,"11.5 (95% CI 8.9-16.7)",months,Results narrative; PDF p7; printed p331,review_p7:left:pfs_combo,explicit,
+M010,larkin_2015,ipilimumab_plus_placebo,median_pfs,progression_free_survival,PFS,"2.9 (95% CI 2.8-3.4)",months,Results narrative; PDF p7; printed p331,review_p7:left:pfs_ipi,explicit,
+M011,larkin_2015,nivolumab_plus_placebo,median_pfs,progression_free_survival,PFS,"6.9 (95% CI 4.3-9.5)",months,Results narrative; PDF p7; printed p331,review_p7:left:pfs_nivo,explicit,
+M012,larkin_2015,nivolumab_plus_ipilimumab_vs_ipilimumab,primary_analysis,hazard_ratio,HR,"0.42 (95% CI 0.31-0.57)",ratio,Discussion narrative; PDF p10; printed p334,review_p10:right:hr_combo_vs_ipi,explicit,
+M013,larkin_2015,nivolumab_plus_ipilimumab_vs_ipilimumab,primary_analysis,hazard_ratio,HR,"0.42 (95% CI 0.37-0.48)",ratio,Figure 3; PDF p7; printed p331,figure_3:larkin,explicit,
+M014,larkin_2015,nivolumab_plus_ipilimumab_vs_nivolumab,primary_analysis,hazard_ratio,HR,"0.74 (95% CI 0.60-0.92)",ratio,Discussion narrative; PDF p10; printed p334,review_p10:right:hr_combo_vs_nivo,explicit,
+M015,larkin_2015,nivolumab_vs_ipilimumab,primary_analysis,hazard_ratio,HR,"0.57 (95% CI 0.43-0.76)",ratio,Discussion narrative; PDF p10; printed p334,review_p10:right:hr_nivo_vs_ipi,explicit,
+M016,meta_analysis,checkpoint_inhibitors_vs_control,primary_analysis,hazard_ratio,Overall HR,"0.54 (95% CI 0.44-0.67)",ratio,Abstract and Figure 3; PDF p1/p7; printed p325/p331,figure_3:total,explicit,
+M017,meta_analysis,all_studies,primary_analysis,heterogeneity_i2,"Heterogeneity, I2 (%)",91,%,Table 4; PDF p7; printed p331,table_4:r0c1,explicit,

@@ -1,0 +1,44 @@
+{
+  "validated_date": "2026-08-03",
+  "review_sha256_match": true,
+  "source_sha256_match": true,
+  "review_ground_truth_rows": 17,
+  "audit_rows": 15,
+  "reference_universe": 7,
+  "expected_modes": {
+    "semantic": 4,
+    "numeric": 4,
+    "structured": 7
+  },
+  "expected_labels": {
+    "match": 12,
+    "mismatch": 3
+  },
+  "expected_semantic_relations": {
+    "same": 2,
+    "review_broader": 2
+  },
+  "semantic_rows_reaching_deterministic_not_comparable_gate": [
+    "MA001",
+    "MA003",
+    "MA005",
+    "MA007"
+  ],
+  "declared_current_comparator_gaps": [
+    {
+      "audit_id": "MA012",
+      "observed": "match",
+      "expected": "mismatch",
+      "gap": "confidence_level_not_modeled"
+    },
+    {
+      "audit_id": "MA015",
+      "observed": "match",
+      "expected": "mismatch",
+      "gap": "confidence_level_not_modeled"
+    }
+  ],
+  "unexpected_offline_differences": 0,
+  "selected_study_loader_count": 1,
+  "result": "pass_with_two_declared_known_gaps"
+}

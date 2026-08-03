@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "benchmark_id": "melanoma_checkpoint_2017",
+  "frozen_phase": "6A",
+  "frozen_date": "2026-08-03",
+  "code_head_before_freeze": "0141b9a",
+  "domain": "malignant melanoma checkpoint-inhibitor randomized trials",
+  "review": {
+    "title": "Checkpoint inhibitors for malignant melanoma: a systematic review and meta-analysis",
+    "doi": "10.2147/CCID.S120877",
+    "pmid": "28883738",
+    "pmcid": "PMC5580705",
+    "path": "raw/review_karlsson_saleh_2017.pdf",
+    "bytes": 1006803,
+    "pages": 15,
+    "sha256": "9976C59EC6CA2C72F137E1FEF39EBECCBF604704D0F2C5637F0BAAE7AD8A7401",
+    "retrieval_url": "https://europepmc.org/articles/PMC5580705?pdf=render",
+    "license": "CC BY-NC 3.0",
+    "git_tracked": true
+  },
+  "selected_source": {
+    "study_id": "larkin_2015",
+    "title": "Combined Nivolumab and Ipilimumab or Monotherapy in Untreated Melanoma",
+    "doi": "10.1056/NEJMoa1504030",
+    "pmid": "26027431",
+    "pmcid": "PMC5698905",
+    "path": "raw/sources/larkin_2015.pdf",
+    "bytes": 477427,
+    "pages": 12,
+    "sha256": "23892FC13522A3D900BADD0C60B9A55299AD1385BE051A91EC506A825383CA28",
+    "retrieval_url": "https://www.cinj.org/sites/cinj/files/documents/Combined%20Nivolumab%20and%20Ipilimumab%20or%20Monotherapy%20in%20Untreated%20Melanoma.pdf",
+    "canonical_url": "https://pubmed.ncbi.nlm.nih.gov/26027431/",
+    "license": "copyrighted; personal use only",
+    "git_tracked": false
+  },
+  "table_whitelist": ["table_1", "table_3", "table_4"],
+  "contract_files": [
+    "README.md",
+    "LICENSES.md",
+    "reference_universe.csv",
+    "selected_studies.csv",
+    "review_ground_truth.csv",
+    "audit_template.csv",
+    "preflight.json",
+    "offline_validation.json"
+  ],
+  "local_probe_hashes": {
+    "capture_event": "B1D4101C0ED2ECAD5DC56715AD5B593D5F32922BD4F75B0D469766EBEEEB7683",
+    "unpivot_rows": "DC10ADEDE9600EECDC7CEE00743037C1F43571C8421710E118D230D597E7A3C9",
+    "unpivot_preflight_summary": "D202CEFCECF2389C8A220A3CB98D03FA5E26B9F249A8591AE52C64FD8CE63BAC"
+  },
+  "status": "frozen"
+}

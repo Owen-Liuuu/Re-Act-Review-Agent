@@ -1,0 +1,8 @@
+study_id,review_ref_number,review_citation,doi,pmid,pmcid,local_pdf_status,selected_for_phase6b,access_note
+hodi_2010,15,Hodi et al. (2010),10.1056/NEJMoa1003466,20525992,PMC3549297,not_frozen,false,PMC manuscript is readable but the PDF endpoint failed during freeze
+robert_2011,21,Robert et al. (2011),10.1056/NEJMoa1104621,21639810,,not_frozen,false,no legal stable PDF was frozen
+weber_2015,22,Weber et al. (2015),10.1016/S1470-2045(15)70076-8,25795410,,not_frozen,false,no legal stable PDF was frozen
+robert_2015,29,Robert et al. (2015),10.1056/NEJMoa1412082,25399552,,not_frozen,false,no legal stable PDF was frozen
+ribas_2015,34,Ribas et al. (2015),10.1016/S1470-2045(15)00083-2,26115796,PMC9004487,not_frozen,false,PMC page is readable but the PDF endpoint failed during freeze
+larkin_2015,35,Larkin et al. (2015),10.1056/NEJMoa1504030,26027431,PMC5698905,frozen_local_only,true,three-arm source selected for Phase 6B
+postow_2015,36,Postow et al. (2015),10.1056/NEJMoa1414428,25891304,PMC5744258,not_frozen,false,PMC manuscript is readable but the PDF endpoint failed during freeze
