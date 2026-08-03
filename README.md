@@ -51,7 +51,21 @@ python eval/run_pipeline.py     # end-to-end audit over the benchmark tables
 # Deterministic audit from the CLI (no LLM): match review vs source, compare,
 # print the report, and persist the run's evidence package under --out.
 react-review audit review.csv source.csv --out output/runs
+
+# Full review-to-source run. The final Evidence Package is saved atomically
+# first; report.html is then rendered by reloading that saved package.
+react-review run --pdf review.pdf --studies included_studies.csv \
+  --config configs/config.local.yaml --out output/runs --run-id example
+
+# Re-render the same deterministic HTML later from package.json only.
+react-review report example --runs output/runs
 ```
+
+A successful full run writes `output/runs/<run-id>/package.json` followed by
+`output/runs/<run-id>/report.html`. Use `run --html another/path.html` to choose
+a different report location. The HTML includes the source file/URI, verbatim
+quote, deterministic derivation, semantic relation and controls, and every
+human-review flag carried by the saved Evidence Package.
 
 ## Reuse provenance
 

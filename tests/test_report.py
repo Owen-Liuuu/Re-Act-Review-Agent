@@ -1,6 +1,9 @@
 """Tests for the deterministic HTML report renderer."""
 from __future__ import annotations
 
+import pytest
+
+from react_review.cli import _render_saved_package_html
 from react_review.core.enums import AuditLabel, ReportVerdict
 from react_review.eval_accuracy import RowResult, score_rows
 from react_review.report import (
@@ -9,10 +12,11 @@ from react_review.report import (
     render_parser_report,
 )
 from react_review.schemas.audit import MatchResult
-from react_review.schemas.evidence import SourceEvidenceItem
+from react_review.schemas.evidence import CohortCount, SourceEvidenceItem
 from react_review.schemas.package import EvidencePackage
 from react_review.schemas.report import AuditReport, FinalVerification, HumanReviewFlag
 from react_review.schemas.semantic import SemanticVerdict
+from react_review.store import EvidencePackageStore
 
 
 def _package() -> EvidencePackage:
@@ -124,7 +128,76 @@ def test_a_model_reached_verdict_shows_its_reasoning_and_its_controls():
 
 
 def test_a_deterministic_verdict_carries_no_semantic_block():
-    assert "semantic ·" not in render_html_report(_package())
+    assert '<div class="sem">' not in render_html_report(_package())
+
+
+def test_saved_package_report_shows_full_audit_trail(tmp_path):
+    # The renderer receives the JSON-round-tripped package, where MatchResult's
+    # `semantic: Any` is a dict rather than the original SemanticVerdict model.
+    verdict = SemanticVerdict(
+        relation="review_broader", confidence=0.91,
+        rationale="the review omits the paper's arm detail",
+        evidence_span="15 participants in each arm")
+    match = MatchResult(
+        study_id="trial", group="combined", field_type="sample_size",
+        review_value="30", source_value="30", label=AuditLabel.MATCH,
+        match_mode="semantic", review_required=True, semantic=verdict,
+        semantic_relation="review_broader", semantic_controls={"anchor": True})
+    source = SourceEvidenceItem(
+        study_id="trial", group="combined", field_type="sample_size",
+        source_value="30", source_unit="count",
+        source_file="D:/papers/trial.pdf", retriever_kind="local_pdf",
+        source_quote="15 participants in each arm", value_origin="derived_sum",
+        derivation="15 + 15 = 30",
+        aggregation_status="derived",
+        cohort_counts=[
+            CohortCount(label="arm A", count=15, quote="15 in arm A"),
+            CohortCount(label="arm B", count=15, quote="15 in arm B"),
+        ])
+    package = EvidencePackage(
+        run_id="saved", source_items=[source],
+        report=AuditReport(run_id="saved", results=[match], n_match=1,
+                           verdict=ReportVerdict.PARTIAL),
+        final_verification=FinalVerification(
+            run_id="saved", verdict=ReportVerdict.PARTIAL, summary="review needed",
+            human_review_flags=[HumanReviewFlag(
+                study_id="trial", group="combined", field_type="sample_size",
+                label="partially_verified", reason="broader relation needs review")]))
+    store = EvidencePackageStore(tmp_path)
+    store.save(package)
+
+    report_path = _render_saved_package_html(store, "saved")
+    html = report_path.read_text(encoding="utf-8")
+
+    assert store.package_path("saved").is_file()
+    assert "D:/papers/trial.pdf" in html and "local_pdf" in html
+    assert "15 participants in each arm" in html
+    assert "derived_sum" in html and "15 + 15 = 30" in html
+    assert "arm A" in html and "15 in arm B" in html
+    assert "semantic · review_broader" in html and "0.91" in html
+    assert "human review" in html and "Partially verified" in html
+    assert "broader relation needs review" in html
+
+
+def test_saved_package_report_refuses_to_render_before_save(tmp_path):
+    store = EvidencePackageStore(tmp_path)
+    report_path = tmp_path / "missing" / "report.html"
+
+    with pytest.raises(FileNotFoundError, match="before Evidence Package is saved"):
+        _render_saved_package_html(store, "missing", report_path)
+
+    assert not report_path.exists()
+
+
+def test_saved_package_report_cannot_overwrite_evidence_package(tmp_path):
+    store = EvidencePackageStore(tmp_path)
+    package_path = store.save(_package().model_copy(update={"run_id": "safe"}))
+    original = package_path.read_bytes()
+
+    with pytest.raises(ValueError, match="must not overwrite package.json"):
+        _render_saved_package_html(store, "safe", package_path)
+
+    assert package_path.read_bytes() == original
 
 
 def test_render_eval_report():

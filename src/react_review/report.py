@@ -32,6 +32,7 @@ _LABEL = {
     "cohort_ambiguous": ("Cohort unconfirmed", "warn"),
     "ambiguous_match_key": ("Ambiguous — not paired", "warn"),
     "checklist_gap": ("Required checklist gap", "warn"),
+    "partially_verified": ("Partially verified", "warn"),
 }
 
 
@@ -66,6 +67,39 @@ def _reasons_html(item) -> str:
     return f'<ul class="why">{rows}</ul>'
 
 
+def _derivation_html(item) -> str:
+    """How a source value was obtained, including deterministic aggregation."""
+    if item is None:
+        return ""
+    origin = getattr(item, "value_origin", "") or ""
+    derivation = getattr(item, "derivation", "") or ""
+    counts = getattr(item, "cohort_counts", None) or []
+    aggregation = getattr(item, "aggregation_status", "") or ""
+    aggregation_reason = getattr(item, "aggregation_reason", "") or ""
+    if not any((origin, derivation, counts, aggregation_reason)):
+        return ""
+    head = " · ".join(filter(None, [origin, aggregation]))
+    count_rows = "".join(
+        f'<li><b>{escape(c.label)}</b> = {c.count}'
+        + (f' · “{escape(c.quote)}”' if c.quote else "") + "</li>"
+        for c in counts)
+    return (
+        '<div class="derive"><b>derivation</b>'
+        + (f'<div class="loc">{escape(head)}</div>' if head else "")
+        + (f'<div>{escape(derivation)}</div>' if derivation else "")
+        + (f'<ul>{count_rows}</ul>' if count_rows else "")
+        + (f'<div class="loc">{escape(aggregation_reason)}</div>'
+           if aggregation_reason else "")
+        + "</div>"
+    )
+
+
+def _field(value: Any, name: str, default: Any = "") -> Any:
+    """Read a Pydantic object or its JSON-round-tripped dictionary form."""
+    return value.get(name, default) if isinstance(value, dict) else getattr(
+        value, name, default)
+
+
 def _semantic_html(result) -> str:
     """Show what the model claimed AND which controls let the claim stand.
 
@@ -76,18 +110,33 @@ def _semantic_html(result) -> str:
     """
     v = getattr(result, "semantic", None)
     if v is None:
-        return ""
+        relation = getattr(result, "semantic_relation", "") or ""
+        return (f'<div class="sem"><b>semantic · {escape(relation)}</b></div>'
+                if relation else "")
     checks = getattr(result, "semantic_controls", None) or {}
     marks = "".join(
         f'<span class="ck {"ok" if passed else "bad"}">{escape(name)} '
         f'{"&#10003;" if passed else "&#10007;"}</span>'
         for name, passed in checks.items())
-    span = (f'<div class="q">cited: “{escape(v.evidence_span)}”</div>'
-            if v.evidence_span else "")
-    return (f'<div class="sem"><b>semantic · {escape(v.relation)}</b> '
-            f'(confidence {v.confidence:.2f})'
-            f'<div class="loc">{escape(v.rationale)}</div>{span}'
+    evidence_span = str(_field(v, "evidence_span", "") or "")
+    relation = str(_field(v, "relation", "") or "")
+    rationale = str(_field(v, "rationale", "") or "")
+    confidence = float(_field(v, "confidence", 0.0) or 0.0)
+    span = (f'<div class="q">cited: “{escape(evidence_span)}”</div>'
+            if evidence_span else "")
+    return (f'<div class="sem"><b>semantic · {escape(relation)}</b> '
+            f'(confidence {confidence:.2f})'
+            f'<div class="loc">{escape(rationale)}</div>{span}'
             f'<div class="cks">{marks}</div></div>')
+
+
+def _row_flags_html(flags: list) -> str:
+    if not flags:
+        return ""
+    rows = "".join(
+        f'<div class="rf">{_chip(flag.label)} {escape(flag.reason)}</div>'
+        for flag in flags)
+    return f'<div class="rowflags"><b>human review</b>{rows}</div>'
 
 
 def _chip(label: str) -> str:
@@ -117,6 +166,9 @@ def render_html_report(pkg: EvidencePackage) -> str:
     # Keyed on the full locator: two rows of the same study/cohort/field would
     # otherwise collapse here, showing one row's quote next to the other's number.
     src = {_locator(s): s for s in pkg.source_items}
+    flags_by_locator: dict[tuple, list] = {}
+    for flag in fv.human_review_flags:
+        flags_by_locator.setdefault(_locator(flag), []).append(flag)
 
     tiles = [("Match", rep.n_match, "good"), ("Mismatch", rep.n_mismatch, "bad"),
              ("Unit mismatch", rep.n_unit_mismatch, "warn"),
@@ -147,17 +199,21 @@ def render_html_report(pkg: EvidencePackage) -> str:
 
     studies_html = ""
     for study_id, results in by_study.items():
-        flagged = sum(1 for r in results if r.label.value != "match")
+        flagged = sum(bool(flags_by_locator.get(_locator(r))) for r in results)
         body_rows = ""
         for r in results:
             s = src.get(_locator(r))
+            row_flags = flags_by_locator.get(_locator(r), [])
             quote = escape(s.source_quote) if s and s.source_quote else ""
             loc = escape(s.source_location_in_paper) if s and s.source_location_in_paper else ""
             ev = (f'<div class="q">“{quote}”</div>' if quote else "") + \
                  (f'<div class="loc">{loc}</div>' if loc else "") + \
-                 _provenance_html(s) + _reasons_html(s) + _semantic_html(r)
+                 _provenance_html(s) + _derivation_html(s) + _reasons_html(s) + \
+                 _semantic_html(r) + _row_flags_html(row_flags)
+            row_class = ("warn" if row_flags and r.label.value == "match" else
+                         _LABEL.get(r.label.value, ("", "muted"))[1])
             body_rows += (
-                f'<tr class="r-{_LABEL.get(r.label.value, ("", "muted"))[1]}">'
+                f'<tr class="r-{row_class}">'
                 f'<td>{escape(r.group)}</td>'
                 f'<td>{escape(r.field_type)}</td>'
                 f'<td class="num">{escape(str(r.review_value))} <span class="u">{escape(r.review_unit)}</span></td>'
@@ -171,7 +227,8 @@ def render_html_report(pkg: EvidencePackage) -> str:
             f'<section class="study"><div class="stitle"><h3>{escape(study_id)}</h3>{cnt}</div>'
             '<div class="scroll"><table><thead><tr>'
             '<th>Group</th><th>Field</th><th>Review value</th><th>Source value</th>'
-            '<th>Verdict</th><th>Error</th><th>Source evidence (quote · location)</th>'
+            '<th>Verdict</th><th>Error</th>'
+            '<th>Source evidence (quote · file · derivation · semantic · review flag)</th>'
             f'</tr></thead><tbody>{body_rows}</tbody></table></div></section>')
 
     body = (
@@ -369,6 +426,11 @@ tr.r-bad td{background:var(--bad-bg)}tr.r-warn td{background:var(--warn-bg)}
 .ev .why b{font-family:var(--mono);font-weight:600}
 .ev .sem{margin-top:6px;padding:5px 7px;border-left:2px solid var(--line);font-size:11px}
 .ev .sem>b{font-family:var(--mono);font-weight:600}
+.ev .derive{margin-top:6px;padding:5px 7px;border-left:2px solid var(--accent);font-size:11px}
+.ev .derive>b,.ev .rowflags>b{display:block;font-family:var(--mono);font-weight:600;margin-bottom:2px}
+.ev .derive ul{margin:3px 0 0;padding-left:16px}
+.ev .rowflags{margin-top:7px;padding:6px 7px;border-left:2px solid var(--warn);font-size:11px}
+.ev .rf{margin-top:4px}.ev .rf .chip{font-size:10px;margin-right:3px}
 .ev .cks{margin-top:4px;display:flex;flex-wrap:wrap;gap:4px}
 .ev .ck{font-family:var(--mono);font-size:10px;padding:1px 5px;border-radius:3px;
 border:1px solid var(--line);color:var(--muted)}

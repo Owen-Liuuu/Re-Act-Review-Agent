@@ -98,6 +98,7 @@ def test_save_then_load_round_trips(tmp_path):
     pkg = _package()
     path = store.save(pkg)
     assert path.is_file()
+    assert path == store.package_path("run-001")
 
     loaded = store.load("run-001")
     assert loaded.run_id == "run-001"

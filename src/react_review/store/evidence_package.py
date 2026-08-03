@@ -27,6 +27,10 @@ class EvidencePackageStore:
     def _package_path(self, run_id: str) -> Path:
         return self.run_dir(run_id) / "package.json"
 
+    def package_path(self, run_id: str) -> Path:
+        """Public path to the final package used by report/render workflows."""
+        return self._package_path(run_id)
+
     def exists(self, run_id: str) -> bool:
         return self._package_path(run_id).is_file()
 

@@ -444,12 +444,45 @@ def _audit_main(argv: list[str] | None = None) -> None:
     _safe_print(f"\n[PACKAGE] {pkg_path.resolve()}")
 
 
+def _render_saved_package_html(store, run_id: str, out: Path | None = None) -> Path:
+    """Load the final package from disk, then atomically render its HTML.
+
+    Loading is deliberate: a run report must describe the exact serialised
+    artifact a reviewer can reopen, not a richer or subtly different in-memory
+    object.  If saving/loading/rendering fails, no report is presented as a
+    successful companion to a package that was never persisted.
+    """
+    import os
+
+    from react_review.report import render_html_report
+
+    package_path = store.package_path(run_id)
+    if not package_path.is_file():
+        raise FileNotFoundError(
+            f"cannot render report before Evidence Package is saved: {package_path}")
+    package = store.load(run_id)
+    html = render_html_report(package)
+    report_path = out or (store.run_dir(run_id) / "report.html")
+    if report_path.resolve() == package_path.resolve():
+        raise ValueError("HTML report path must not overwrite package.json")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = report_path.with_suffix(report_path.suffix + ".tmp")
+    try:
+        tmp.write_text(html, encoding="utf-8")
+        os.replace(tmp, report_path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+    return report_path
+
+
 def _run_main(argv: list[str] | None = None) -> None:
     """Full LLM pipeline: review PDF → Parser → Collector → Auditor → Judge.
 
     Parses the review PDF, resolves each study to the included-studies registry,
-    reads the LOCAL source PDFs, extracts + audits + adjudicates, and persists the
-    EvidencePackage. Requires ``--config`` with an LLM api_key (GLM etc.).
+    reads the LOCAL source PDFs, extracts + audits + adjudicates, persists the
+    EvidencePackage, then reloads it to render HTML. Requires ``--config`` with
+    an LLM api_key (GLM etc.).
     """
     import sys
     import uuid
@@ -484,6 +517,9 @@ def _run_main(argv: list[str] | None = None) -> None:
     ap.add_argument("--tolerances", type=Path, default=None)
     ap.add_argument("--context", default="", help="one-sentence research context")
     ap.add_argument("--out", type=Path, default=Path("output/runs"))
+    ap.add_argument("--html", type=Path, default=None,
+                    help="HTML report path (default: <out>/<run-id>/report.html); "
+                         "rendered only after package.json has been saved")
     ap.add_argument("--run-id", default=None)
     ap.add_argument("--limit", type=int, default=0,
                     help="audit only the first N review items (0 = all)")
@@ -694,12 +730,19 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
         checklist=parsed.checklist,
     ))
 
+    # AuditPipeline persists the complete package atomically before returning.
+    # Reload that exact file for the report so `run` and `report` cannot render
+    # different object states. A report failure leaves package.json intact.
+    pkg_path = store.package_path(run_id)
+    _safe_print(f"\n[PACKAGE] {pkg_path.resolve()}")
+    report_path = _render_saved_package_html(
+        store, run_id, getattr(args, "html", None))
+    _safe_print(f"[REPORT]  {report_path.resolve()}")
+
     fv = pkg.final_verification
     _safe_print("\n" + fv.summary)
     for f in fv.human_review_flags[:40]:
         _safe_print(f"  [{f.label}] {f.study_id}/{f.group}/{f.field_type}: {f.reason}")
-    _safe_print(f"\n[PACKAGE] {(args.out / run_id / 'package.json').resolve()}")
-
     if semantic_cache is not None:
         path = semantic_cache.save()
         _safe_print(
@@ -729,7 +772,6 @@ def _report_main(argv: list[str] | None = None) -> None:
 
     react-review report RUN_ID [--runs output/runs] [--out report.html]
     """
-    from react_review.report import render_html_report
     from react_review.store import EvidencePackageStore
 
     ap = argparse.ArgumentParser(prog="react-review report",
@@ -739,10 +781,8 @@ def _report_main(argv: list[str] | None = None) -> None:
     ap.add_argument("--out", type=Path, default=None, help="output .html (default: <run>/report.html)")
     args = ap.parse_args(argv)
 
-    pkg = EvidencePackageStore(args.runs).load(args.run_id)
-    out = args.out or (args.runs / args.run_id / "report.html")
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(render_html_report(pkg), encoding="utf-8")
+    out = _render_saved_package_html(
+        EvidencePackageStore(args.runs), args.run_id, args.out)
     _safe_print(f"[report] {out.resolve()}")
 
 
