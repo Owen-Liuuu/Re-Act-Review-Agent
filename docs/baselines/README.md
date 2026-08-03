@@ -28,3 +28,7 @@ oncology run. It records one independent live observation and one recorded
 live run with its deterministic replay. The mechanism reached all four
 semantic rows and all expected comparison modes, but the accuracy gate failed:
 multi-arm extraction repeatedly selected a neighbouring arm/effect estimate.
+The resulting extraction, structured-value, and semantic-relation issues are
+intentionally deferred and preserved in
+`docs/deferred/phase6b-melanoma-audit.md`; Phase 6B artifacts must not be
+overwritten when that work resumes.

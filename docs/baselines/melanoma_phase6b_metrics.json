@@ -3,6 +3,8 @@
   "artifact_kind": "sanitized_phase6b_cross_domain_result",
   "generated_on": "2026-08-03",
   "benchmark_id": "melanoma_checkpoint_2017",
+  "resolution_status": "deferred_by_project_decision",
+  "deferred_issue_archive": "docs/deferred/phase6b-melanoma-audit.md",
   "code_base_before_phase6b": "aa5da13",
   "model": "glm-4.5-flash",
   "scope": {
