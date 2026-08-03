@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "benchmark": "EAT/T1DM full-pipeline audit",
+  "rows": 57,
+  "runs": [
+    {
+      "id": "phase5_raw_c48dcb5",
+      "kind": "live_snapshot",
+      "validity": "historical_baseline",
+      "label_accuracy": 0.8771929824561403,
+      "discrepancy": {
+        "tp": 5,
+        "fp": 5,
+        "fn": 0,
+        "tn": 47,
+        "precision": 0.5,
+        "recall": 1.0,
+        "f1": 0.6666666666666666
+      },
+      "extraction": {
+        "found_rate": 1.0,
+        "value_match_rate": 0.8771929824561403
+      }
+    },
+    {
+      "id": "phase6_0c_8bdef2d",
+      "kind": "live_diagnostic",
+      "validity": "variance_evidence_not_code_regression_baseline",
+      "label_accuracy": 0.8596491228070176,
+      "discrepancy": {
+        "tp": 5,
+        "fp": 6,
+        "fn": 0,
+        "tn": 46,
+        "precision": 0.45454545454545453,
+        "recall": 1.0,
+        "f1": 0.625
+      },
+      "extraction": {
+        "found_rate": 1.0,
+        "value_match_rate": 0.8596491228070176
+      }
+    },
+    {
+      "id": "phase6_0d_gate_live",
+      "kind": "recorded_live",
+      "validity": "invalidated_missing_value_unit_precedence_bug",
+      "label_accuracy": 0.9122807017543859,
+      "discrepancy": {
+        "tp": 5,
+        "fp": 1,
+        "fn": 0,
+        "tn": 51,
+        "precision": 0.8333333333333334,
+        "recall": 1.0,
+        "f1": 0.9090909090909091
+      },
+      "extraction": {
+        "found_rate": 0.9122807017543859,
+        "value_match_rate": 0.8947368421052632
+      }
+    },
+    {
+      "id": "phase6_0e_frozen_replay",
+      "kind": "deterministic_replay",
+      "validity": "accepted_code_regression_baseline",
+      "label_accuracy": 0.8947368421052632,
+      "discrepancy": {
+        "tp": 4,
+        "fp": 1,
+        "fn": 1,
+        "tn": 51,
+        "precision": 0.8,
+        "recall": 0.8,
+        "f1": 0.8000000000000002
+      },
+      "safety": {
+        "expected_discrepancies": 5,
+        "silent_release_count": 0,
+        "visible_discrepancies": 5,
+        "review_visibility_rate": 1.0,
+        "escalated_not_comparable": 1
+      },
+      "extraction": {
+        "found_rate": 0.9122807017543859,
+        "value_match_rate": 0.8947368421052632
+      }
+    },
+    {
+      "id": "phase6_0e_single_live",
+      "kind": "single_predeclared_live_record",
+      "validity": "variance_observation_not_code_regression_baseline",
+      "label_accuracy": 0.8596491228070176,
+      "discrepancy": {
+        "tp": 4,
+        "fp": 1,
+        "fn": 1,
+        "tn": 51,
+        "precision": 0.8,
+        "recall": 0.8,
+        "f1": 0.8000000000000002
+      },
+      "safety": {
+        "expected_discrepancies": 5,
+        "silent_release_count": 0,
+        "visible_discrepancies": 5,
+        "review_visibility_rate": 1.0,
+        "escalated_not_comparable": 1
+      },
+      "extraction": {
+        "found_rate": 0.8771929824561403,
+        "value_match_rate": 0.8596491228070176
+      }
+    }
+  ]
+}

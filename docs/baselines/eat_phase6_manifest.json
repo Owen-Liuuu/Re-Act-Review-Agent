@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "artifact_kind": "sanitized_phase6_benchmark_manifest",
+  "generated_on": "2026-08-03",
+  "code_commit": "a08bec64b84116eb64db958275d3c14c825a45af",
+  "benchmark": {
+    "name": "EAT/T1DM full-pipeline audit",
+    "rows": 57,
+    "semantic_mode": "off",
+    "model": "glm-4.5-flash"
+  },
+  "privacy": {
+    "contains_source_quotes": false,
+    "contains_raw_model_responses": false,
+    "contains_local_absolute_paths": false,
+    "private_artifacts_remain_gitignored": true
+  },
+  "input_sha256": {
+    "audit_template.csv": "B0D610D9443D44087BEE0050C54ED0E7AE1AA35C5AA7899B56625A71397C87A5",
+    "included_studies.csv": "5E02515D4AA1CAF01814859F5986BE99CB0395AE6CBCE9F6D9AC915480EB831C",
+    "tolerances.yaml": "8E2E69C07D67F99E5827AA1F46B76132B8BA1B6672729736E773DEF617D88980",
+    "knowledge.seed.json": "118EB50C8601CF35F061F2C05D98376420E5D148E0E05A01BC39C049AE24DF73"
+  },
+  "private_artifact_sha256": {
+    "phase5_raw_c48dcb5.json": "35DD326B7CDCE59E63E454F1AFAA1589D53A14B1322A8A3091B07515E7061DA3",
+    "phase6_0c_8bdef2d.json": "94B8A5EB86BD7BE1F3CE31D283E2AB3D508051E4111916D4479855E1AF8823BF",
+    "phase6_0d_gate_live.json": "8355715426F2020A1FF534ED969B10F7C95012E8668D9BD4744BE111C2FEC025",
+    "phase6_0e_replay.json": "88C7113FC55D1C07E4C4B96A32B2D1E3193F9E663B52AED419DD0D92D130C74D",
+    "phase6_0e_live.json": "7F7C90B0E8BD6AFF0B131D8330773DBA05D472E59114B94A442F1C2C1ACFBD20",
+    "phase6_0e_live_replay.json": "491C139F953A01F1E8487C610E394A94637A1B0087EFE0B87CA7424B20279DFD",
+    "phase6_0d_final_extraction_replay.json": "79D0DFA117B19E136E7BB0E937F15F0C7B98DBA9321A2810A5A6095B2EA150A7",
+    "phase6_0e_live_extraction_record.json": "752B3D7C80E6172C73FCBE4C059427ADEB1C41EDA9D94EFA28BDE0A250BCAE60"
+  },
+  "reproducibility": {
+    "frozen_phase6_0d_cache_misses": 0,
+    "single_live_record_cache_entries": 69,
+    "single_live_vs_its_replay_normalized_exact": true,
+    "test_result": "574 passed"
+  },
+  "acceptance": {
+    "deterministic_replay": {
+      "label_accuracy_at_least_0_86": true,
+      "precision_not_below_phase6_0c": true,
+      "silent_release_count_zero": true,
+      "review_visibility_rate_one": true,
+      "strict_discrepancy_recall": 0.8,
+      "result": "pass"
+    },
+    "single_live_observation": {
+      "silent_release_count_zero": true,
+      "review_visibility_rate_one": true,
+      "result": "reported_separately_not_used_as_code_gate"
+    }
+  },
+  "conclusions": [
+    "Missing source values are now NOT_COMPARABLE before unit comparison in the production comparator.",
+    "Strict discrepancy recall measures automatic capability; review visibility measures safety escalation.",
+    "Live LLM extraction is not a deterministic code-regression oracle.",
+    "Cross-domain validation has not started; this benchmark remains EAT/T1DM only."
+  ]
+}
