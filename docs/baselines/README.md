@@ -37,3 +37,9 @@ overwritten when that work resumes.
 the full test suite, both deterministic replays, the package-to-HTML round trip,
 artifact hashes, privacy boundary, and intentionally deferred Phase 6B accuracy
 failure to the code base accepted at the start of Phase 6E.
+
+`phase6e_release.json` records the final publication rerun on 2026-08-04. It
+adds a single independently recorded melanoma live run and its exact offline
+replay, the release-artifact hashes, provenance completeness checks, and probe
+cleanup. The live sample remains a failed cross-domain accuracy observation;
+publishing it does not supersede or conceal the Phase 6B deferred archive.

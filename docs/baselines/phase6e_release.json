@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "artifact_kind": "sanitized_phase6e_final_release",
+  "release_date": "2026-08-04",
+  "release_commit_parent": "5657cd18ef6d5cac90b5b895962d8c3a72c1d4bb",
+  "branch": "main",
+  "model": "glm-4.5-flash",
+  "one_live_run_policy": true,
+  "privacy": {
+    "contains_source_quotes": false,
+    "contains_raw_model_responses": false,
+    "contains_local_absolute_paths": false,
+    "private_release_artifacts_remain_gitignored": true,
+    "private_source_pdf_remains_gitignored": true
+  },
+  "gates": {
+    "full_test_suite": {
+      "passed": 582,
+      "failed": 0,
+      "result": "pass"
+    },
+    "eat_extraction_replay": {
+      "rows": 57,
+      "extraction_cache_hits": 71,
+      "extraction_cache_misses": 0,
+      "label_accuracy": 0.8947368421052632,
+      "discrepancy": {
+        "precision": 0.8,
+        "recall": 0.8,
+        "f1": 0.8000000000000002
+      },
+      "silent_release_count": 0,
+      "review_visibility_rate": 1.0,
+      "result": "pass"
+    },
+    "cross_domain_live_record": {
+      "rows": 15,
+      "extraction_cache_entries": 18,
+      "extraction_cache_hits_during_record": 1,
+      "extraction_cache_misses_during_record": 18,
+      "semantic_cache_entries": 3,
+      "semantic_cache_hits_during_record": 0,
+      "semantic_cache_misses_during_record": 3,
+      "label_accuracy": 0.6666666666666666,
+      "discrepancy": {
+        "precision": 0.3333333333333333,
+        "recall": 0.3333333333333333,
+        "f1": 0.3333333333333333
+      },
+      "extraction_found_rate": 0.9333333333333333,
+      "complete_value_match_rate": 0.3333333333333333,
+      "expected_modes": {
+        "semantic": 4,
+        "numeric": 4,
+        "structured": 7
+      },
+      "observed_modes": {
+        "semantic": 3,
+        "numeric": 6,
+        "structured": 6
+      },
+      "semantic_expected": 4,
+      "semantic_reached": 3,
+      "unexpected_label_differences": 4,
+      "silent_release_count": 0,
+      "review_visibility_rate": 1.0,
+      "benchmark_status": "fail_unexpected_differences",
+      "result": "failed_accuracy_and_expected_mode_distribution"
+    },
+    "cross_domain_replay": {
+      "extraction_cache_hits": 19,
+      "extraction_cache_misses": 0,
+      "semantic_cache_hits": 3,
+      "semantic_cache_misses": 0,
+      "metrics_equal_to_live_record": true,
+      "rows_equal_to_live_record": true,
+      "benchmark_diagnostics_equal_to_live_record": true,
+      "result": "pass"
+    },
+    "safety_visibility": {
+      "eat_silent_release_count": 0,
+      "melanoma_silent_release_count": 0,
+      "result": "pass"
+    }
+  },
+  "provenance_checks": {
+    "melanoma_benchmark_gate": "pass",
+    "source_file_present_rows": "15/15",
+    "source_quote_present_rows": "15/15",
+    "reason_present_rows": "15/15",
+    "semantic_provenance_present_rows": "3/3",
+    "semantic_provenance_fields": [
+      "model_id",
+      "prompt_sha256",
+      "prompt_version",
+      "seed"
+    ],
+    "extraction_cache_format": "react-review-extraction-replay-v1",
+    "extraction_cache_model_id": "glm-4.5-flash",
+    "semantic_cache_model_id": "glm-4.5-flash",
+    "review_pdf_sha256": "9976C59EC6CA2C72F137E1FEF39EBECCBF604704D0F2C5637F0BAAE7AD8A7401",
+    "source_pdf_sha256": "23892FC13522A3D900BADD0C60B9A55299AD1385BE051A91EC506A825383CA28",
+    "benchmark_contract_sha256": {
+      "manifest.json": "83118EE9EBC08332F3D7ADA34396570B496442301689C23CCB93FD9D116C8D21",
+      "audit_template.csv": "3D4E3899DC5B97DB2351BCE14C2E0A083818D394D315D8B632B444BFB6584496",
+      "selected_studies.csv": "1D82D7EB5EC2BB85A82B66A0F3EE6558E4186F0C50E2DDD6A751FA0071DCE88B",
+      "review_ground_truth.csv": "1E42D53113438569774015AA5539D7E69F4F90F8F262B323EC24C8BBF421A39B",
+      "offline_validation.json": "71DEE44725368E282F71F4F5298A3D1F0CE9AC6CAD7BC1F5C72D4EF8001E2BFC",
+      "preflight.json": "2670800EF920A466FD06480E11B1BB36E9CC43DC25B10CA7220B857DD8678FCC"
+    }
+  },
+  "private_artifact_sha256": {
+    "eat_replay.json": "9821692362CC42CA9103B785F8DC222D5C2A0BE886AE8C8319F1EC02BE72A51E",
+    "eat_replay.html": "1E8CA1CF9EDB8409FE8694B1C1F6824F86BDE027E9D8FEBFAB16A82E5613CBF8",
+    "melanoma_extraction_cache.json": "CEDC8CB3E8B48A78B01FE5EEAE342C0D060FB5F53BDADF6A86A97E6073239795",
+    "melanoma_semantic_cache.json": "522232317C0FE5FD9AFEC55BCBD946E20C1FAB3525DE33A562B632D38897466C",
+    "melanoma_live_record.json": "83BC756F3BCF6BB204FF573BF245BF62DF4DDDC6A899E1FC2A0C644647BB7C2C",
+    "melanoma_live_record.html": "C504370F3076B8682860DFD6679A6A676BA2422777FADAAC8EA7459404A1F132",
+    "melanoma_replay.json": "C66296E1B0268FB58BF7BFB2457560CDB43ABB08D80139A9D597C7EE91CB099C",
+    "melanoma_replay.html": "C504370F3076B8682860DFD6679A6A676BA2422777FADAAC8EA7459404A1F132"
+  },
+  "cleanup": {
+    "experimental_probe_files_removed": 37,
+    "experimental_probe_bytes_removed": 247870,
+    "test_temp_files_removed": 79,
+    "test_temp_bytes_removed": 335158,
+    "probe_paths_remaining": 0,
+    "cleanup_verified": true,
+    "known_user_files_preserved": [
+      "ReAct-Review_Project_Progress_2026-07-30.pptx",
+      "ReAct-Review_Project_Progress_2026-07-30.pptx.inspect.ndjson"
+    ]
+  },
+  "known_failures": {
+    "archive": "docs/deferred/phase6b-melanoma-audit.md",
+    "cross_domain_accuracy_established": false,
+    "live_expected_mode_distribution_met": false,
+    "silent_release_count_zero": true
+  },
+  "release_decision": {
+    "deterministic_regression": "pass",
+    "live_to_replay_reproducibility": "pass",
+    "artifact_and_provenance_integrity": "pass",
+    "cross_domain_accuracy": "fail_deferred",
+    "result": "publish_with_declared_cross_domain_failures"
+  }
+}
