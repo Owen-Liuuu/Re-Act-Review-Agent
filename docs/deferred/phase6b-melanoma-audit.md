@@ -17,6 +17,19 @@ source-paper quotations and remain under ignored
 `output/baselines/melanoma_checkpoint_2017/`. Their hashes are published in
 `docs/baselines/melanoma_phase6b_metrics.json`.
 
+## How precise these numbers are
+
+One study, 15 rows. A single row moves label accuracy by 6.7 points, and 9/15
+carries a Wilson 95% interval of roughly **[35.7%, 80.2%]**. So "60%" is not a
+measurement of cross-domain accuracy — it is far too coarse to rank against the
+EAT benchmark or to detect a modest improvement.
+
+What this checkpoint establishes is categorical rather than numeric: every
+planned route was reached, no discrepancy was released silently, and the failures
+below reproduce from the frozen replay. Read the percentages as "the judgements
+are not reliable here yet", not as a score. Any future claim about cross-domain
+accuracy needs more studies and more rows — not a better run of this one.
+
 ## Preserved observations
 
 - Recorded replay: 15 rows; label accuracy 60%; strict discrepancy precision

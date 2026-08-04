@@ -1,12 +1,20 @@
 # ReAct-Review
 
-An autonomous agentic pipeline for clinical evidence synthesis and audit.
+A step-gated, human-in-the-loop pipeline for auditing systematic reviews against
+their source papers — every step shows what it read and asks before continuing.
 
-ReAct-Review (a) extracts structured evidence tables from clinical publications and
-(b) cross-validates already-published systematic reviews against their source papers.
-A deterministic Python orchestrator sequences the stages; specialized bounded ReAct
-agents (Evidence Collector, Evidence Auditor, Judge/Arbiter) operate over a shared,
-typed tool catalogue.
+ReAct-Review cross-validates an already-published systematic review against the
+papers it cites. It stops at each structural decision — the captured review table,
+the cohorts it found, how it mapped columns to concepts, which references it could
+resolve — and prints that step in full before asking whether to go on. A run can be
+halted at any checkpoint, and the artefacts written up to that point are kept.
+
+The language model only reads and proposes. Every judgement — whether two values
+agree, whether a cohort matches, whether a total may be derived from its parts — is
+made by deterministic code, and anything the code cannot settle is surfaced for a
+human rather than resolved quietly. A deterministic orchestrator sequences the
+stages; bounded ReAct agents (Evidence Collector, Evidence Auditor, Judge/Arbiter)
+operate over a shared, typed tool catalogue.
 
 ## Status
 

@@ -7,11 +7,13 @@
   "model": "glm-4.5-flash",
   "one_live_run_policy": true,
   "privacy": {
-    "contains_source_quotes": false,
+    "scope": "this_artifact_only",
+    "artifact_contains_source_quotes": false,
     "contains_raw_model_responses": false,
     "contains_local_absolute_paths": false,
     "private_release_artifacts_remain_gitignored": true,
-    "private_source_pdf_remains_gitignored": true
+    "private_source_pdf_remains_gitignored": true,
+    "note": "Scope is this artifact. Benchmark answer keys (eval/benchmark*/audit_template.csv) do carry short, attributed source-paper snippets — a verdict cannot be checked independently without them. Full source PDFs, raw model responses and row-level run artefacts remain gitignored."
   },
   "gates": {
     "full_test_suite": {
