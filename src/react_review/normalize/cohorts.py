@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -45,6 +46,89 @@ def _mentions(label: str, variant: str) -> bool:
     which is the class of accident that made the old keyword lists misfire.
     """
     return re.search(rf"(?<![a-z0-9]){re.escape(variant)}(?![a-z0-9])", label) is not None
+
+
+# Words that appear in almost every arm label and therefore distinguish nothing.
+# Dose numerals go too ("3 mg/kg"): a paper naming the same arm without the dose
+# is still naming the same arm. Drug words, "placebo" and "plus" all stay — they
+# are exactly what separates one arm from the next.
+_GENERIC_LABEL_WORDS = {
+    "a", "an", "and", "arm", "arms", "cohort", "cohorts", "dose", "group",
+    "groups", "in", "n", "of", "participants", "patient", "patients", "people",
+    "subject", "subjects", "the", "total", "with",
+}
+_DOSE_UNITS = {"mg", "kg", "g", "ml", "l", "mcg", "ug", "m2", "mg2"}
+
+# How a comparison is written, in a slug or in prose. Direction is preserved:
+# "A vs B" and "B vs A" are different claims and one is not the other's tidy-up.
+_VS = re.compile(r"(?<![a-z0-9])(?:vs\.?|versus)(?![a-z0-9])")
+
+
+class ComparisonTarget(BaseModel):
+    """A claim about TWO arms — the shape a single cohort name cannot express."""
+
+    left: str
+    right: str
+    raw: str = ""
+
+    def sides(self) -> tuple[str, str]:
+        return self.left, self.right
+
+    def inverted(self) -> "ComparisonTarget":
+        return ComparisonTarget(left=self.right, right=self.left, raw=self.raw)
+
+
+def parse_comparison(text: str) -> ComparisonTarget | None:
+    """Split ``A vs B`` into its two sides, or return None if it is not one.
+
+    Accepts the canonical slug form (``a_vs_b``) and the written forms (``vs``,
+    ``vs.``, ``versus``). More than one delimiter is refused rather than guessed
+    at: ``a_vs_b_vs_c`` is not a pair, and picking one of its splits would
+    invent a comparison the review never made.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    spaced = re.sub(r"[_\s]+", " ", raw).strip().lower()
+    matches = list(_VS.finditer(spaced))
+    if len(matches) != 1:
+        return None
+    left = spaced[: matches[0].start()].strip(" -")
+    right = spaced[matches[0].end():].strip(" -")
+    if not left or not right:
+        return None
+    return ComparisonTarget(left=left, right=right, raw=raw)
+
+
+def distinguishing_tokens(label: str) -> set[str]:
+    """The words in a label that actually identify which arm it is."""
+    folded = unicodedata.normalize("NFKD", label or "").lower()
+    tokens = re.findall(r"[a-z0-9]+", folded)
+    return {
+        token for token in tokens
+        if token not in _GENERIC_LABEL_WORDS
+        and token not in _DOSE_UNITS
+        and not token.isdigit()
+    }
+
+
+def label_affinity(one: str, other: str) -> float:
+    """How well two arm labels describe the same arm (0..1), both ways.
+
+    A one-directional overlap is not enough: "nivolumab" is fully contained in
+    "nivolumab plus ipilimumab", so measuring only how much of the shorter label
+    is explained scores a monotherapy arm and a combination arm identically.
+    Scoring both directions and combining them (F1) makes the label that also
+    accounts for the OTHER side's words win.
+    """
+    left, right = distinguishing_tokens(one), distinguishing_tokens(other)
+    if not left or not right:
+        return 0.0
+    shared = len(left & right)
+    if not shared:
+        return 0.0
+    precision, recall = shared / len(right), shared / len(left)
+    return 2 * precision * recall / (precision + recall)
 
 
 class CohortLabel(BaseModel):

@@ -90,6 +90,56 @@ def numbers_agree(review_value: str, source_value: str, rel_tolerance: float) ->
     return all(abs(a - b) <= max(abs(a), abs(b), 1e-9) * rel_tolerance for a, b in pairs)
 
 
+# Which specificity direction each relation asserts. A verdict that answers the
+# two questions inconsistently has refuted itself: whichever half is wrong, the
+# pair cannot be believed, and a broader relation is NOT harmless — it is the
+# case where the review has narrowed or widened what the source actually says.
+_RELATION_SIDES = {
+    "same": {"neither"},
+    "review_broader": {"source"},      # review less specific ⇒ source says more
+    "source_broader": {"review"},      # source less specific ⇒ review says more
+    "different": {"unknown", "neither"},
+    "unknown": {"unknown"},
+}
+
+
+def direction_consistent(verdict: SemanticVerdict) -> tuple[bool, str]:
+    """Whether a verdict agrees with itself about direction and equivalence.
+
+    Deterministic, and independent of how the rationale happens to be worded —
+    parsing "the review is more specific" out of free text breaks on a negation,
+    a reordering, or a model that answers in another language.
+    """
+    relation = (verdict.relation or "unknown").strip().lower()
+    side = (verdict.more_specific_side or "").strip().lower()
+    allowed = _RELATION_SIDES.get(relation)
+    if allowed is None:
+        return False, f"relation {verdict.relation!r} is not one this audit defines"
+    # A verdict recorded before the direction contract did not state a side. It
+    # cannot be checked, and calling that a contradiction would retroactively
+    # convict every response in an existing recording. The equivalence checks
+    # below still apply: they need nothing the older contract did not provide.
+    if side and side not in allowed:
+        return False, (
+            f"the verdict says relation={relation} but names "
+            f"{side!r} as the more specific side; "
+            f"{relation} requires {' or '.join(sorted(allowed))}")
+    if relation == "same" and not verdict.equivalent:
+        return False, "the verdict says the values are the same but not equivalent"
+    if relation == "different" and verdict.equivalent:
+        return False, "the verdict says the values differ but are equivalent"
+    return True, ""
+
+
+def direction_stated(verdict: SemanticVerdict) -> bool:
+    """Whether this verdict answered the direction question at all.
+
+    Lets a control record "checked and consistent" separately from "there was
+    nothing to check", instead of presenting an unasked question as a pass.
+    """
+    return bool((verdict.more_specific_side or "").strip())
+
+
 def _polarity_differs(a: str, b: str) -> bool:
     return bool(_NEGATION.search(a or "")) != bool(_NEGATION.search(b or ""))
 

@@ -25,6 +25,10 @@ class CompareInput(BaseModel):
     column_header: str = ""
     source_quote: str = ""
     research_context: str = ""
+    # The verified parts of the source value. Passed alongside the verbatim
+    # string rather than instead of it: the audit still displays what the paper
+    # printed, and compares what the extraction actually read.
+    source_components: dict | None = None
 
 
 class CountInput(BaseModel):

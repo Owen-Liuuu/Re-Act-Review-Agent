@@ -12,6 +12,7 @@ Collector + audit against the benchmark answer key:
 """
 from __future__ import annotations
 
+import re
 from collections import Counter
 from dataclasses import asdict as dataclass_asdict, dataclass, field
 from typing import Any, Awaitable, Callable, Protocol
@@ -23,6 +24,9 @@ from react_review.tools.models import CompareInput
 from react_review.core.enums import AuditLabel
 from react_review.schemas.evidence import ReviewDataItem
 from react_review.normalize import parse_numeric
+from react_review.normalize.cohorts import distinguishing_tokens
+
+_NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?")
 
 # A "flag" (positive for discrepancy detection) is any non-clean, comparable verdict.
 FLAG_LABELS = {AuditLabel.MISMATCH.value, AuditLabel.UNIT_MISMATCH.value}
@@ -73,6 +77,11 @@ class RowResult:
     expected_semantic_relation: str = ""
     known_gap: str = ""
     review_required: bool = False
+    target_check: str = ""
+    target_reason: str = ""
+    assigned_arm_label: str = ""
+    source_components: dict[str, Any] = field(default_factory=dict)
+    component_status: str = ""
     semantic_relation: str = ""
     semantic_controls: dict[str, bool] = field(default_factory=dict)
     semantic: dict[str, Any] = field(default_factory=dict)
@@ -85,7 +94,8 @@ class _CollectorLike(Protocol):
 
 async def _compare(comparator, field_type: str, rv: Any, sv: Any, ru: str, su: str,
                    *, column_header: str = "", quote: str = "",
-                   research_context: str = "") -> MatchResult:
+                   research_context: str = "",
+                   source_components: Any = None) -> MatchResult:
     """Score through the TOOL, so the eval exercises the same path a run does.
 
     Calling ``compare_values`` directly here meant the eval could never reach the
@@ -96,7 +106,10 @@ async def _compare(comparator, field_type: str, rv: Any, sv: Any, ru: str, su: s
         field_type=field_type, review_value=rv, source_value=sv,
         review_unit=ru, source_unit=su, column_header=column_header,
         source_quote=quote,
-        research_context=research_context))
+        research_context=research_context,
+        source_components=(source_components.model_dump()
+                           if hasattr(source_components, "model_dump")
+                           else source_components)))
 
 
 def _as_bool(value: Any) -> bool:
@@ -118,8 +131,16 @@ async def run_rows(
     reference_for: Callable[[str], Any],
     research_context: str = "",
     comparator: Any = None,
+    targets: dict[str, Any] | None = None,
 ) -> list[RowResult]:
-    """Collect + audit each answer-key row into a scored RowResult."""
+    """Collect + audit each answer-key row into a scored RowResult.
+
+    ``targets`` carries the review-side facts the answer key does not hold — the
+    review's own column label and its own word for the cohort. Without them the
+    extractor was asked for a field_type and a slug, which is a materially
+    easier question than the pipeline actually poses and hid the wrong-arm
+    failures this eval is meant to measure.
+    """
     comparator = comparator or CompareValuesTool(tol)
     # Extraction accuracy is a separate question from audit equivalence.  It
     # must not create extra semantic judgements with no source quote, nor make
@@ -127,10 +148,22 @@ async def run_rows(
     extraction_comparator = CompareValuesTool(tol)
     results: list[RowResult] = []
     for r in rows:
+        # Only a target contract may add to the question the extractor is
+        # asked. Deriving a raw field name from the answer key's own column
+        # header would change the prompt of every benchmark that has one — and
+        # so invalidate its recorded replay — for a run that asked for no
+        # profile at all.
+        target = (targets or {}).get(r.get("audit_id", ""))
+        extra = {} if target is None else {
+            "raw_field_name": target.raw_field_name,
+            "cohort_label": target.cohort_label,
+            "timepoint": target.timepoint or "single",
+        }
         review = ReviewDataItem(
             study_id=r["study_id"], group=(r.get("group") or "-"),
             field_type=r["field_type"], value=(r.get("review_value") or None),
-            unit=(r.get("unit") or ""),
+            unit=(r.get("unit") or ""), column_header=(r.get("column_header") or ""),
+            **extra,
         )
         res = await collector.collect(
             review, reference_for(review.study_id), research_context=research_context)
@@ -140,7 +173,8 @@ async def run_rows(
             comparator, review.field_type, review.value, si.source_value,
             review.unit, si.source_unit,
             column_header=(r.get("column_header") or ""), quote=si.source_quote,
-            research_context=research_context)
+            research_context=research_context,
+            source_components=getattr(si, "source_components", None))
         predicted = match.label
         # Extraction is "correct" when the extracted value matches the human's
         # hand-labeled source value within tolerance.  A partial structured
@@ -187,6 +221,13 @@ async def run_rows(
             expected_semantic_relation=(r.get("expected_semantic_relation") or ""),
             known_gap=(r.get("known_gap") or ""),
             review_required=match.review_required,
+            source_components=(si.source_components.model_dump(mode="json")
+                               if getattr(si, "source_components", None) else {}),
+            component_status=(si.source_components.status
+                              if getattr(si, "source_components", None) else ""),
+            target_check=getattr(si, "target_check", ""),
+            target_reason=getattr(si, "target_reason", ""),
+            assigned_arm_label=getattr(si, "assigned_arm_label", ""),
             semantic_relation=match.semantic_relation,
             semantic_controls=dict(match.semantic_controls),
             semantic=_semantic_dict(match.semantic),
@@ -239,6 +280,21 @@ def score_rows(results: list[RowResult]) -> dict[str, Any]:
     n_found = sum(r.found for r in results)
     n_extract_ok = sum(r.extraction_correct for r in results)
 
+    # Target selection is counted separately from label accuracy, because those
+    # two answer different questions. A row that correctly REFUSES an
+    # unresolvable arm and a row that never located anything both come out as
+    # "not found"; only the first is the guard working. And a row that quietly
+    # returns another arm's number is the failure this phase exists to remove,
+    # so it gets a count of its own that has to stay at zero.
+    correct_target = wrong_target = 0
+    for r in results:
+        if not r.found:
+            continue
+        if _same_target(r.expected_source, r.extracted_source):
+            correct_target += 1
+        elif r.target_check in ("", "ok"):
+            wrong_target += 1
+
     return {
         "n": n,
         "label_accuracy": label_correct / n,
@@ -257,11 +313,45 @@ def score_rows(results: list[RowResult]) -> dict[str, Any]:
             "found_rate": n_found / n,
             "value_match_rate": n_extract_ok / n,
         },
+        "target": {
+            "correct_target_found_count": correct_target,
+            # Accepted a value that is not the arm's own, with nothing flagged.
+            "wrong_target_accepted_count": wrong_target,
+            "ambiguous_target_rejected_count": sum(
+                1 for r in results if not r.found and r.target_check
+                in {"ambiguous", "direction_inverted", "inconsistent"}),
+            "unreported_target_count": sum(
+                1 for r in results if not r.found
+                and r.target_check in {"not_reported", "unsupported"}),
+            "reassigned_count": sum(1 for r in results
+                                    if r.target_check == "reassigned"),
+            "checks": dict(Counter(r.target_check for r in results if r.target_check)),
+        },
         "outcomes": dict(Counter(r.outcome for r in results)),
         "confusion": {f"{e}->{p}": c
                       for (e, p), c in Counter(
                           (r.expected_label, r.predicted_label) for r in results).items()},
     }
+
+
+def _same_target(expected: str | None, got: str | None) -> bool:
+    """Whether an extracted value is the one the answer key records for this arm.
+
+    Numbers decide when both sides print one, so ``0.42`` and
+    ``0.42 (99.5% CI 0.31-0.57)`` count as the same arm's value reported at
+    different completeness — that is an interval-completeness question, not a
+    wrong-arm one. Text values compare on their distinguishing words, so
+    ``ipilimumab`` matches ``ipilimumab group`` while ``nivolumab plus
+    ipilimumab`` does not.
+    """
+    left, right = str(expected or ""), str(got or "")
+    if not left or not right:
+        return False
+    left_numbers = _NUMBER_RE.findall(left)
+    right_numbers = _NUMBER_RE.findall(right)
+    if left_numbers and right_numbers:
+        return left_numbers[0] == right_numbers[0]
+    return distinguishing_tokens(left) == distinguishing_tokens(right)
 
 
 def _pct(x: float | None) -> str:
@@ -286,6 +376,14 @@ def format_report(metrics: dict[str, Any]) -> str:
         f"  review visibility    : {_pct(s['review_visibility_rate'])}  "
         f"(visible={s['visible_discrepancies']} "
         f"escalated={s['escalated_not_comparable']})",
+        "-- target selection (which arm/comparison the value came from) --",
+        f"  wrong target accepted: {metrics['target']['wrong_target_accepted_count']}"
+        "   (must be 0)",
+        f"  correct target found : {metrics['target']['correct_target_found_count']}"
+        f"  reassigned={metrics['target']['reassigned_count']}",
+        f"  refused              : ambiguous="
+        f"{metrics['target']['ambiguous_target_rejected_count']} "
+        f"unreported={metrics['target']['unreported_target_count']}",
         "-- source extraction --",
         f"  found rate           : {_pct(e['found_rate'])}",
         f"  value match rate     : {_pct(e['value_match_rate'])}",

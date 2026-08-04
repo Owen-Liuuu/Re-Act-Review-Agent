@@ -17,6 +17,9 @@ Unit handling is a separate axis and takes precedence.
 """
 from __future__ import annotations
 
+from dataclasses import replace
+from typing import Any
+
 from react_review.core.enums import AuditLabel
 from react_review.normalize import normalize_unit, parse_numeric, units_differ
 from react_review.normalize.numeric import NumericValue
@@ -168,6 +171,28 @@ def _compare_components(
     return None
 
 
+def _with_components(numeric, components):
+    """Fill in parts the verbatim string does not carry — never overwrite one.
+
+    Only gaps are filled. If the printed value and the reported components
+    disagree, the printed value wins here: the extraction contract has already
+    refused that response, and this path must not become a second, quieter place
+    where a component can change a number.
+    """
+    if components is None:
+        return numeric
+    get = (components.get if isinstance(components, dict)
+           else lambda key: getattr(components, key, None))
+    if str(get("status") or "ok") == "protocol_error":
+        return numeric
+    updates = {name: get(name) for name in ("ci_level", "ci_lower", "ci_upper")
+               if hasattr(numeric, name) and get(name) is not None
+               and getattr(numeric, name) is None}
+    if not updates:
+        return numeric
+    return replace(numeric, **updates)
+
+
 def _compare_operator(
     rv: NumericValue, sv: NumericValue, abs_tolerance: float, rel_tolerance: float,
 ) -> tuple[AuditLabel, str] | None:
@@ -215,8 +240,18 @@ def compare_values(
     audit_id: str = "",
     study_id: str = "",
     group: str = "-",
+    source_components: Any = None,
 ) -> MatchResult:
-    """Compare a review value against a source value and label the outcome."""
+    """Compare a review value against a source value and label the outcome.
+
+    ``source_components`` are the parts of the source value as the extraction
+    reported and verified them. They matter because a verbatim string can be
+    less than what was read: a response that returns ``0.42`` from a sentence
+    printing ``0.42; 99.5% CI, 0.31 to 0.57`` used to reach here as a bare point
+    estimate, indistinguishable from a paper that states no interval — so the
+    review's own interval went unchecked. The verbatim value is still what gets
+    displayed; the components only supply parts it does not carry.
+    """
     base = dict(
         audit_id=audit_id,
         study_id=study_id,
@@ -254,7 +289,7 @@ def compare_values(
 
     # 2. Parse both sides (keeps mean + SD).
     rv = parse_numeric(review_value)
-    sv = parse_numeric(source_value)
+    sv = _with_components(parse_numeric(source_value), source_components)
     if rv.primary is None or sv.primary is None:
         return MatchResult(
             **base,

@@ -25,6 +25,32 @@ class CohortCount(BaseModel):
     quote: str
 
 
+class SourceNumericComponents(BaseModel):
+    """A source value's parts, as the extraction reported them.
+
+    The comparator used to see only the verbatim string, so a response that gave
+    the point estimate and dropped the interval was indistinguishable from a
+    source that prints no interval. Each part is recorded separately, together
+    with whether it was found in the supporting quote, so an incomplete
+    extraction stays visible instead of earning a complete-match verdict.
+    """
+
+    point_estimate: float | None = None
+    ci_level: float | None = None          # 95, 99.5 — the level, not the bounds
+    ci_lower: float | None = None
+    ci_upper: float | None = None
+    # component name -> whether it is anchored in ``source_quote``
+    anchored: dict[str, bool] = Field(default_factory=dict)
+    # Components the paper prints that the extraction did not return.
+    missing: list[str] = Field(default_factory=list)
+    status: str = "ok"          # ok | incomplete | protocol_error
+    reason: str = ""
+
+    @property
+    def complete_interval(self) -> bool:
+        return None not in (self.ci_level, self.ci_lower, self.ci_upper)
+
+
 class ReviewDataItem(BaseModel):
     """One value the review reports (a cell of its data-extraction table).
 
@@ -86,6 +112,9 @@ class SourceEvidenceItem(BaseModel):
     source_location_in_paper: str = ""
     value_origin: str = ""       # verbatim | derived_sum | unresolved
     derivation: str = ""
+    # Structured parts of the source value (Phase 7B). ``None`` means the
+    # extraction contract that produces them did not run for this item.
+    source_components: SourceNumericComponents | None = None
     cohort_counts: list[CohortCount] = Field(default_factory=list)
     aggregation_status: str = "not_applicable"  # not_applicable | derived | rejected | protocol_error
     aggregation_reason: str = ""
@@ -107,6 +136,12 @@ class SourceEvidenceItem(BaseModel):
     # ok | wrong_cohort | ambiguous — whether the paper's own cohort label could
     # be confirmed against the one asked for. "ambiguous" must reach a human.
     cohort_check: str = "ok"
+    # How the value was tied to the requested arm or comparison pair.
+    # ok | reassigned | ambiguous | not_reported | direction_inverted |
+    # inconsistent | unsupported | protocol_error.
+    target_check: str = "ok"
+    target_reason: str = ""
+    assigned_arm_label: str = ""    # the paper's own name for the assigned arm
     cohorts_seen: list[str] = Field(default_factory=list)
     reasons: list[ReasonRecord] = Field(default_factory=list)
 

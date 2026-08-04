@@ -1,0 +1,30 @@
+{
+  "asked_for": {
+    "field_type": "hazard_ratio",
+    "group": "nivolumab_plus_ipilimumab_vs_ipilimumab"
+  },
+  "expected_source_value": "0.42 (99.5% CI 0.31-0.57)",
+  "note": "recorded response: the quote prints \"0.42; 99.5% CI, 0.31 to 0.57\" but only the point estimate was returned",
+  "provenance": "verbatim raw model response recorded by the Phase 6E melanoma run (glm-4.5-flash); frozen here as a regression fixture",
+  "response": {
+    "cohort_counts": [],
+    "cohort_partition_complete": false,
+    "cohort_partition_mutually_exclusive": false,
+    "cohort_partition_quote": "",
+    "cohort_partition_reason": "",
+    "cohorts_seen": [
+      "nivolumab",
+      "nivolumab plus ipilimumab",
+      "ipilimumab"
+    ],
+    "explicit_total_reported": false,
+    "found": true,
+    "group_label_in_paper": "nivolumab plus ipilimumab",
+    "location": "Results",
+    "not_found_reason": "",
+    "quote": "Significantly longer progression-free survival was observed in the nivolumab-plus-ipilimumab group than in the ipilimumab group (hazard ratio for death or disease progression, 0.42; 99.5% CI, 0.31 to 0.57; P<0.001) and in the nivolumab group than in the ipilimumab group (hazard ratio, 0.57; 99.5% CI, 0.43 to 0.76; P<0.001).",
+    "source_field_name": "hazard ratio for death or disease progression",
+    "unit": "ratio",
+    "value": "0.42"
+  }
+}

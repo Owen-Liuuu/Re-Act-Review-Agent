@@ -13,6 +13,16 @@ class SemanticVerdict(BaseModel):
     """What the model said, and enough provenance to dispute it later."""
 
     relation: str = "unknown"      # same | review_broader | source_broader | different | unknown
+    # Which side says MORE. Asked for separately from ``relation`` because a
+    # model that names the direction correctly in its rationale can still emit
+    # the opposite label; two structured answers can be checked against each
+    # other, a label and a sentence cannot.
+    #
+    # Empty means NOT STATED — a verdict recorded before this contract existed.
+    # That is deliberately distinct from an explicit "unknown": a model that was
+    # asked and could not tell has answered, and its answer must agree with the
+    # relation it also gave.
+    more_specific_side: str = ""   # "" | review | source | neither | unknown
     equivalent: bool = False
     confidence: float = 0.0
     rationale: str = ""

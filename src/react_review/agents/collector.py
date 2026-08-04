@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from react_review.core.enums import CollectionOutcome, ReflectionDecision
 from react_review.dkb import KnowledgeBase, evidence_contradicts
-from react_review.normalize.cohorts import CohortRegistry
+from react_review.normalize.cohorts import CohortRegistry, parse_comparison
 from react_review.orchestrator.reflection import ReflectionDecider, ReflectionSignals
 from react_review.schemas.reason import ReasonRecord
 from react_review.study_match import is_resolvable
@@ -26,6 +26,7 @@ from react_review.schemas.agent import AgentRun, StepRecord
 from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
 from react_review.steps.paper_verification.schemas import ReferenceEntry
 from react_review.tools.extract_source import ExtractSourceValueInput, SourceValueResult
+from react_review.tools.extraction_profile import DEFAULT_PROFILE
 from react_review.tools.registry import ToolRegistry
 from react_review.tools.search import ResolveReferenceInput
 
@@ -79,6 +80,26 @@ def _reasons_for(result: SourceValueResult, outcome: CollectionOutcome) -> list[
         reasons.append(ReasonRecord(
             code="source_quote_unanchored", source="deterministic",
             stage="collector", message=result.evidence_reason))
+    if result.target_check == "reassigned" and result.target_reason:
+        # The wrong-arm selection this contract exists to catch, caught. Kept as
+        # a visible record rather than silently corrected: a reader must be able
+        # to see that the model's own answer was not the one used.
+        reasons.append(ReasonRecord(
+            code="target_reassigned", source="deterministic", stage="collector",
+            message=result.target_reason,
+            detail={"assigned_arm": result.assigned_arm_label}))
+    elif result.target_check not in {"ok", ""} and result.target_reason:
+        reasons.append(ReasonRecord(
+            code=f"target_{result.target_check}", source="deterministic",
+            stage="collector", message=result.target_reason))
+    if (result.source_components is not None
+            and result.source_components.status == "incomplete"):
+        # The interval was in the evidence and did not come out. Recorded so the
+        # partial answer cannot be read as a complete one.
+        reasons.append(ReasonRecord(
+            code="incomplete_source_components", source="deterministic",
+            stage="collector", message=result.source_components.reason,
+            detail={"missing": list(result.source_components.missing)}))
     if result.cohort_check == "ambiguous" and result.cohort_reason:
         # The value is kept, but nobody has confirmed which arm it belongs to.
         reasons.append(ReasonRecord(code="cohort_ambiguous", source="deterministic",
@@ -101,6 +122,7 @@ class Collector:
         cohorts: CohortRegistry | None = None,
         decider: ReflectionDecider | None = None,
         max_attempts: int = 3,
+        extraction_profile: str = DEFAULT_PROFILE,
     ) -> None:
         self._fetch = catalogue.get("fetch_fulltext")
         self._extract = catalogue.get("extract_source_value")
@@ -108,6 +130,7 @@ class Collector:
         self._resolve = catalogue.get("resolve_reference") if "resolve_reference" in catalogue else None
         self._kb = knowledge
         self._cohorts = cohorts
+        self._extraction_profile = extraction_profile
         self._max_attempts = max(1, max_attempts)
         self._decider = decider or ReflectionDecider(max_attempts=self._max_attempts)
 
@@ -214,6 +237,11 @@ class Collector:
                 cohort_display=review_item.cohort_label,
                 cohorts=self._cohort_variants(),
                 attempt=attempt,
+                extraction_profile=self._extraction_profile,
+                # A claim about two arms is carried as a pair, not as one name:
+                # "A vs B" handed over as a single cohort string is what let the
+                # extractor answer with whichever hazard ratio it met first.
+                comparison=parse_comparison(review_item.group),
             ))
             steps.append(StepRecord(
                 index=len(steps),
@@ -232,7 +260,14 @@ class Collector:
             # Deterministic rejection will not improve by repeating the same
             # extraction.  Preserve it and escalate without burning attempts.
             deterministic_rejection = (
-                result.wrong_group_rejected or result.aggregation_status == "rejected")
+                result.wrong_group_rejected or result.aggregation_status == "rejected"
+                # An unresolvable target does not become resolvable by asking
+                # the same question again; the arms the paper reports are what
+                # they are. Retrying would only spend attempts to re-derive the
+                # same refusal.
+                or result.target_check in {"ambiguous", "not_reported",
+                                           "direction_inverted", "unsupported",
+                                           "inconsistent"})
             if deterministic_rejection:
                 decision = ReflectionDecision.ESCALATE
             if result.found or deterministic_rejection or decision != ReflectionDecision.RETRY:
@@ -283,6 +318,7 @@ class Collector:
             source_location_in_paper=result.location,
             value_origin=result.value_origin,
             derivation=result.derivation,
+            source_components=result.source_components,
             cohort_counts=result.cohort_counts,
             aggregation_status=result.aggregation_status,
             aggregation_reason=result.aggregation_reason,
@@ -293,6 +329,9 @@ class Collector:
             concept_mismatch_reason=mismatch_reason,
             cohort_check=result.cohort_check,
             cohorts_seen=result.cohorts_seen,
+            target_check=result.target_check,
+            target_reason=result.target_reason,
+            assigned_arm_label=result.assigned_arm_label,
             reasons=_reasons_for(result, outcome),
             **(provenance or {}),
         )

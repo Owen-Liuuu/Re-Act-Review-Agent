@@ -1,0 +1,30 @@
+{
+  "asked_for": {
+    "field_type": "progression_free_survival",
+    "group": "nivolumab_plus_placebo"
+  },
+  "expected_source_value": "6.9 (95% CI 4.3-9.5)",
+  "note": "recorded response: asked for the nivolumab-monotherapy arm PFS, returned the combination arm value; the quote names all three arms",
+  "provenance": "verbatim raw model response recorded by the Phase 6E melanoma run (glm-4.5-flash); frozen here as a regression fixture",
+  "response": {
+    "cohort_counts": [],
+    "cohort_partition_complete": false,
+    "cohort_partition_mutually_exclusive": false,
+    "cohort_partition_quote": "",
+    "cohort_partition_reason": "",
+    "cohorts_seen": [
+      "nivolumab",
+      "nivolumab plus ipilimumab",
+      "ipilimumab"
+    ],
+    "explicit_total_reported": false,
+    "found": true,
+    "group_label_in_paper": "nivolumab plus ipilimumab",
+    "location": "Results",
+    "not_found_reason": "",
+    "quote": "The median progression-free survival was 6.9 months (95% confidence interval [CI], 4.3 to 9.5) in the nivolumab group, 11.5 months (95% CI, 8.9 to 16.7) in the nivolumab-plus-ipilimumab group, and 2.9 months (95% CI, 2.8 to 3.4) in the ipilimumab group.",
+    "source_field_name": "median progression-free survival",
+    "unit": "months",
+    "value": "11.5 months (95% confidence interval [CI], 8.9 to 16.7)"
+  }
+}

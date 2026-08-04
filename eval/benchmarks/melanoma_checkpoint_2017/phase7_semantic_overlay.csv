@@ -1,0 +1,5 @@
+audit_id,expected_semantic_relation,expected_more_specific_side,expected_review_required,reason
+MA001,same,neither,false,study-design wording is equivalent
+MA003,source_broader,review,true,review adds drug-dose specificity
+MA005,source_broader,review,true,review adds dose and placebo specificity
+MA007,source_broader,review,true,review adds dose and placebo specificity

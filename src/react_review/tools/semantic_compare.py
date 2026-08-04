@@ -21,7 +21,26 @@ from react_review.schemas.semantic import SemanticVerdict
 
 logger = structlog.get_logger(__name__)
 
+#: The legacy contract. Its bytes and its version string are frozen: the
+#: semantic cache is keyed on both, so a recorded judgement stays reachable only
+#: while they do not move. A new contract is a new PROFILE, never an edit.
 PROMPT_VERSION = "semantic-v1"
+SPECIFICITY_VERSION = "semantic-v2-specificity"
+PROMPT_VERSIONS = {
+    "semantic_v1": PROMPT_VERSION,
+    "semantic_v2_specificity": SPECIFICITY_VERSION,
+}
+DEFAULT_SEMANTIC_PROFILE = "semantic_v1"
+
+
+def semantic_prompt_version(profile: str) -> str:
+    """The cache-key version string for a semantic profile."""
+    try:
+        return PROMPT_VERSIONS[profile or DEFAULT_SEMANTIC_PROFILE]
+    except KeyError:
+        raise ValueError(
+            f"unknown semantic profile {profile!r} "
+            f"(known: {', '.join(sorted(PROMPT_VERSIONS))})") from None
 
 _PROMPT = """You are auditing a systematic review against its source papers.
 
@@ -45,12 +64,12 @@ Quoted from the source paper: "{quote}"
 - source_broader  — the source is less specific than the review
 - different       — not the same thing
 - unknown         — you cannot tell from what you were given
-
+{specificity_rules}
 Judge the MEANING in this field's context. Do not decide by string similarity,
 and do not treat two different numbers as the same thing.
 
 Return one JSON object, nothing else:
-{{"relation": "same|review_broader|source_broader|different|unknown",
+{{"relation": "same|review_broader|source_broader|different|unknown",{specificity_output}
   "equivalent": true or false,
   "confidence": 0.0,
   "rationale": "one sentence, why",
@@ -58,6 +77,18 @@ Return one JSON object, nothing else:
   "source_normalized": "the source value in plain words",
   "evidence_span": "the EXACT substring of the quote above that you relied on — copy it verbatim, or leave empty if the quote does not support it"}}
 """
+
+
+_SPECIFICITY_RULES = """
+Answer one more thing, separately: WHICH SIDE SAYS MORE — which of the two is
+the more specific statement. It must agree with the relation you chose, because
+they are two readings of the same fact: review_broader means the SOURCE is the
+more specific side, source_broader means the REVIEW is, and "same" means
+neither. Decide it from the two values, not from which one is longer.
+"""
+
+_SPECIFICITY_OUTPUT = """
+  "more_specific_side": "review|source|neither|unknown","""
 
 
 def cache_key(payload: dict) -> str:
@@ -78,9 +109,12 @@ def cache_key(payload: dict) -> str:
 class SemanticCompareTool:
     """Produce a :class:`SemanticVerdict` for one text pair."""
 
-    def __init__(self, backend: LLMBackend, *, seed: int = 42) -> None:
+    def __init__(self, backend: LLMBackend, *, seed: int = 42,
+                 profile: str = DEFAULT_SEMANTIC_PROFILE) -> None:
         self._backend = backend
         self._seed = seed
+        self._profile = profile
+        self._version = semantic_prompt_version(profile)
 
     @property
     def model_id(self) -> str:
@@ -91,12 +125,15 @@ class SemanticCompareTool:
         review_value: str, source_value: str, source_quote: str = "",
     ) -> SemanticVerdict:
         field = column_header or field_type or "(unnamed field)"
+        specificity = self._profile == "semantic_v2_specificity"
         prompt = _PROMPT.format(
             field=field, context=research_context or "a systematic review",
             review_value=review_value, source_value=source_value,
-            quote=source_quote or "(no quote was captured)")
+            quote=source_quote or "(no quote was captured)",
+            specificity_rules=(_SPECIFICITY_RULES if specificity else ""),
+            specificity_output=(_SPECIFICITY_OUTPUT if specificity else ""))
         provenance = {
-            "model_id": self._backend.model_id, "prompt_version": PROMPT_VERSION,
+            "model_id": self._backend.model_id, "prompt_version": self._version,
             "seed": self._seed,
             "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16],
         }
@@ -110,6 +147,10 @@ class SemanticCompareTool:
                                    provenance={**provenance, "error": str(exc)[:200]})
         return SemanticVerdict(
             relation=str(data.get("relation") or "unknown").strip().lower(),
+            # Empty when the contract did not ask: a verdict recorded under the
+            # older prompt has not answered this, which is not the same as
+            # answering "unknown".
+            more_specific_side=str(data.get("more_specific_side") or "").strip().lower(),
             equivalent=bool(data.get("equivalent")),
             confidence=float(data.get("confidence") or 0.0),
             rationale=str(data.get("rationale") or "").strip(),

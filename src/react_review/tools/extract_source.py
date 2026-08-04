@@ -14,7 +14,8 @@ import structlog
 from pydantic import BaseModel, Field
 
 from react_review.llm.base import LLMBackend, parse_llm_response
-from react_review.schemas.evidence import CohortCount
+from react_review.normalize.cohorts import ComparisonTarget
+from react_review.schemas.evidence import CohortCount, SourceNumericComponents
 from react_review.steps.data_extraction.schemas import PaperDocument
 from react_review.tools.base import Tool, ToolStage
 from react_review.tools.extraction_cache import (
@@ -22,11 +23,31 @@ from react_review.tools.extraction_cache import (
     ExtractionCacheMiss,
     extraction_cache_key,
 )
+from react_review.tools.extraction_profile import (
+    DEFAULT_PROFILE,
+    LEGACY_V3,
+    prompt_profile,
+    prompt_version,
+)
+from react_review.tools.value_components import (
+    PROTOCOL_ERROR,
+    verify_components,
+)
+from react_review.tools.target_assignment import (
+    ArmEvidence,
+    ComparisonEvidence,
+    TargetAssignment,
+    parse_arms,
+    parse_comparisons,
+    resolve_arm_target,
+    resolve_comparison_target,
+)
 
 logger = structlog.get_logger(__name__)
 
 _MAX_TEXT = 20000
-PROMPT_VERSION = "extract-source-v3-scoped-cohort-counts"
+#: The legacy contract's version string, kept importable under its old name.
+PROMPT_VERSION = LEGACY_V3
 
 _SAMPLE_SIZE_RULES = """- SPECIAL CASE — whole-study sample size: if the paper explicitly prints the
   total, copy it and set ``explicit_total_reported=true``. If it prints only arm
@@ -66,7 +87,7 @@ Find the value of **{concept}** for the **{group_desc}**.
 (The review's column was labelled "{raw_label}"; internal field_type: {field_type}.)
 The paper may name this field using: {concept_variants}
 Expected unit (hint, may differ in the paper): "{unit_hint}"
-
+{targeted_target}
 ## RULES
 - PREFER the data table (e.g. Table 1) over prose. A narrative sentence like
   "Regarding diabetic children, the mean age was X" reports only ONE cohort —
@@ -91,7 +112,7 @@ Expected unit (hint, may differ in the paper): "{unit_hint}"
   contain the returned value. Never paraphrase, insert ellipses, or construct a
   supporting sentence. If no such quote exists, return found=false.
 {sample_size_rules}
-{retry_rules}
+{retry_rules}{targeted_rules}
 
 ## PAPER TEXT
 {paper_text}
@@ -109,8 +130,61 @@ Expected unit (hint, may differ in the paper): "{unit_hint}"
   "cohort_partition_mutually_exclusive": false,
   "cohort_partition_quote": "verbatim text establishing the partition, or empty",
   "cohort_partition_reason": "why coverage/exclusivity is clear or unclear",
-  "not_found_reason": "when found=false, why — otherwise empty"}}
+  "not_found_reason": "when found=false, why — otherwise empty"{targeted_outputs}}}
 """
+
+_TARGETED_ARM = """
+The requested target is ONE arm. Do not decide which of the paper's arms it is —
+list them all below and let the audit make that assignment."""
+
+_TARGETED_COMPARISON = """
+The requested target is the COMPARISON **{left}** versus **{right}** — one value
+about the PAIR (a hazard ratio, a difference), not a value for either arm alone.
+The direction is part of the claim: the reverse comparison is a different
+number. List every comparison the paper reports and let the audit assign it."""
+
+_TARGETED_RULES = """
+- Do NOT pick the target arm yourself. List EVERY arm the paper reports FOR THIS
+  FIELD in ``arms_reported``: the paper's own label, that arm's value and unit,
+  and one contiguous verbatim quote that names that arm and contains that value.
+- If the paper reports comparisons BETWEEN arms for this field (hazard ratio,
+  difference, ratio), list each one in ``comparisons_reported`` with both side
+  labels in the paper's own words, in the order the paper states them, and one
+  quote that names BOTH sides and contains the value.
+- Every enumerated entry needs its OWN quote. Never support one arm with another
+  arm's sentence, and never merge two arms into one entry.
+- Fill ``value``/``quote`` with your own best answer for the requested target as
+  well. It is checked against the enumeration, and the enumeration decides.
+- When an entry's value carries a confidence interval, give its parts in that
+  entry's ``value_components``: the point estimate, the confidence LEVEL as a
+  number (95, 99.5), and the lower and upper bounds. Copy them from the quote —
+  never convert, round, or supply a level the paper does not print. Leave a part
+  out only when the quote does not state it; a returned part that the quote does
+  not print is a failed extraction, and so is dropping an interval the quote
+  does state."""
+
+# Substituted INTO the formatted prompt, so its braces are literal: doubling
+# them here would show the model malformed JSON.
+_TARGETED_OUTPUTS = """,
+  "arms_reported": [{"label": "the paper's own name for this arm",
+                     "value": "that arm's verbatim value", "unit": "verbatim unit",
+                     "quote": "verbatim text naming this arm and its value",
+                     "value_components": {"point_estimate": 0, "ci_level": 95,
+                                          "ci_lower": 0, "ci_upper": 0}}],
+  "comparisons_reported": [{"left_label": "paper's name for the first side",
+                            "right_label": "paper's name for the second side",
+                            "value": "verbatim value", "unit": "verbatim unit",
+                            "quote": "verbatim text naming both sides and the value",
+                            "value_components": {"point_estimate": 0, "ci_level": 95,
+                                                 "ci_lower": 0, "ci_upper": 0}}]"""
+
+
+def _targeted_target(payload: "ExtractSourceValueInput") -> str:
+    """The extra TARGET paragraph the targeted contract adds, if any."""
+    if payload.comparison is not None:
+        return _TARGETED_COMPARISON.format(left=payload.comparison.left,
+                                           right=payload.comparison.right)
+    return _TARGETED_ARM
 
 
 def cohort_description(group: str, *, display: str = "",
@@ -202,6 +276,14 @@ class ExtractSourceValueInput(BaseModel):
     cohort_display: str = ""
     cohorts: dict[str, list[str]] = {}
     attempt: int = 0
+    # Which prompt contract this request runs under. Carried explicitly so a
+    # frozen benchmark cannot drift onto a new prompt by accident; see
+    # :mod:`react_review.tools.extraction_profile`.
+    extraction_profile: str = DEFAULT_PROFILE
+    # A claim about TWO arms cannot be expressed as one cohort name. Carrying it
+    # as a structured pair is what lets the request say WHICH hazard ratio, and
+    # what lets the assignment check the direction.
+    comparison: ComparisonTarget | None = None
 
 
 class SourceValueResult(BaseModel):
@@ -226,6 +308,18 @@ class SourceValueResult(BaseModel):
     cohort_counts: list[CohortCount] = Field(default_factory=list)
     aggregation_status: str = "not_applicable"  # also derived | rejected | protocol_error
     aggregation_reason: str = ""
+    # Which arm/comparison this value was deterministically assigned to, and how
+    # that went. ok | reassigned | ambiguous | not_reported | direction_inverted
+    # | inconsistent | unsupported | protocol_error.
+    target_check: str = "ok"
+    target_reason: str = ""
+    assigned_arm_label: str = ""
+    target_margin: float = 0.0
+    arms_reported: list[ArmEvidence] = Field(default_factory=list)
+    comparisons_reported: list[ComparisonEvidence] = Field(default_factory=list)
+    # The parts of the returned value, verified against its own quote. ``None``
+    # means the contract that produces them did not run for this request.
+    source_components: SourceNumericComponents | None = None
     evidence_check: str = "ok"  # ok | protocol_error
     evidence_reason: str = ""
     error: str = ""
@@ -261,16 +355,26 @@ class ExtractSourceValueTool(Tool):
         # the review's RAW column label — so an UNRESOLVED field (no field_type)
         # is still extractable: the raw name itself says what to look for.
         target = payload.concept or payload.raw_field_name or payload.field_type
+        targeted = prompt_profile(payload) == "targeted_v4"
         prompt = _PROMPT.format(
+            targeted_target=(_targeted_target(payload) if targeted else ""),
+            targeted_rules=(_TARGETED_RULES if targeted else ""),
+            targeted_outputs=(_TARGETED_OUTPUTS if targeted else ""),
             context=payload.research_context or "a systematic review",
             concept=target,
             raw_label=payload.raw_field_name or target,
             field_type=payload.field_type or "(unresolved)",
             concept_variants=(", ".join(payload.concept_variants)
                               or raw_or_target(payload.raw_field_name, target)),
-            group_desc=cohort_description(
-                payload.group, display=payload.cohort_display,
-                variants=payload.cohorts.get(payload.group, [])),
+            group_desc=(
+                # A comparison is not a cohort. Describing "a_vs_b" as a cohort
+                # asked the paper for an arm by that name, which no paper has.
+                f'comparison of "{payload.comparison.left}" versus '
+                f'"{payload.comparison.right}"'
+                if targeted and payload.comparison is not None else
+                cohort_description(
+                    payload.group, display=payload.cohort_display,
+                    variants=payload.cohorts.get(payload.group, []))),
             unit_hint=payload.unit_hint,
             sample_size_rules=(
                 _SAMPLE_SIZE_RULES if payload.field_type == "sample_size" and
@@ -292,8 +396,9 @@ class ExtractSourceValueTool(Tool):
                     or (self._cache.model_id if self._cache is not None else "")
                     or "replay")
         key = extraction_cache_key(
-            model_id=model_id, prompt_version=PROMPT_VERSION, prompt=prompt,
-            attempt=payload.attempt)
+            model_id=model_id,
+            prompt_version=prompt_version(prompt_profile(payload)),
+            prompt=prompt, attempt=payload.attempt)
         try:
             # record is resumable: reuse a response already persisted for this
             # exact prompt/attempt, and call the model only for a cache miss.
@@ -323,8 +428,116 @@ class ExtractSourceValueTool(Tool):
         return _finalize_result(data, payload)
 
 
+def _targeted_applies(payload: ExtractSourceValueInput) -> bool:
+    """Whether this request has an arm-level target to assign at all.
+
+    A study-level row ("-") is about the whole paper: there is no arm to pick,
+    and forcing an assignment would refuse rows that were never at risk.
+    """
+    if prompt_profile(payload) != "targeted_v4":
+        return False
+    if payload.comparison is not None:
+        return True
+    group = (payload.group or "").strip().lower()
+    return bool(group and group not in {"-", "all"} and payload.cohorts)
+
+
+def _review_labels(payload: ExtractSourceValueInput) -> dict[str, str]:
+    """Each cohort key mapped to the review's OWN words for that cohort."""
+    labels = {key: (variants[0] if variants else key)
+              for key, variants in payload.cohorts.items()}
+    if payload.cohort_display and payload.group:
+        labels[payload.group] = payload.cohort_display
+    return labels
+
+
+def _assign_target(data: dict, payload: ExtractSourceValueInput
+                   ) -> tuple[TargetAssignment, list[ArmEvidence],
+                              list[ComparisonEvidence]]:
+    """Let deterministic code decide which arm's value was asked for."""
+    paper_text = payload.document.full_text or ""
+    arms, arm_error = parse_arms(data.get("arms_reported"), paper_text)
+    comparisons, comparison_error = parse_comparisons(
+        data.get("comparisons_reported"), paper_text)
+    error = arm_error or comparison_error
+    if error:
+        return (TargetAssignment(
+            status="protocol_error",
+            reason=f"the enumerated evidence is not usable: {error}"),
+            arms, comparisons)
+
+    labels = _review_labels(payload)
+    if payload.comparison is not None:
+        return (resolve_comparison_target(
+            comparison=payload.comparison, review_labels=labels,
+            comparisons=comparisons), arms, comparisons)
+    return (resolve_arm_target(target_key=payload.group, review_labels=labels,
+                               arms=arms), arms, comparisons)
+
+
 def _finalize_result(data: dict, payload: ExtractSourceValueInput) -> SourceValueResult:
     """Validate raw model JSON and perform the one permitted derivation."""
+    arms_reported: list[ArmEvidence] = []
+    comparisons_reported: list[ComparisonEvidence] = []
+    target_check, target_reason, assigned_label, target_margin = "ok", "", "", 0.0
+    source_components: SourceNumericComponents | None = None
+
+    if _targeted_applies(payload):
+        assignment, arms_reported, comparisons_reported = _assign_target(data, payload)
+        if not assignment.ok:
+            logger.info("extract_source_target_unresolved", status=assignment.status,
+                        group=payload.group, field=payload.field_type)
+            return SourceValueResult(
+                found=False, value=None,
+                source_field_name=str(data.get("source_field_name") or "").strip(),
+                location=str(data.get("location") or "").strip(),
+                not_found_reason=assignment.reason,
+                cohorts_seen=[a.label for a in arms_reported],
+                value_origin="unresolved",
+                target_check=assignment.status, target_reason=assignment.reason,
+                assigned_arm_label=assignment.paper_label,
+                target_margin=round(assignment.margin, 4),
+                arms_reported=arms_reported,
+                comparisons_reported=comparisons_reported)
+        # The enumeration decides, not the model's own pick. When they differ
+        # the value is still taken from the assignment — that IS the fix — but
+        # the disagreement is recorded, because it is the wrong-arm selection
+        # this contract exists to catch, caught.
+        # The parts of the assigned value, checked against its own quote. An
+        # interval the quote states but the response dropped keeps the result
+        # partial: a point estimate alone must not read as a complete answer.
+        components, component_status, component_reason = verify_components(
+            assignment.components, value=assignment.value or "",
+            quote=assignment.quote, rival_values=assignment.rival_values)
+        if component_status == PROTOCOL_ERROR:
+            return SourceValueResult(
+                found=False, value=None,
+                source_field_name=str(data.get("source_field_name") or "").strip(),
+                location=str(data.get("location") or "").strip(),
+                quote=assignment.quote,
+                group_label_in_paper=assignment.paper_label,
+                not_found_reason=component_reason,
+                value_origin="unresolved",
+                target_check="ok", assigned_arm_label=assignment.paper_label,
+                arms_reported=arms_reported,
+                comparisons_reported=comparisons_reported,
+                source_components=components,
+                evidence_check="protocol_error", evidence_reason=component_reason)
+        source_components = components
+        assigned_label = assignment.paper_label
+        target_margin = round(assignment.margin, 4)
+        own_pick = str(data.get("value") or "").strip()
+        if own_pick and not _same_value(own_pick, assignment.value or ""):
+            target_check = "reassigned"
+            target_reason = (
+                f"the extraction offered {own_pick!r} for this target; the "
+                f"paper's own enumeration assigns {assignment.value!r} to "
+                f"{assignment.paper_label!r}")
+        data = {**data, "found": True, "value": assignment.value,
+                "unit": assignment.unit or data.get("unit") or "",
+                "quote": assignment.quote,
+                "group_label_in_paper": assignment.paper_label}
+
     value = data.get("value")
     if isinstance(value, str) and value.strip().lower() in ("", "null", "none", "n/a"):
         value = None
@@ -397,8 +610,12 @@ def _finalize_result(data: dict, payload: ExtractSourceValueInput) -> SourceValu
                         + aggregation_reason)
 
     # Guard: check the paper's OWN cohort label and quote against the review.
+    # Skipped once a target assignment has run: that assignment matched every
+    # arm at once against every arm the paper reports, which is strictly more
+    # than this pairwise guard can establish. Re-running it here would only add
+    # an "ambiguous" flag to values whose arm is already settled.
     verdict, reason = "ok", ""
-    if found:
+    if found and not assigned_label:
         verdict, reason = cohort_conflicts(payload.group, label_in_paper,
                                            cohorts=payload.cohorts)
         if verdict != "wrong_cohort":
@@ -415,7 +632,8 @@ def _finalize_result(data: dict, payload: ExtractSourceValueInput) -> SourceValu
             wrong_group_rejected=True, cohort_check=verdict, cohort_reason=reason,
             not_found_reason=reason, cohort_counts=counts,
             value_origin="unresolved", aggregation_status=aggregation_status,
-            aggregation_reason=aggregation_reason)
+            aggregation_reason=aggregation_reason,
+            arms_reported=arms_reported, comparisons_reported=comparisons_reported)
 
     # Every direct value must be supported by source text that can be found in
     # the document. Derived totals were already checked count-by-count above;
@@ -450,7 +668,11 @@ def _finalize_result(data: dict, payload: ExtractSourceValueInput) -> SourceValu
             value_origin="unresolved", cohort_counts=counts,
             aggregation_status=aggregation_status,
             aggregation_reason=aggregation_reason,
-            evidence_check="protocol_error", evidence_reason=evidence_reason)
+            evidence_check="protocol_error", evidence_reason=evidence_reason,
+            target_check=target_check, target_reason=target_reason,
+            assigned_arm_label=assigned_label, target_margin=target_margin,
+            arms_reported=arms_reported, comparisons_reported=comparisons_reported,
+            source_components=source_components)
 
     model_not_found = str(data.get("not_found_reason") or "").strip()
     return SourceValueResult(
@@ -468,11 +690,30 @@ def _finalize_result(data: dict, payload: ExtractSourceValueInput) -> SourceValu
         value_origin=value_origin, derivation=derivation,
         cohort_counts=counts, aggregation_status=aggregation_status,
         aggregation_reason=aggregation_reason,
+        target_check=target_check, target_reason=target_reason,
+        assigned_arm_label=assigned_label, target_margin=target_margin,
+        arms_reported=arms_reported, comparisons_reported=comparisons_reported,
+        source_components=source_components,
     )
 
 
 def raw_or_target(raw_label: str, target: str) -> str:
     return raw_label or target
+
+
+def _same_value(one: str, other: str) -> bool:
+    """Whether two printed values state the same thing.
+
+    Compared on the numbers when both carry numbers — "0.42" and
+    "0.42 (99.5% CI, 0.31 to 0.57)" are the same estimate reported at different
+    completeness, and calling that a disagreement would flag every partial
+    answer as a wrong-arm selection.
+    """
+    left = re.findall(r"-?\d+(?:\.\d+)?", one or "")
+    right = re.findall(r"-?\d+(?:\.\d+)?", other or "")
+    if left and right:
+        return left[0] == right[0]
+    return _normalise(one) == _normalise(other)
 
 
 def _paper_excerpt(text: str, *, target: str, raw_label: str,

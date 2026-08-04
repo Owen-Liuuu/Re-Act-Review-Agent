@@ -23,7 +23,11 @@ from react_review.core.enums import AuditLabel
 from react_review.schemas.audit import MatchResult
 from react_review.tools.base import Tool, ToolStage
 from react_review.tools.models import CompareInput
-from react_review.tools.semantic_compare import PROMPT_VERSION, cache_key
+from react_review.tools.semantic_compare import (
+    DEFAULT_SEMANTIC_PROFILE,
+    cache_key,
+    semantic_prompt_version,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -43,12 +47,17 @@ class CompareValuesTool(Tool):
         semantic_mode: str = "off",          # off | cache-only | on
         semantic_cache: SemanticCache | None = None,
         min_confidence: float = DEFAULT_MIN_CONFIDENCE,
+        semantic_profile: str = DEFAULT_SEMANTIC_PROFILE,
     ) -> None:
         self._tol = tolerance
         self._semantic = semantic
         self._mode = semantic_mode
         self._cache = semantic_cache
         self._min_confidence = min_confidence
+        # The prompt contract is part of the question, so it is part of the key:
+        # a judgement recorded under one contract must not be served to a run
+        # asking under another.
+        self._semantic_version = semantic_prompt_version(semantic_profile)
 
     async def run(self, payload: CompareInput) -> MatchResult:
         ft = payload.field_type
@@ -62,6 +71,7 @@ class CompareValuesTool(Tool):
             sd_rel_tolerance=self._tol.sd_rel_tolerance(ft),
             p_value_abs_tolerance=self._tol.p_value_abs_tolerance(ft),
             null_value=self._tol.null_value(ft),
+            source_components=payload.source_components,
         )
         if not self._should_escalate(payload, result):
             return result
@@ -86,7 +96,7 @@ class CompareValuesTool(Tool):
         model_id = (getattr(self._semantic, "model_id", "")
                     or getattr(self._cache, "model_id", "") or "cache")
         key = cache_key({
-            "model_id": model_id, "prompt_version": PROMPT_VERSION,
+            "model_id": model_id, "prompt_version": self._semantic_version,
             "field_type": payload.field_type, "column_header": payload.column_header,
             "research_context": payload.research_context,
             "review_value": review_value, "review_unit": payload.review_unit,

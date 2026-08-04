@@ -1,0 +1,46 @@
+{
+  "asked_for": {
+    "field_type": "treatment_arm",
+    "group": "ipilimumab_plus_placebo"
+  },
+  "expected_source_value": "ipilimumab group",
+  "note": "recorded response: arm counts are right but the display quote misstates the nivolumab arm as 315; the paper prints 316",
+  "provenance": "verbatim raw model response recorded by the Phase 6E melanoma run (glm-4.5-flash); frozen here as a regression fixture",
+  "response": {
+    "cohort_counts": [
+      {
+        "count": 316,
+        "label": "Nivolumab",
+        "quote": "316 patients were assigned to the nivolumab group"
+      },
+      {
+        "count": 314,
+        "label": "Nivolumab plus Ipilimumab",
+        "quote": "314 to the nivolumab-plus-ipilimumab group"
+      },
+      {
+        "count": 315,
+        "label": "Ipilimumab",
+        "quote": "315 to the ipilimumab group"
+      }
+    ],
+    "cohort_partition_complete": true,
+    "cohort_partition_mutually_exclusive": true,
+    "cohort_partition_quote": "We assigned, in a 1:1:1 ratio, 945 previously untreated patients with unresectable stage III or IV melanoma to nivolumab alone, nivolumab plus ipilimumab, or ipilimumab alone.",
+    "cohort_partition_reason": "The text explicitly states the assignment was in a 1:1:1 ratio to the three named groups, and the total number of patients (945) matches the sum of the patients in each group (316 + 314 + 315 = 945).",
+    "cohorts_seen": [
+      "Nivolumab",
+      "Nivolumab plus Ipilimumab",
+      "Ipilimumab"
+    ],
+    "explicit_total_reported": false,
+    "found": true,
+    "group_label_in_paper": "Ipilimumab",
+    "location": "Baseline Characteristics section",
+    "not_found_reason": "",
+    "quote": "315 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group",
+    "source_field_name": "treatment_arm",
+    "unit": "",
+    "value": "ipilimumab"
+  }
+}

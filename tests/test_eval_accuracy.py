@@ -166,3 +166,84 @@ async def test_partial_structured_extraction_does_not_earn_value_match_credit():
     assert result.predicted_label == "match"
     assert result.review_required is True
     assert result.extraction_correct is False
+
+
+class _RecordingCollector(_FakeCollector):
+    """Keeps the review item it was asked about, so the question can be checked."""
+
+    def __init__(self, source_map):
+        super().__init__(source_map)
+        self.asked: list = []
+
+    async def collect(self, review_item, reference, *, research_context=""):
+        self.asked.append(review_item)
+        return await super().collect(review_item, reference,
+                                     research_context=research_context)
+
+
+_TARGET_ROW = {
+    "study_id": "larkin_2015", "group": "nivolumab_plus_placebo",
+    "field_type": "progression_free_survival", "audit_id": "MA011",
+    "column_header": "PFS", "review_value": "6.9 (95% CI 4.3-9.5)",
+    "unit": "months", "source_value": "6.9 (95% CI 4.3-9.5)",
+    "source_unit": "months", "expected_label": "match",
+}
+
+
+@pytest.mark.asyncio
+async def test_the_target_contract_reaches_the_extraction_question():
+    """The review's own column label and cohort words must be asked for."""
+    collector = _RecordingCollector({
+        ("larkin_2015", "nivolumab_plus_placebo", "progression_free_survival"):
+            ("6.9 (95% CI 4.3-9.5)", "months", CollectionOutcome.FOUND)})
+    targets = {"MA011": SimpleNamespace(
+        raw_field_name="PFS", cohort_label="Nivolumab (3 mg/kg) + placebo",
+        timepoint="median_pfs")}
+    await run_rows([_TARGET_ROW], collector, ToleranceTable(),
+                   lambda sid: ReferenceEntry(title=sid), targets=targets)
+    asked = collector.asked[0]
+    assert asked.raw_field_name == "PFS"
+    assert asked.cohort_label == "Nivolumab (3 mg/kg) + placebo"
+    assert asked.timepoint == "median_pfs"
+
+
+@pytest.mark.asyncio
+async def test_without_a_contract_the_question_is_unchanged():
+    """No profile, no additions — a recorded replay must stay reachable."""
+    collector = _RecordingCollector({
+        ("larkin_2015", "nivolumab_plus_placebo", "progression_free_survival"):
+            ("6.9 (95% CI 4.3-9.5)", "months", CollectionOutcome.FOUND)})
+    await run_rows([_TARGET_ROW], collector, ToleranceTable(),
+                   lambda sid: ReferenceEntry(title=sid))
+    asked = collector.asked[0]
+    assert asked.raw_field_name == ""
+    assert asked.cohort_label == ""
+    assert asked.timepoint == "single"
+    # …while the answer key's own column header still reaches the comparator.
+    assert asked.column_header == "PFS"
+
+
+def test_target_counters_separate_a_refusal_from_a_wrong_value():
+    correct = _row("match", "match")
+    correct.expected_source, correct.extracted_source = "6.9 months", "6.9 months"
+    wrong = _row("match", "mismatch", extraction=False)
+    wrong.expected_source, wrong.extracted_source = "6.9 months", "11.5 months"
+    refused = _row("match", "not_comparable", found=False,
+                   outcome="missing_source", extraction=False)
+    refused.target_check = "ambiguous"
+
+    target = score_rows([correct, wrong, refused])["target"]
+    assert target["correct_target_found_count"] == 1
+    assert target["wrong_target_accepted_count"] == 1
+    assert target["ambiguous_target_rejected_count"] == 1
+
+
+def test_a_partial_interval_is_not_counted_as_a_wrong_target():
+    """0.42 out of "0.42 (99.5% CI …)" is incompleteness, not the wrong arm."""
+    partial = _row("mismatch", "match")
+    partial.expected_source = "0.42 (99.5% CI 0.31-0.57)"
+    partial.extracted_source = "0.42"
+
+    target = score_rows([partial])["target"]
+    assert target["wrong_target_accepted_count"] == 0
+    assert target["correct_target_found_count"] == 1

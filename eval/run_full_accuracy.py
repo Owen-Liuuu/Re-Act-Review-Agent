@@ -39,6 +39,7 @@ from react_review.eval_benchmark import (
     format_benchmark_diagnostics,
     validate_frozen_benchmark,
 )
+from react_review.eval_profile import ProfileError, load_profile
 from react_review.dkb import load_runtime_knowledge
 from react_review.pipeline.factory import _create_llm_backend
 from react_review.retrieval.local_pdf import LocalPdfRetriever
@@ -59,6 +60,28 @@ def _load_answer_key(path: Path) -> list[dict[str, str]]:
         return [r for r in csv.DictReader(f) if (r.get("study_id") or "").strip()]
 
 
+def _cohort_registry(profile, rows: list[dict[str, str]]):
+    """The review's own arm labels, keyed exactly as the answer key groups them.
+
+    Built by joining the profile's target contract to the answer key on
+    audit_id, because the benchmark's ``group`` values ARE the join keys the
+    answer key uses: re-slugging the display names here would silently stop the
+    review side and the source side from meeting.
+    """
+    from react_review.normalize.cohorts import CohortLabel, CohortRegistry
+
+    labels: dict[str, CohortLabel] = {}
+    for row in rows:
+        target = profile.targets.get(row.get("audit_id", ""))
+        display = (getattr(target, "cohort_label", "") or "").strip()
+        key = (row.get("group") or "").strip()
+        if not display or not key or key in labels:
+            continue
+        labels[key] = CohortLabel(key=key, display=display,
+                                  raw_variants=[display], source="contract")
+    return CohortRegistry(labels=list(labels.values())) if labels else None
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description="C1 full-pipeline accuracy eval.")
     ap.add_argument("--config", type=Path, default=None,
@@ -69,6 +92,11 @@ def main(argv: list[str] | None = None) -> None:
                     help="included-study CSV; relative paths are resolved inside "
                          "the benchmark (default: included_studies.csv, then "
                          "selected_studies.csv)")
+    ap.add_argument("--benchmark-profile", default=None,
+                    help="a profile FILE inside the benchmark (e.g. "
+                         "phase7_profile.json) selecting the prompt contracts, "
+                         "the target contract and the semantic overlay. Omit to "
+                         "run the benchmark's own frozen contract unchanged.")
     ap.add_argument("--limit", type=int, default=0, help="score only the first N rows")
     ap.add_argument("--studies", default="", help="comma-separated study_id filter")
     ap.add_argument("--fields", default="", help="comma-separated field_type filter")
@@ -131,6 +159,17 @@ def main(argv: list[str] | None = None) -> None:
     if gate["status"] == "failed":
         ap.error("frozen benchmark entry gate failed: " + "; ".join(gate["errors"]))
 
+    # A profile applies only when the run names its file: an unprofiled run of a
+    # frozen benchmark must keep behaving exactly as it was recorded.
+    profile = None
+    if args.benchmark_profile:
+        try:
+            profile = load_profile(
+                benchmark, args.benchmark_profile,
+                answer_key_ids=[r.get("audit_id", "") for r in all_rows])
+        except ProfileError as exc:
+            ap.error(f"benchmark profile rejected: {exc}")
+
     rows = list(all_rows)
     if args.studies:
         keep = {s.strip() for s in args.studies.split(",") if s.strip()}
@@ -142,6 +181,12 @@ def main(argv: list[str] | None = None) -> None:
         rows = rows[: args.limit]
 
     print(f"benchmark: {benchmark} [{gate['status']}]")
+    if profile is not None:
+        print(f"profile  : {profile.path.name} "
+              f"[extraction={profile.extraction_profile} "
+              f"semantic={profile.semantic_prompt_profile} "
+              f"targets={len(profile.targets)} "
+              f"semantic_overlay={len(profile.semantic)}]")
     if args.dry_run:
         print(f"rows: {len(rows)}")
         print("by study        :", dict(Counter(r["study_id"] for r in rows)))
@@ -173,15 +218,27 @@ def main(argv: list[str] | None = None) -> None:
         backend, cache=extraction_cache, cache_mode=args.extraction))
     kb = load_runtime_knowledge(
         ROOT / "configs" / "knowledge.seed.json", ROOT / "configs" / "ontology")
-    collector = Collector(reg, knowledge=kb)
+    # The cohorts come from the profile's target contract — the review's own
+    # words for its arms. Without them the Collector had no cohort registry at
+    # all, so its wrong-arm guard was inert for the whole benchmark.
+    cohorts = _cohort_registry(profile, all_rows) if profile is not None else None
+    collector = Collector(
+        reg, knowledge=kb, cohorts=cohorts,
+        extraction_profile=(profile.extraction_profile if profile is not None
+                            else "legacy_v3"))
 
     # One shared cache file across runs — a fresh empty cache per run would make
     # `cache-only` miss everything the `on` run just recorded.
     cache = None if args.semantic == "off" else SemanticCache(semantic_cache_path)
+    semantic_profile = (profile.semantic_prompt_profile if profile is not None
+                        else "semantic_v1")
     comparator = CompareValuesTool(
-        tol, semantic=SemanticCompareTool(backend) if args.semantic == "on" else None,
+        tol,
+        semantic=(SemanticCompareTool(backend, profile=semantic_profile)
+                  if args.semantic == "on" else None),
         semantic_mode=args.semantic, semantic_cache=cache,
-        min_confidence=tol.semantic_min_confidence)
+        min_confidence=tol.semantic_min_confidence,
+        semantic_profile=semantic_profile)
 
     def reference_for(study_id: str) -> ReferenceEntry:
         s = by_id.get(study_id)
@@ -189,8 +246,9 @@ def main(argv: list[str] | None = None) -> None:
                               doi=(s.doi if s else None))
 
     print(f"running {len(rows)} rows through Collector + audit …")
-    results = asyncio.run(run_rows(rows, collector, tol, reference_for, context,
-                                   comparator=comparator))
+    results = asyncio.run(run_rows(
+        rows, collector, tol, reference_for, context, comparator=comparator,
+        targets=(profile.targets if profile is not None else None)))
     if extraction_cache is not None:
         if args.extraction == "record":
             extraction_cache.save()
@@ -235,6 +293,7 @@ def main(argv: list[str] | None = None) -> None:
             "benchmark": str(benchmark),
             "benchmark_id": str(manifest.get("benchmark_id") or benchmark.name),
             "benchmark_gate": gate,
+            **(profile.provenance() if profile is not None else {}),
             "studies_file": str(studies_path.resolve()),
             "research_context": context,
             "extraction_mode": args.extraction,
