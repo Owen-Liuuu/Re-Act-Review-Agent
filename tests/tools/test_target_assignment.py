@@ -27,6 +27,13 @@ from react_review.tools.extract_source import (
     ExtractSourceValueInput,
     ExtractSourceValueTool,
 )
+from react_review.llm.base import LLMBackend
+from react_review.steps.data_extraction.schemas import PaperDocument
+from react_review.steps.paper_verification.schemas import ReferenceEntry
+from react_review.tools.extract_source import (
+    ExtractSourceValueInput,
+    ExtractSourceValueTool,
+)
 from react_review.tools.target_assignment import (
     ArmEvidence,
     ComparisonEvidence,
@@ -49,6 +56,10 @@ REVIEW = {
     "ipilimumab_plus_placebo": "Ipilimumab (3 mg/kg) + placebo",
     "nivolumab_plus_placebo": "Nivolumab (3 mg/kg) + placebo",
 }
+ASSIGNMENT_SENTENCE = (
+    "A total of 945 patients underwent randomization: 316 patients were "
+    "assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab "
+    "group, and 315 to the ipilimumab group.")
 PFS_SENTENCE = (
     "The median progression-free survival was 6.9 months (95% confidence "
     "interval [CI], 4.3 to 9.5) in the nivolumab group, 11.5 months (95% CI, "
@@ -439,3 +450,130 @@ async def test_a_comparison_is_not_described_to_the_model_as_a_cohort():
     target = backend.prompts[-1].split("## RULES")[0]
     assert 'comparison of "nivolumab" versus "ipilimumab"' in target
     assert "nivolumab_vs_ipilimumab" not in target
+
+
+def test_regularised_wording_is_supported_but_changed_numbers_are_not():
+    """The paper prints one interval in full and the next in short.
+
+    A response that spells them all out the long way is reporting the same
+    measurement; rejecting it over a parenthesis threw away complete, correct
+    extractions. What may not move is the arithmetic.
+    """
+    recorded = json.loads(
+        (FIXTURES / "regularised_interval_wording.json").read_text(encoding="utf-8"))
+    arms, error = parse_arms(recorded["response"]["arms_reported"], PAPER)
+    assert error == "" and len(arms) == 3
+
+    swapped = json.loads(json.dumps(recorded["response"]["arms_reported"]))
+    swapped[1]["value"] = "11.5 months (95% confidence interval [CI], 2.8 to 3.4)"
+    _, error = parse_arms(swapped, PAPER)
+    assert "does not contain the value" in error
+
+
+def test_a_rewritten_quote_is_still_rejected():
+    """Regularising the VALUE is allowed; regularising the quote is not."""
+    arms, error = parse_arms(
+        [{"label": "nivolumab group",
+          "value": "6.9 months (95% confidence interval [CI], 4.3 to 9.5)",
+          "quote": PFS_SENTENCE.replace("11.5 months (95% CI,",
+                                        "11.5 months (95% confidence interval [CI],")}],
+        PAPER)
+    assert arms == [] and "contiguous passage" in error
+
+
+# --- the whole tool, replaying one response -------------------------------
+
+async def _run_targeted(response: dict, *, group: str, field_type: str,
+                        target_kind: str = "value"):
+    """One extraction, targeted profile, against the real paper excerpt."""
+    return await ExtractSourceValueTool(_ReplayBackend(response)).run(
+        ExtractSourceValueInput(
+            document=PaperDocument(paper_id="larkin_2015",
+                                   reference=ReferenceEntry(title="Larkin 2015"),
+                                   full_text=PAPER),
+            field_type=field_type, group=group, raw_field_name=field_type,
+            cohorts={key: [label] for key, label in REVIEW.items()},
+            cohort_display=REVIEW.get(group, ""),
+            extraction_profile="targeted_v4", target_kind=target_kind,
+            comparison=parse_comparison(group)))
+
+
+
+# --- arm-identity projection ---------------------------------------------
+
+_ARM_ENTRIES = [
+    {"label": "Nivolumab", "value": "316", "quote": ASSIGNMENT_SENTENCE},
+    {"label": "Nivolumab plus Ipilimumab", "value": "314",
+     "quote": ASSIGNMENT_SENTENCE},
+    {"label": "Ipilimumab", "value": "315", "quote": ASSIGNMENT_SENTENCE},
+]
+
+
+@pytest.mark.asyncio
+async def test_an_identity_field_takes_the_arms_name_not_its_size():
+    """The recorded Phase 7 defect: 315 returned where the field IS the arm.
+
+    The enumeration was right — three arms, correctly labelled and quoted. What
+    went wrong was the projection: a count was handed back for a field whose
+    value is the arm's own description, and a number can never compare against
+    "Ipilimumab (3 mg/kg) + placebo".
+    """
+    result = await _run_targeted(
+        {"found": True, "value": "315", "quote": ASSIGNMENT_SENTENCE,
+         "arms_reported": _ARM_ENTRIES},
+        group="ipilimumab_plus_placebo", field_type="treatment_arm",
+        target_kind="arm_identity")
+    assert result.found is True
+    assert result.value == "Ipilimumab"
+    assert result.unit == ""
+    assert result.value_origin == "arm_enumeration"
+    assert "identity field takes that label" in result.derivation
+    assert result.quote == ASSIGNMENT_SENTENCE
+
+
+@pytest.mark.asyncio
+async def test_the_same_response_still_yields_the_count_for_a_count_field():
+    """Only the identity field projects the label; cohort_n is still 315."""
+    result = await _run_targeted(
+        {"found": True, "value": "315", "quote": ASSIGNMENT_SENTENCE,
+         "arms_reported": _ARM_ENTRIES},
+        group="ipilimumab_plus_placebo", field_type="cohort_n")
+    assert result.found is True and result.value == "315"
+
+
+@pytest.mark.asyncio
+async def test_an_identity_label_the_paper_never_prints_is_refused():
+    """Rule: no anchor, no answer — and never a fallback to the arm's size.
+
+    The anchor is enforced where the enumeration is read: an arm's label must
+    appear as a whole name inside its own quote, and that quote must be a
+    contiguous passage of the paper. A label the paper never prints therefore
+    cannot reach the projection at all.
+    """
+    result = await _run_targeted(
+        {"found": True, "value": "314", "quote": ASSIGNMENT_SENTENCE,
+         "arms_reported": [
+             {"label": "nivolumab group", "value": "316",
+              "quote": ASSIGNMENT_SENTENCE},
+             # every word is in the quote, but the paper prints
+             # "nivolumab-plus-ipilimumab group", never this name
+             {"label": "nivolumab ipilimumab group", "value": "314",
+              "quote": ASSIGNMENT_SENTENCE},
+             {"label": "ipilimumab group", "value": "315",
+              "quote": ASSIGNMENT_SENTENCE}]},
+        group="nivolumab_plus_ipilimumab", field_type="treatment_arm",
+        target_kind="arm_identity")
+    assert result.found is False and result.value is None
+    assert result.target_check == "protocol_error"
+    assert "does not name that arm" in result.not_found_reason
+
+
+@pytest.mark.asyncio
+async def test_an_unresolved_identity_target_does_not_fall_back_to_a_count():
+    """No unique arm ⇒ no answer. Never the nearest number."""
+    result = await _run_targeted(
+        {"found": True, "value": "315", "quote": ASSIGNMENT_SENTENCE,
+         "arms_reported": []},
+        group="ipilimumab_plus_placebo", field_type="treatment_arm",
+        target_kind="arm_identity")
+    assert result.found is False and result.value is None

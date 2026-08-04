@@ -22,7 +22,9 @@ def _cmp(review, source, **kw):
 
 def test_identical_intervals_match():
     r = _cmp("0.62 (95% CI 0.48-0.81)", "0.62 (95% CI 0.48-0.81)")
-    assert r.label is AuditLabel.MATCH and r.components_compared == ["ci"]
+    # The LEVEL is compared alongside the bounds: both sides say 95%.
+    assert r.label is AuditLabel.MATCH
+    assert r.components_compared == ["ci", "ci_level"]
 
 
 def test_different_intervals_are_a_mismatch_despite_the_same_point_estimate():
@@ -45,7 +47,8 @@ def test_an_interval_only_one_side_reports_is_unverified_not_verified():
     r = _cmp("0.62 (95% CI 0.48-0.81)", "0.62")
     assert r.label is AuditLabel.MATCH          # the point estimates do agree
     assert r.review_required is True            # …but the interval was not checked
-    assert r.components_unconsumed == ["ci"]
+    # Neither the bounds nor the level of a one-sided interval are verified.
+    assert r.components_unconsumed == ["ci", "ci_level"]
 
 
 # --- events / total / percentage ---
@@ -126,3 +129,43 @@ def test_plain_values_behave_exactly_as_before(review, source, label):
     r = _cmp(review, source)
     assert r.label is label
     assert r.match_mode == "numeric" and not r.components_unconsumed
+
+
+# --- the confidence LEVEL is its own component (Phase 7C) ---
+
+def test_the_same_bounds_at_different_levels_are_not_the_same_interval():
+    """D6B-04: a 95% interval and a 99.5% interval are different quantities.
+
+    MA012's shape — the numbers coincide exactly, and the claim still differs.
+    Reading this as a match is the silent release the archive recorded.
+    """
+    r = compare_values(field_type="hazard_ratio",
+                       review_value="0.42 (95% CI 0.31-0.57)",
+                       source_value="0.42 (99.5% CI 0.31-0.57)")
+    assert r.label is AuditLabel.MISMATCH
+    assert "95%" in r.reason and "99.5%" in r.reason
+    assert "ci_level" in r.components_compared
+
+
+def test_the_level_is_compared_exactly_not_within_tolerance():
+    """A level is a stated convention; 95 and 95.5 are not "close enough"."""
+    r = compare_values(field_type="hazard_ratio",
+                       review_value="0.42 (95% CI 0.31-0.57)",
+                       source_value="0.42 (95.5% CI 0.31-0.57)")
+    assert r.label is AuditLabel.MISMATCH
+
+
+def test_a_level_only_one_side_states_stays_unverified():
+    r = compare_values(field_type="hazard_ratio",
+                       review_value="0.42 (95% CI 0.31-0.57)",
+                       source_value="0.42 (0.31 to 0.57)")
+    assert r.review_required is True
+    assert "ci_level" in r.components_unconsumed
+
+
+def test_a_bare_percentage_is_not_read_as_a_confidence_level():
+    """"45/120 (37.5%)" states no interval and therefore no level."""
+    assert parse_numeric("45/120 (37.5%)").ci_level is None
+    assert parse_numeric("37.5%").ci_level is None
+    assert parse_numeric("0.42 (95% CI 0.31-0.57)").ci_level == 95.0
+    assert parse_numeric("6.9 (99.5% confidence interval 4.3 to 9.5)").ci_level == 99.5

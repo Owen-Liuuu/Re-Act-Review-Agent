@@ -122,6 +122,27 @@ def _compare_components(
         else:
             unconsumed.extend(structural & {"events", "pct"})
 
+    # --- confidence LEVEL ---
+    # Checked before the bounds, because it decides what the bounds mean. A 95%
+    # interval and a 99.5% interval are different quantities: the same numbers
+    # at different levels do not agree, and different numbers at different
+    # levels are not evidence of a transcription error. Compared exactly — a
+    # level is a stated convention, not a measurement with a tolerance.
+    if "ci_level" in structural:
+        if rv.ci_level is not None and sv.ci_level is not None:
+            if rv.ci_level != sv.ci_level:
+                return result(
+                    AuditLabel.MISMATCH,
+                    f"the review reports a {rv.ci_level:g}% confidence interval "
+                    f"and the source a {sv.ci_level:g}% one, so their bounds are "
+                    "not the same quantity",
+                    compared=[*compared, "ci_level"])
+            compared.append("ci_level")
+        else:
+            # One side states the level and the other does not. The bounds may
+            # still be compared, but the pair cannot be called fully verified.
+            unconsumed.append("ci_level")
+
     # --- confidence interval ---
     if "ci" in structural:
         if rv.ci_lower is not None and sv.ci_lower is not None:

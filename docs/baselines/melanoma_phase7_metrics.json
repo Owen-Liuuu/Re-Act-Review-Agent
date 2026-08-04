@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "artifact_kind": "sanitized_phase7_metrics",
+  "generated_on": "2026-08-04",
+  "benchmark_id": "melanoma_checkpoint_2017",
+  "supersedes_nothing": "docs/baselines/melanoma_phase6b_metrics.json is left exactly as archived; this file records a separate, later measurement under a different contract",
+  "deferred_issue_archive": "docs/deferred/phase6b-melanoma-audit.md",
+  "code_base": "Phase 7 working tree on top of 1e50d88",
+  "model": "glm-4.5-flash",
+  "contract": {
+    "benchmark_profile": "eval/benchmarks/melanoma_checkpoint_2017/phase7_profile.json",
+    "extraction_profile": "targeted_v4",
+    "semantic_prompt_profile": "semantic_v2_specificity",
+    "target_contract": "phase7_target_contract.csv",
+    "semantic_expectation_overlay": "phase7_semantic_overlay.csv",
+    "answer_key_unchanged": true,
+    "note": "The frozen Phase 6A answer key, manifest and PDFs are byte-identical to the freeze. A run that does not name the profile still reproduces the Phase 6 result exactly."
+  },
+  "privacy": {
+    "contains_source_quotes": false,
+    "contains_raw_model_responses": false,
+    "contains_local_absolute_paths": false,
+    "private_artifacts_remain_gitignored": true
+  },
+  "one_live_run_policy": {
+    "extraction_recording_runs": 1,
+    "resumed_after_timeout": true,
+    "semantic_judgements_added_later": 3,
+    "why": "The deterministic arm-identity projection moved three rows onto the semantic path, so three semantic questions that the recording never asked had to be answered. Only cache misses were filled; no extraction call was repeated and no run was discarded in favour of a better one.",
+    "records_kept": [
+      "phase7_prefix_arm_identity_defect — the state that exposed the projection defect",
+      "phase7_live_record — the same recording after the fix, with the semantic misses filled",
+      "phase7d2_replay — the deterministic replay these metrics come from"
+    ]
+  },
+  "metrics": {
+    "n": 15,
+    "label_accuracy": 0.8,
+    "discrepancy": {"tp": 3, "fp": 0, "fn": 0, "tn": 12,
+                    "precision": 1.0, "recall": 1.0, "f1": 1.0},
+    "safety": {"expected_discrepancies": 3, "silent_release_count": 0,
+               "visible_discrepancies": 3, "review_visibility_rate": 1.0},
+    "target": {"correct_target_found_count": 12, "wrong_target_accepted_count": 1,
+               "ambiguous_target_rejected_count": 0, "unreported_target_count": 0,
+               "reassigned_count": 3},
+    "extraction": {"found_rate": 0.8667, "complete_value_match_rate": 0.4},
+    "observed_modes": {"semantic": 4, "numeric": 6, "structured": 5},
+    "declared_gap_failures": 0
+  },
+  "progression_within_phase_7": {
+    "note": "One recording, four deterministic layers measured on it. Every number below is a replay of the same raw responses.",
+    "after_7a_7b_before_arm_identity_fix": {"label_accuracy": 0.533, "silent_releases": 2, "semantic_rows_reached": 1, "wrong_target_accepted": 2},
+    "after_arm_identity_fix": {"label_accuracy": 0.667, "silent_releases": 2, "semantic_rows_reached": 4, "wrong_target_accepted": 1},
+    "after_7c_ci_level": {"label_accuracy": 0.8, "silent_releases": 0, "precision": 0.75, "recall": 1.0},
+    "after_7d2_direction_control": {"label_accuracy": 0.8, "silent_releases": 0, "precision": 1.0, "recall": 1.0}
+  },
+  "deferred_issue_outcomes": {
+    "D6B-01_multi_arm_target_drift": {
+      "status": "largely_closed",
+      "evidence": "wrong_target_accepted 3 -> 1; 12 targets correctly resolved, 3 of them reassigned away from the model's own pick; MA011 now returns the monotherapy arm's PFS and MA015 the requested comparison",
+      "remaining": "MA005 still resolves to an arm label the audit cannot accept as equivalent"
+    },
+    "D6B-02_incomplete_structured_extraction": {
+      "status": "closed_on_this_benchmark",
+      "evidence": "point estimate, confidence level and both bounds are carried as verified source components and consumed by the comparator; an interval the quote states but the response omits is recorded as incomplete rather than credited"
+    },
+    "D6B-03_semantic_relation_instability": {
+      "status": "partially_closed",
+      "evidence": "a verdict whose relation contradicts its own specificity direction is refused as NOT_COMPARABLE with failed_control=relation_direction (MA005), which removed the last false positive",
+      "remaining": "a verdict can be self-consistent and still wrong: MA003 states review_broader with the source as the more specific side, which no deterministic check can refute. 3 of 4 semantic rows still disagree with the overlay's relation."
+    },
+    "D6B-04_confidence_level_not_represented": {
+      "status": "closed",
+      "evidence": "ci_level is parsed only inside a confidence-interval clause, compared exactly, and reported as its own component; MA012 and MA015 are now genuine confidence-level discrepancies (95% vs 99.5%) rather than masked by extraction errors"
+    }
+  },
+  "remaining_failures": {
+    "MA005": "the semantic verdict contradicts itself; refused and routed to review rather than recorded as a discrepancy",
+    "MA009": "the response rewrote its own supporting quote, which is not a contiguous passage of the paper; refused",
+    "MA014": "same defect on an enumerated comparison entry; refused"
+  },
+  "reproducibility": {
+    "extraction_cache_entries": 23,
+    "replay_extraction_hits": 25,
+    "replay_extraction_misses": 0,
+    "semantic_cache_entries": 4,
+    "replay_semantic_hits": 4,
+    "replay_semantic_misses": 0,
+    "replay_repeat_identical": true
+  },
+  "regression_gates": {
+    "eat_frozen_replay": {"cache_misses": 0, "label_accuracy": 0.8947,
+                          "precision": 0.8, "recall": 0.8,
+                          "silent_release_count": 0, "unchanged_from_phase_6e": true},
+    "melanoma_phase6_replay_under_its_own_profile": {"label_accuracy": 0.6667,
+                                                     "silent_release_count": 0,
+                                                     "unchanged": true},
+    "test_suite": "716 passed"
+  },
+  "private_artifact_sha256": {
+    "phase7_extraction_cache.json": "E0A00A5CC6F21EE3E9BEB8DA2B0B0DC74C4D6C7DAA79F67FC9E47A5DBA7D3D04",
+    "phase7_semantic_cache.json": "C45E11EF41F02E59C7EEC8A9524CEC7DEC505DAAE3D61EEDAED87BF558EECE11",
+    "phase7d2_replay.json": "50C5C849FAF17BE9F791C2A843987F5FC0349427ECF4969991CB8CCCD79B1148",
+    "phase7_live_record.json": "135A1D1A3514941023D232524E299B9AD946255E81E769C4BCAB61B70ACA39F6",
+    "phase7_prefix_arm_identity_defect.json": "F9699B3D749BB0AF985E72DF6261915AAA3F16E9D4F2BB5C93D394D98AFEDD7B"
+  },
+  "conclusions": [
+    "Three of the four archived defects are closed on this benchmark and the fourth is partially closed; every fix is deterministic code judging a model's enumeration, not a better prompt.",
+    "Silent releases are zero and review visibility is 100%: nothing the audit could not verify was released as verified.",
+    "15 rows is still 15 rows. A single row moves label accuracy by 6.7 points, so 80% is not a cross-domain accuracy measurement and must not be quoted as one.",
+    "The melanoma accuracy gate is NOT declared passed. Passing it was never a Phase 7 acceptance target, and this run does not establish cross-domain accuracy."
+  ]
+}

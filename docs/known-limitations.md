@@ -1,10 +1,12 @@
 # ReAct-Review — 已知局限 & 通用化路线
 
 > 当前 MVP 有两个冻结检查点:EAT/T1DM 主基准与 melanoma 跨领域检查点。
-> EAT 确定性 replay 为 **89.47%** 标签准确率、严格差异召回 **80%**、静默放行 **0**；melanoma 已跑通 semantic / numeric / structured 路径,但标签准确率仅 **60%**,未通过跨领域准确率门槛。
+> EAT 确定性 replay 为 **89.47%** 标签准确率、严格差异召回 **80%**、静默放行 **0**(Phase 7 后逐项不变)。
+> melanoma 在 Phase 7 的新契约下为 **80.0%** 标签准确率、精确率/召回率/F1 **100%**、静默放行 **0**(n=15,`docs/baselines/melanoma_phase7_metrics.json`)。
+> **跨领域准确率门槛仍未通过,也不以其通过为验收目标**:15 行里一行就值 6.7 个百分点,这个百分数不构成跨领域准确性的证明。
 > 本文列出**已知边界**(非 bug,是 MVP 的范围选择)与**通用化路线**,供后续(尤其 DKB 阶段)一并处理。
 
-最后更新:2026-08-03 · Phase 6E 验收基于 commit `4742517`。
+最后更新:2026-08-04 · Phase 6E 验收基于 commit `4742517`;Phase 7 处置见 `docs/deferred/phase6b-melanoma-audit.md` 的 "Phase 7 disposition" 一节。
 
 ---
 
@@ -31,7 +33,7 @@
 
 | 编号 | 现象 | 影响 | 位置 | 改进方向 |
 |---|---|---|---|---|
-| **L6** | **队列已改为从综述原词发现,但跨文献别名与多臂锚定仍不充分** | melanoma 中后续治疗臂会被源抽取器吸到第一个邻近臂；系统会升级复核,但自动准确率下降 | `normalize/cohorts.py`、`tools/extract_source.py` | 抽取目标显式携带 arm/comparison pair；证据 span 必须锚定目标词,歧义时返回 unresolved |
+| **L6** | ~~队列跨文献别名与多臂锚定不充分~~ → **Phase 7 已大部分关闭**:请求显式携带 arm/comparison pair,模型枚举、确定性代码做全局一对一指派,打平即拒绝(`wrong_target_accepted` 3→1) | 剩余:一条臂标签虽指派正确,但语义上仍不被接受为等价 | `normalize/cohorts.py`、`tools/target_assignment.py` | 剩余部分与 L9 合并;跨文献别名仍待 DKB |
 | **L7** | **DKB 的 bootstrap ontology 仍以现有基准概念为主** | 新领域虽可生成 provisional concept,但覆盖与稳定性尚未由更多领域证明 | `configs/knowledge.seed.json`、`dkb/` | 扩充人工批准的领域包；保持 provisional→验证→批准的治理链 |
 | **L8** | **单位拼写靠 Tier-1 硬编码穷举**(cm³/cc/mL、yrs/years…) | 模型每轮可能吐新拼写 → 打不完的地鼠 | `normalize/units.py` | 单位归一下沉到 DKB 语义层,而非无限扩表 |
 
@@ -39,13 +41,14 @@
 
 | 编号 | 现象 | 影响 | 位置 | 改进方向 |
 |---|---|---|---|---|
-| **L9** | **近值与多臂 target drift** —— 模型会复制相邻队列值,或在多臂论文中选择第一个邻近 arm / effect estimate | EAT 中多为 `missing_source` 安全降级；melanoma 中造成 5 条意外标签差异 | `tools/extract_source.py`、`docs/deferred/phase6b-melanoma-audit.md` | 目标词锚定 + 结构化 arm/comparison pair；必要时双模型交叉校验 |
+| **L9** | **近值与多臂 target drift** —— Phase 7 后模型仍会选错,但**选错不再被接受**:枚举项必须各自带原文引文,指派唯一才采纳 | 代价转为能力损失:melanoma 有 2 行因模型改写引文被证据守卫拒绝(`missing_source`),而非错值入库 | `tools/target_assignment.py`、`tools/extract_source.py` | 双模型交叉校验仍是治本方向;引文改写可考虑要求模型给出字符区间 |
+| **L16** | **模型会改写自己的引文** —— 把论文缩写的 `95% CI` 拼成 `95% confidence interval [CI]`,引文因此不再是原文连续子串 | 守卫正确拒绝(安全),但正确的值也一并丢失 | `tools/target_assignment.py`、`normalize/anchors.py` | 值的**数字序列**已放宽为可接受措辞规整;引文本身仍要求逐字,不打算放宽 |
 
 ### E. 评测
 
 | 编号 | 现象 | 影响 | 位置 | 改进方向 |
 |---|---|---|---|---|
-| **L10** | **已有跨领域机制验证,但没有跨领域准确率证明** —— melanoma 冻结检查点覆盖 4 semantic / 4 numeric / 7 structured 行,准确率门槛失败 | 可以证明路径可达与失败可见,不能宣称系统在肿瘤领域准确 | `eval/benchmarks/melanoma_checkpoint_2017/` | 修复已归档的多臂/CI/semantic 问题,再增加第 3 个独立领域基准；必须由专家确认答案键 |
+| **L10** | **仍没有跨领域准确率证明** —— Phase 7 修完归档的多臂/CI/confidence-level 问题后,melanoma 为 80.0%(n=15),但 15 行的 Wilson 区间过宽,**门槛既未通过、也不以通过为目标** | 可以证明路径可达、缺陷可修、失败可见;不能宣称系统在肿瘤领域准确 | `eval/benchmarks/melanoma_checkpoint_2017/`、`docs/baselines/melanoma_phase7_metrics.json` | 增加第 3 个独立领域基准,行数足以支撑区间;必须由专家确认答案键 |
 | **L13** | **实时 LLM 抽取不能充当确定性代码的回归基线** —— 同一评估代码与输入在两次 live 运行中曾把 Iacobellis 总人数分别抽成 30 和 15；Phase 6-0e 的独立 live 又比冻结 replay 多漏 2 行 | 把 live 波动混入代码回归会误判修复或回归，也会诱导“重跑到绿色” | `tools/extraction_cache.py`、`eval/run_full_accuracy.py` | 确定性回归使用版本化 raw-response replay；live 运行独立报告方差，禁止覆盖旧缓存或用重复运行挑选最好结果 |
 
 ### F. 语义等价(Phase 4B 新增)
@@ -53,7 +56,8 @@
 | 编号 | 现象 | 影响 | 位置 | 改进方向 |
 |---|---|---|---|---|
 | **L14** | **模型自报的 confidence 无信息量** —— 2026-08-03 实测 glm-4.5-flash 在 5 个案例(含判断方向相反的对抗例)上**一律返回 1.0** | DKB 字段解析已在 Phase 5A-3 停止用 confidence 放行，改为跨 seed 稳定性 + 确定性自我契约；语义比较仍保留 `min_confidence=0.70`，承重的仍是数值不漂移 / 极性 / 引文锚定 | `dkb/resolver.py`、`dkb/verify.py`、`audit/semantic_control.py` | DKB 路径已缓解；语义路径仍需继续打印阈值敏感度并评估是否彻底移除 confidence 闸门 |
-| **L15** | **语义路径已被跨领域基准触发,但关系方向仍不稳定** —— melanoma 的 4 条预期 semantic 行全部升级,其中 3 条 relation 与答案键不一致 | 已证明路径可达与控制可见,尚未证明 semantic 判定准确 | `audit/semantic_control.py`、`eval/benchmarks/melanoma_checkpoint_2017/` | 增加 broader/narrower 方向的确定性自洽检查；用冻结 replay 回归,live 方差单独报告 |
+| **L15** | **关系方向:自相矛盾已能拦,自洽却错的拦不住** —— Phase 7 让 verdict 同时给出 `more_specific_side`,与 relation 互斥即判 `NOT_COMPARABLE + relation_direction`(melanoma 少了最后一个假阳性);但 MA003 给出的是**自洽而与事实相反**的方向,确定性检查无从反驳,4 条 semantic 行仍有 3 条与 overlay 的 relation 不一致 | 已证明矛盾可见,仍未证明 semantic 判定准确 | `audit/semantic_control.py`、`schemas/semantic.py` | 跨 seed 结构一致性(Phase 5A 方法)是下一个可用手段,需多次采样,属框架级选择 |
+| **L17** | **Phase 6B 的 relation 期望与 prompt 定义相反** —— 答案键把"review 更具体"记成 `review_broader`,而 prompt 定义 `review_broader` 为 review 更不具体;同形的 MA003 又记成 `same` | 只影响诊断字段,不影响标签(两个 broader 方向同出口) | `eval/benchmarks/melanoma_checkpoint_2017/phase7_semantic_overlay.csv` | 已用 Phase 7 overlay 在**不改冻结答案键**的前提下重述四条 semantic 期望 |
 
 ---
 

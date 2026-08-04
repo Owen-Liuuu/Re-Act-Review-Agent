@@ -40,7 +40,7 @@ from pydantic import BaseModel, Field
 from react_review.normalize.anchors import (
     flatten,
     normalised_contains,
-    quote_contains_value,
+    value_supported_by_quote,
 )
 from react_review.normalize.cohorts import (
     ComparisonTarget,
@@ -140,7 +140,7 @@ def parse_arms(raw: object, paper_text: str) -> tuple[list[ArmEvidence], str]:
                         "passage of the source document")
         if not _label_in_quote(label, quote):
             return [], f"the quote for arm {label!r} does not name that arm"
-        if value is not None and not quote_contains_value(quote, value):
+        if value is not None and not value_supported_by_quote(quote, value):
             return [], (f"the quote for arm {label!r} does not contain the value "
                         f"{value!r} attributed to it")
         components, component_error = parse_component_block(
@@ -184,7 +184,7 @@ def parse_comparisons(raw: object, paper_text: str) -> tuple[list[ComparisonEvid
             if not _label_in_quote(side, quote):
                 return [], (f"the quote for {left!r} vs {right!r} does not name "
                             f"{side!r}, so the direction cannot be confirmed")
-        if value is not None and not quote_contains_value(quote, value):
+        if value is not None and not value_supported_by_quote(quote, value):
             return [], (f"the quote for {left!r} vs {right!r} does not contain "
                         f"{value!r}")
         components, component_error = parse_component_block(

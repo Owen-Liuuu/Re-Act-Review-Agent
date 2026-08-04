@@ -31,6 +31,24 @@ from react_review.tools.registry import ToolRegistry
 from react_review.tools.search import ResolveReferenceInput
 
 
+def _target_kind(review_item: ReviewDataItem) -> str:
+    """Whether this claim is ABOUT an arm, or a value reported FOR one.
+
+    Structural, not a vocabulary: the review's cell for an arm-identity column
+    IS the review's own name for that arm — the same text the cohort was
+    labelled with. When the two coincide, the field being audited is the arm's
+    identity, and its source answer is the paper's name for that arm rather
+    than any number reported about it. Nothing here knows what a drug is.
+    """
+    value = _norm_text(review_item.value)
+    label = _norm_text(review_item.cohort_label)
+    return "arm_identity" if value and value == label else "value"
+
+
+def _norm_text(value: object) -> str:
+    return " ".join(str(value or "").lower().split())
+
+
 class CollectResult(BaseModel):
     source_item: SourceEvidenceItem
     record: AgentRun
@@ -236,6 +254,7 @@ class Collector:
                 research_context=research_context,
                 cohort_display=review_item.cohort_label,
                 cohorts=self._cohort_variants(),
+                target_kind=_target_kind(review_item),
                 attempt=attempt,
                 extraction_profile=self._extraction_profile,
                 # A claim about two arms is carried as a pair, not as one name:

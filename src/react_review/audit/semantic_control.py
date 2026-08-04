@@ -10,6 +10,9 @@ trusted. The checks are cheap, reproducible, and independent of the model:
   evidence anchoring  the span the model cites must actually occur in the quote,
                       so it cannot invent what the source says.
   polarity            a negation on exactly one side is a difference.
+  self-consistency    the relation and the specificity direction are two readings
+                      of one fact; a verdict that answers them differently has
+                      refuted itself and is refused rather than half-believed.
   confidence          below the band, or a relation of "unknown", is not a verdict.
 
 Anything the checks reject becomes NOT_COMPARABLE with the reason attached, and
@@ -71,6 +74,12 @@ def numbers_agree(review_value: str, source_value: str, rel_tolerance: float) ->
     rv, sv = parse_numeric(review_value), parse_numeric(source_value)
     r_pct = rv.pct if rv.pct is not None else rv.derived_pct
     s_pct = sv.pct if sv.pct is not None else sv.derived_pct
+
+    # The confidence LEVEL belongs here too: a rationale calling two intervals
+    # the same thing must not be believed when one is 95% and the other 99.5%.
+    if (rv.ci_level is not None and sv.ci_level is not None
+            and rv.ci_level != sv.ci_level):
+        return False
 
     pairs: list[tuple[float, float]] = [
         (a, b) for a, b in ((r_pct, s_pct), (rv.ci_lower, sv.ci_lower),
@@ -198,7 +207,24 @@ def apply_semantic_control(
             "one side is negated and the other is not",
             failed_control="polarity", checks=checks)
 
-    # 3. Confidence and relation.
+    # 3. Self-consistency — does the verdict agree with itself?
+    # A verdict that names one side as more specific while labelling the
+    # relation the other way round has refuted itself, and there is no way to
+    # tell which half was the mistake. Refusing it is not the same as calling
+    # the values different: it says this judgement cannot be used. The model's
+    # own relation and rationale are kept on the result for a human to read.
+    consistent, contradiction = direction_consistent(verdict)
+    if not consistent:
+        checks["relation_direction"] = False
+        return ControlOutcome(
+            AuditLabel.NOT_COMPARABLE, contradiction, review_required=True,
+            failed_control="relation_direction", checks=checks)
+    if direction_stated(verdict):
+        # Recorded only when the question was actually asked, so "checked and
+        # consistent" stays distinguishable from "there was nothing to check".
+        checks["relation_direction"] = True
+
+    # 4. Confidence and relation.
     relation = verdict.relation
     checks["confidence"] = verdict.confidence >= min_confidence
     if relation == "different":
@@ -213,7 +239,7 @@ def apply_semantic_control(
             + (f": {verdict.rationale}" if verdict.rationale else ""),
             review_required=True, failed_control="confidence", checks=checks)
 
-    # 4. Evidence anchoring — only meaningful when a quote was captured.
+    # 5. Evidence anchoring — only meaningful when a quote was captured.
     if source_quote:
         checks["anchor"] = anchored_in(verdict.evidence_span, source_quote)
         if not checks["anchor"]:

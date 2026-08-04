@@ -123,7 +123,11 @@ async def test_values_that_parse_as_numbers_are_settled_before_any_model_sees_th
 async def test_an_ungrounded_claim_is_refused_at_the_tool_level():
     # The controls are not advisory: a claim whose cited span is absent from the
     # quote does not become a verdict, however confident the model is.
-    tool, _ = _tool({"relation": "same", "confidence": 0.99,
+    # The verdict is otherwise coherent (same ⇒ equivalent, neither side more
+    # specific) so that this test isolates the anchoring control rather than
+    # tripping the self-consistency one first.
+    tool, _ = _tool({"relation": "same", "equivalent": True,
+                     "more_specific_side": "neither", "confidence": 0.99,
                      "rationale": "same setting",
                      "evidence_span": "a coronary care unit"})
     out = await tool.run(_text_pair(quote="Recruited in the intensive care unit."))

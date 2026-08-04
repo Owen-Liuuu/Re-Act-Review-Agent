@@ -14,6 +14,7 @@ import structlog
 from pydantic import BaseModel, Field
 
 from react_review.llm.base import LLMBackend, parse_llm_response
+from react_review.normalize.anchors import normalised_contains
 from react_review.normalize.cohorts import ComparisonTarget
 from react_review.schemas.evidence import CohortCount, SourceNumericComponents
 from react_review.steps.data_extraction.schemas import PaperDocument
@@ -280,6 +281,12 @@ class ExtractSourceValueInput(BaseModel):
     # frozen benchmark cannot drift onto a new prompt by accident; see
     # :mod:`react_review.tools.extraction_profile`.
     extraction_profile: str = DEFAULT_PROFILE
+    # What KIND of thing is being asked for. ``arm_identity`` means the field's
+    # value IS the arm — its drug, dose and label — so the answer is the paper's
+    # own name for that arm, never a number reported about it. The caller
+    # derives this structurally (see ``Collector``); the model is not asked to
+    # understand the distinction, because it demonstrably does not.
+    target_kind: str = "value"          # value | arm_identity
     # A claim about TWO arms cannot be expressed as one cohort name. Carrying it
     # as a structured pair is what lets the request say WHICH hazard ratio, and
     # what lets the assignment check the direction.
@@ -503,6 +510,9 @@ def _finalize_result(data: dict, payload: ExtractSourceValueInput) -> SourceValu
         # the value is still taken from the assignment — that IS the fix — but
         # the disagreement is recorded, because it is the wrong-arm selection
         # this contract exists to catch, caught.
+        if payload.target_kind == "arm_identity":
+            return _arm_identity_result(assignment, data, payload,
+                                        arms_reported, comparisons_reported)
         # The parts of the assigned value, checked against its own quote. An
         # interval the quote states but the response dropped keeps the result
         # partial: a point estimate alone must not read as a complete answer.
@@ -695,6 +705,61 @@ def _finalize_result(data: dict, payload: ExtractSourceValueInput) -> SourceValu
         arms_reported=arms_reported, comparisons_reported=comparisons_reported,
         source_components=source_components,
     )
+
+
+def _arm_identity_result(
+    assignment: TargetAssignment, data: dict,
+    payload: ExtractSourceValueInput,
+    arms_reported: list[ArmEvidence],
+    comparisons_reported: list[ComparisonEvidence],
+) -> SourceValueResult:
+    """For an identity field, the answer is the arm's NAME, not a number about it.
+
+    The enumeration already carries what is wanted: the paper's own label for
+    the arm the assignment selected, with a quote that has been checked against
+    the document. The generic answer for such a field came back as the arm's
+    size — 315 where the review says "Ipilimumab (3 mg/kg) + placebo" — which
+    compares as a number against a description and can never be right. So the
+    label is projected deterministically here rather than explained to the
+    model: the data contract decides what kind of answer the field takes.
+    """
+    label = (assignment.paper_label or "").strip()
+    paper_text = payload.document.full_text or ""
+    if not label or not normalised_contains(paper_text, label):
+        reason = (f"the arm label {label!r} the enumeration assigned to this "
+                  "target is not printed in the source document")
+        return SourceValueResult(
+            found=False, value=None, quote=assignment.quote,
+            source_field_name=str(data.get("source_field_name") or "").strip(),
+            location=str(data.get("location") or "").strip(),
+            group_label_in_paper=label, not_found_reason=reason,
+            cohorts_seen=[a.label for a in arms_reported],
+            value_origin="unresolved", target_check="unsupported",
+            target_reason=reason, assigned_arm_label=label,
+            arms_reported=arms_reported, comparisons_reported=comparisons_reported,
+            evidence_check="protocol_error", evidence_reason=reason)
+
+    own_pick = str(data.get("value") or "").strip()
+    target_check, target_reason = "ok", ""
+    if own_pick and not _same_value(own_pick, label):
+        target_check = "reassigned"
+        target_reason = (
+            f"the extraction offered {own_pick!r} for this target; this field is "
+            f"the arm's own identity, so the value is the paper's label for the "
+            f"assigned arm, {label!r}")
+    return SourceValueResult(
+        found=True, value=label, unit="", quote=assignment.quote,
+        source_field_name=str(data.get("source_field_name") or "").strip(),
+        location=str(data.get("location") or "").strip(),
+        group_label_in_paper=label,
+        cohorts_seen=[a.label for a in arms_reported],
+        value_origin="arm_enumeration",
+        derivation=(f"the enumerated arms were assigned to the review's cohorts "
+                    f"and {payload.group!r} resolved to the paper's {label!r}; "
+                    "an identity field takes that label as its value"),
+        target_check=target_check, target_reason=target_reason,
+        assigned_arm_label=label, target_margin=round(assignment.margin, 4),
+        arms_reported=arms_reported, comparisons_reported=comparisons_reported)
 
 
 def raw_or_target(raw_label: str, target: str) -> str:

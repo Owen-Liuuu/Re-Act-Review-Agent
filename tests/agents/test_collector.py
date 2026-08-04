@@ -643,3 +643,33 @@ async def test_collector_escalates_when_paper_not_retrieved():
     assert res.source_item.collection_outcome == CollectionOutcome.SOURCE_ACCESS_FAILED
     assert backend.calls == 0  # never reached extraction
     assert res.record.steps[0].observation["retrieved"] is False
+
+
+# --- what KIND of target a claim is (Phase 7A) ---
+
+def test_a_cell_that_repeats_the_cohorts_own_name_is_an_identity_claim():
+    """Structural, not a vocabulary: no rule here knows what a drug is."""
+    from react_review.agents.collector import _target_kind
+
+    arm_row = ReviewDataItem(
+        study_id="larkin_2015", group="ipilimumab_plus_placebo",
+        field_type="treatment_arm", value="Ipilimumab (3 mg/kg) + placebo",
+        cohort_label="Ipilimumab (3 mg/kg) + placebo")
+    assert _target_kind(arm_row) == "arm_identity"
+
+    count_row = arm_row.model_copy(update={"field_type": "cohort_n", "value": "315"})
+    assert _target_kind(count_row) == "value"
+
+    study_row = ReviewDataItem(study_id="larkin_2015", group="-",
+                               field_type="sample_size", value="945")
+    assert _target_kind(study_row) == "value"
+
+
+def test_identity_detection_ignores_case_and_spacing():
+    from react_review.agents.collector import _target_kind
+
+    item = ReviewDataItem(
+        study_id="s", group="g", field_type="treatment_arm",
+        value="Nivolumab (3 mg/kg)  + placebo",
+        cohort_label="nivolumab (3 mg/kg) + placebo")
+    assert _target_kind(item) == "arm_identity"

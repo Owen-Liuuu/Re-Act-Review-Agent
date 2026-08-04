@@ -1,0 +1,109 @@
+{
+  "asked_for": {
+    "field_type": "progression_free_survival",
+    "group": "nivolumab_plus_placebo"
+  },
+  "expected_source_value": "6.9 (95% CI 4.3-9.5)",
+  "note": "recorded Phase 7 response: all three arms correct, but the parenthetical wording was regularised to the first arm's full spelling while the paper prints the others short",
+  "provenance": "verbatim raw model response recorded by the Phase 7 melanoma campaign (glm-4.5-flash); frozen here as a regression fixture",
+  "response": {
+    "arms_reported": [
+      {
+        "label": "Nivolumab",
+        "quote": "The median progression-free survival was 6.9 months (95% confidence interval [CI], 4.3 to 9.5) in the nivolumab group, 11.5 months (95% CI, 8.9 to 16.7) in the nivolumab-plus-ipilimumab group, and 2.9 months (95% CI, 2.8 to 3.4) in the ipilimumab group.",
+        "unit": "months",
+        "value": "6.9 months (95% confidence interval [CI], 4.3 to 9.5)",
+        "value_components": {
+          "ci_level": 95,
+          "ci_lower": 4.3,
+          "ci_upper": 9.5,
+          "point_estimate": 6.9
+        }
+      },
+      {
+        "label": "Nivolumab plus Ipilimumab",
+        "quote": "The median progression-free survival was 6.9 months (95% confidence interval [CI], 4.3 to 9.5) in the nivolumab group, 11.5 months (95% CI, 8.9 to 16.7) in the nivolumab-plus-ipilimumab group, and 2.9 months (95% CI, 2.8 to 3.4) in the ipilimumab group.",
+        "unit": "months",
+        "value": "11.5 months (95% confidence interval [CI], 8.9 to 16.7)",
+        "value_components": {
+          "ci_level": 95,
+          "ci_lower": 8.9,
+          "ci_upper": 16.7,
+          "point_estimate": 11.5
+        }
+      },
+      {
+        "label": "Ipilimumab",
+        "quote": "The median progression-free survival was 6.9 months (95% confidence interval [CI], 4.3 to 9.5) in the nivolumab group, 11.5 months (95% CI, 8.9 to 16.7) in the nivolumab-plus-ipilimumab group, and 2.9 months (95% CI, 2.8 to 3.4) in the ipilimumab group.",
+        "unit": "months",
+        "value": "2.9 months (95% confidence interval [CI], 2.8 to 3.4)",
+        "value_components": {
+          "ci_level": 95,
+          "ci_lower": 2.8,
+          "ci_upper": 3.4,
+          "point_estimate": 2.9
+        }
+      }
+    ],
+    "cohort_counts": [],
+    "cohort_partition_complete": false,
+    "cohort_partition_mutually_exclusive": false,
+    "cohort_partition_quote": "",
+    "cohort_partition_reason": "",
+    "cohorts_seen": [
+      "Nivolumab",
+      "Nivolumab plus Ipilimumab",
+      "Ipilimumab"
+    ],
+    "comparisons_reported": [
+      {
+        "left_label": "nivolumab-plus-ipilimumab group",
+        "quote": "Significantly longer progression-free survival was observed in the nivolumab-plus-ipilimumab group than in the ipilimumab group (hazard ratio for death or disease progression, 0.42; 99.5% CI, 0.31 to 0.57; P<0.001) and in the nivolumab group than in the ipilimumab group (hazard ratio, 0.57; 99.5% CI, 0.43 to 0.76; P<0.001)",
+        "right_label": "ipilimumab group",
+        "unit": "hazard ratio for death or disease progression",
+        "value": "0.42; 99.5% CI, 0.31 to 0.57; P<0.001",
+        "value_components": {
+          "ci_level": 99.5,
+          "ci_lower": 0.31,
+          "ci_upper": 0.57,
+          "point_estimate": 0.42
+        }
+      },
+      {
+        "left_label": "nivolumab group",
+        "quote": "Significantly longer progression-free survival was observed in the nivolumab-plus-ipilimumab group than in the ipilimumab group (hazard ratio for death or disease progression, 0.42; 99.5% CI, 0.31 to 0.57; P<0.001) and in the nivolumab group than in the ipilimumab group (hazard ratio, 0.57; 99.5% CI, 0.43 to 0.76; P<0.001)",
+        "right_label": "ipilimumab group",
+        "unit": "hazard ratio",
+        "value": "0.57; 99.5% CI, 0.43 to 0.76; P<0.001",
+        "value_components": {
+          "ci_level": 99.5,
+          "ci_lower": 0.43,
+          "ci_upper": 0.76,
+          "point_estimate": 0.57
+        }
+      },
+      {
+        "left_label": "nivolumab-plus-ipilimumab group",
+        "quote": "The hazard ratio for the comparison between the nivolumab-plus-ipilimumab group and the nivolumab group was 0.74 (95% CI, 0.60 to 0.92).",
+        "right_label": "nivolumab group",
+        "unit": "hazard ratio",
+        "value": "0.74 (95% CI, 0.60 to 0.92)",
+        "value_components": {
+          "ci_level": 95,
+          "ci_lower": 0.6,
+          "ci_upper": 0.92,
+          "point_estimate": 0.74
+        }
+      }
+    ],
+    "explicit_total_reported": false,
+    "found": true,
+    "group_label_in_paper": "Ipilimumab",
+    "location": "Results",
+    "not_found_reason": "",
+    "quote": "The median progression-free survival was 6.9 months (95% confidence interval [CI], 4.3 to 9.5) in the nivolumab group, 11.5 months (95% CI, 8.9 to 16.7) in the nivolumab-plus-ipilimumab group, and 2.9 months (95% CI, 2.8 to 3.4) in the ipilimumab group.",
+    "source_field_name": "median progression-free survival",
+    "unit": "months",
+    "value": "2.9 months (95% confidence interval [CI], 2.8 to 3.4)"
+  }
+}

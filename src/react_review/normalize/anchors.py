@@ -47,6 +47,39 @@ def quote_contains_value(quote: str, value: str) -> bool:
     return bool(compact_value) and compact_value in alnum_compact(quote)
 
 
+_NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def value_supported_by_quote(quote: str, value: str) -> bool:
+    """Whether the quote supports this value — numbers strictly, wording not.
+
+    A paper prints one arm's interval in full ("95% confidence interval [CI],
+    4.3 to 9.5") and the next in short ("95% CI, 8.9 to 16.7"); a response that
+    regularises the wording is reporting the same measurement. Demanding the
+    exact bytes rejected complete, correct extractions for a parenthesis.
+
+    What may NOT move is the arithmetic: every number in the value must appear
+    in the quote, in the same order and with nothing else between them. So
+    "11.5 (95% CI 8.9-16.7)" is supported by that sentence and "11.5 (95% CI
+    2.8-3.4)" — every number of which also occurs somewhere in it — is not.
+    """
+    wanted = _NUMBER.findall(value or "")
+    if not wanted:
+        return quote_contains_value(quote, value)
+    printed = _NUMBER.findall(flatten(quote))
+    span = len(wanted)
+    return any(
+        all(_same_number(a, b) for a, b in zip(wanted, printed[start:start + span]))
+        for start in range(0, max(0, len(printed) - span) + 1))
+
+
+def _same_number(one: str, other: str) -> bool:
+    try:
+        return float(one) == float(other)
+    except ValueError:
+        return one == other
+
+
 def flatten(text: str) -> str:
     """Whitespace collapsed, case folded, positions otherwise preserved.
 

@@ -149,17 +149,18 @@ def test_components_supply_an_interval_the_verbatim_value_lacks():
         field_type="hazard_ratio", review_value="0.42 (95% CI 0.37-0.48)",
         source_value="0.42", review_unit="ratio", source_unit="ratio")
     assert without.label is AuditLabel.MATCH        # unverified, review-required
-    assert without.components_unconsumed == ["ci"]
+    assert without.components_unconsumed == ["ci", "ci_level"]
 
     with_components = compare_values(
         field_type="hazard_ratio", review_value="0.42 (95% CI 0.37-0.48)",
         source_value="0.42", review_unit="ratio", source_unit="ratio",
         source_components={"point_estimate": 0.42, "ci_level": 99.5,
                            "ci_lower": 0.31, "ci_upper": 0.57, "status": "ok"})
+    # With 7C the LEVEL decides first: a 95% interval and a 99.5% one are not
+    # the same quantity, whatever their bounds do.
     assert with_components.label is AuditLabel.MISMATCH
-    assert "confidence interval" in with_components.reason
-    assert with_components.components_compared == ["ci"]
-    # NB the LEVEL (95 vs 99.5) is still not a component here — that is 7C.
+    assert "99.5% one" in with_components.reason
+    assert "ci_level" in with_components.components_compared
 
 
 def test_components_never_overwrite_what_the_paper_printed():
@@ -168,7 +169,8 @@ def test_components_never_overwrite_what_the_paper_printed():
         source_value="0.42 (99.5% CI 0.31-0.57)",
         source_components={"point_estimate": 0.42, "ci_lower": 9.9,
                            "ci_upper": 9.9, "status": "ok"})
-    assert result.label is AuditLabel.MATCH
+    assert result.label is AuditLabel.MISMATCH        # 95% vs 99.5%, as printed
+    assert "ci_level" in result.components_compared
 
 
 def test_a_refused_component_block_is_not_used():
@@ -177,7 +179,7 @@ def test_a_refused_component_block_is_not_used():
         source_value="0.42",
         source_components={"ci_lower": 0.31, "ci_upper": 0.57,
                            "status": "protocol_error"})
-    assert result.components_unconsumed == ["ci"]
+    assert result.components_unconsumed == ["ci", "ci_level"]
 
 
 @pytest.mark.asyncio

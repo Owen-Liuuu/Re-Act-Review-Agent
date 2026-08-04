@@ -31,9 +31,19 @@ _OPERATORS = {"≤": "<=", "≥": ">="}
 
 # "0.62 (95% CI 0.48–0.81)" / "0.62 [95%CI: 0.48 to 0.81]" — the interval is the
 # clinically decisive half of an effect estimate and was being dropped entirely.
+# The label may be abbreviated or spelled out, and a paper often prints both in
+# one clause ("95% confidence interval [CI], 4.3 to 9.5"), so a "]" may stand
+# between the label and the bounds; only ")" closes the clause.
 _CI_RE = re.compile(
-    rf"[\(\[][^)\]]*?\bC\.?\s*I\.?\b[^)\]]*?({_NUM})\s*(?:to|[-–—,])\s*({_NUM})",
+    rf"[\(\[][^)\]]*?(?:\bC\.?\s*I\.?\b|confidence\s+interval)"
+    rf"[^)]*?({_NUM})\s*(?:to|[-–—,])\s*({_NUM})",
     re.I)
+
+# The level inside that same clause: "95% CI", "99.5% CI", "95% confidence
+# interval". Scanned within the matched interval only, so a cell like
+# "45/120 (37.5%)" cannot contribute a confidence level.
+_CI_LEVEL_RE = re.compile(
+    rf"({_NUM})\s*%\s*(?:C\.?\s*I\.?|confidence\s+interval)", re.I)
 
 # "45/120 (37.5%)" — three different quantities in one cell.
 _EVENTS_RE = re.compile(r"(?<![\d./])(\d+)\s*/\s*(\d+)(?![\d/])")
@@ -56,6 +66,9 @@ class NumericValue:
             that value is simply wrong.
         ci_lower / ci_upper: a reported confidence interval. Distinct from
             ``lower``/``upper``, which are a ± band or a plain range.
+        ci_level: the interval's confidence LEVEL (95, 99.5). Two intervals
+            stated at different levels are different quantities even when their
+            bounds coincide, so the level is carried as its own component.
         events / total / pct: an ``events/total (pct%)`` cell — three different
             quantities that must be compared against their own counterparts.
     """
@@ -69,6 +82,7 @@ class NumericValue:
     operator: str = ""
     ci_lower: float | None = None
     ci_upper: float | None = None
+    ci_level: float | None = None
     events: int | None = None
     total: int | None = None
     pct: float | None = None
@@ -121,6 +135,8 @@ class NumericValue:
             found.add("operator")
         if self.ci_lower is not None or self.ci_upper is not None:
             found.add("ci")
+        if self.ci_level is not None:
+            found.add("ci_level")
         if self.events is not None or self.total is not None:
             found.add("events")
         if self.pct is not None:
@@ -190,8 +206,10 @@ def parse_numeric(value: object) -> NumericValue:
     m_ci = _CI_RE.search(s_pm)
     if m_ci:
         lo, hi = float(m_ci.group(1)), float(m_ci.group(2))
+        m_level = _CI_LEVEL_RE.search(m_ci.group(0))
         return NumericValue(raw=raw, primary=primary,
-                            ci_lower=min(lo, hi), ci_upper=max(lo, hi))
+                            ci_lower=min(lo, hi), ci_upper=max(lo, hi),
+                            ci_level=float(m_level.group(1)) if m_level else None)
 
     # a relational bound ("p < 0.001"): the number is a threshold, not a value
     m_op = _OPERATOR_RE.search(s_pm)
