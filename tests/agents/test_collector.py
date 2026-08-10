@@ -673,3 +673,65 @@ def test_identity_detection_ignores_case_and_spacing():
         value="Nivolumab (3 mg/kg)  + placebo",
         cohort_label="nivolumab (3 mg/kg) + placebo")
     assert _target_kind(item) == "arm_identity"
+
+
+# --- one paper, one retrieval (P8 D1-1) ---
+
+class _CountingRetriever(PaperRetriever):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def retrieve(self, reference):
+        self.calls += 1
+        return PaperDocument(
+            paper_id=reference.doi or "x", reference=reference,
+            full_text="Table 1. Age (years) 12.90 ± 1.30 12.96 ± 1.12")
+
+
+@pytest.mark.asyncio
+async def test_a_study_is_fetched_once_however_many_claims_it_has():
+    """Nine claims about one paper used to mean nine retrievals of it."""
+    retriever = _CountingRetriever()
+    backend = StubBackend({"found": True, "value": "12.96 ± 1.12", "unit": "years",
+                           "quote": "Age (years) 12.90 ± 1.30 12.96 ± 1.12",
+                           "source_field_name": "Age", "location": "Table 1"})
+    collector = Collector(_catalogue(retriever, backend))
+
+    source = await collector.open_study(_REF)
+    for _ in range(5):
+        await collector.collect(_REVIEW, _REF, source=source)
+    assert retriever.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_a_caller_that_passes_no_source_still_works():
+    """The old signature keeps its old behaviour: opened for this claim alone."""
+    retriever = _CountingRetriever()
+    backend = StubBackend({"found": False, "not_found_reason": "not there"})
+    collector = Collector(_catalogue(retriever, backend))
+    await collector.collect(_REVIEW, _REF)
+    assert retriever.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_a_paper_that_cannot_be_retrieved_fails_every_claim_the_same_way():
+    """One failed retrieval, not one per claim — and the same outcome for each."""
+    collector = Collector(_catalogue(_NoneRetriever(), StubBackend({})))
+    source = await collector.open_study(_REF)
+    assert source.retrieved is False
+    outcomes = []
+    for _ in range(3):
+        result = await collector.collect(_REVIEW, _REF, source=source)
+        outcomes.append(result.source_item.collection_outcome)
+    assert set(outcomes) == {CollectionOutcome.SOURCE_ACCESS_FAILED}
+
+
+@pytest.mark.asyncio
+async def test_an_unresolvable_citation_is_decided_once_for_the_study():
+    from react_review.steps.paper_verification.schemas import ReferenceEntry
+
+    collector = Collector(_catalogue(_CountingRetriever(), StubBackend({})))
+    source = await collector.open_study(ReferenceEntry(title=""))
+    assert source.outcome is CollectionOutcome.UNRESOLVED_SOURCE
+    result = await collector.collect(_REVIEW, ReferenceEntry(title=""), source=source)
+    assert result.source_item.collection_outcome is CollectionOutcome.UNRESOLVED_SOURCE

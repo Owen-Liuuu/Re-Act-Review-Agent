@@ -50,6 +50,27 @@ def _norm_text(value: object) -> str:
     return " ".join(str(value or "").lower().split())
 
 
+class StudySource(BaseModel):
+    """One paper, opened once.
+
+    A study's claims used to be collected one at a time, each re-resolving the
+    citation and re-fetching the same PDF: nine claims about one paper meant
+    nine retrievals of it. Opening the study once and passing this around makes
+    the cost proportional to papers rather than to cells — and, more quietly,
+    guarantees every claim about a study is read from the SAME document.
+    """
+
+    reference: ReferenceEntry
+    document: object | None = None
+    retrieved: bool = False
+    reason: str = ""                       # why there is no document, if there is none
+    outcome: CollectionOutcome | None = None
+    provenance: dict[str, str] = {}
+    steps: list[StepRecord] = []
+
+    model_config = {"arbitrary_types_allowed": True}
+
+
 class CollectResult(BaseModel):
     source_item: SourceEvidenceItem
     record: AgentRun
@@ -142,6 +163,7 @@ class Collector:
         decider: ReflectionDecider | None = None,
         max_attempts: int = 3,
         extraction_profile: str = DEFAULT_PROFILE,
+        telemetry=None,
     ) -> None:
         self._fetch = catalogue.get("fetch_fulltext")
         self._extract = catalogue.get("extract_source_value")
@@ -153,6 +175,8 @@ class Collector:
         # a run's answers are attributable to the profile that produced them.
         self._extraction_profile = extraction_profile
         self._extraction_profile = extraction_profile
+        # Counts retrievals, so "one paper, one fetch" is a measured claim.
+        self._telemetry = telemetry
         self._max_attempts = max(1, max_attempts)
         self._decider = decider or ReflectionDecider(max_attempts=self._max_attempts)
 
@@ -172,40 +196,24 @@ class Collector:
             return {}
         return {c.key: [c.display, *c.raw_variants] for c in self._cohorts.labels}
 
-    async def collect(
-        self,
-        review_item: ReviewDataItem,
-        reference: ReferenceEntry,
-        *,
-        research_context: str = "",
-    ) -> CollectResult:
+    async def open_study(self, reference: ReferenceEntry) -> StudySource:
+        """Resolve the citation and fetch the paper — once per study.
+
+        Everything here used to happen per claim. It depends only on the study,
+        so doing it per claim was pure repetition, and it meant two claims about
+        one paper could in principle be answered from two different retrievals.
+        """
         steps: list[StepRecord] = []
 
-        # A claim whose cohort could not be placed has nothing specific to look
-        # for. Sending it anyway would ask the paper for an unnamed arm and read
-        # back whatever is nearest — so it stops here, as its own outcome rather
-        # than as MISSING_SOURCE, which would imply the paper omitted the value.
-        if getattr(review_item, "cohort_status", "resolved") in ("unknown", "ambiguous"):
-            reason = next((str(r) for r in getattr(review_item, "reasons", [])
-                           if r.code.startswith("cohort")),
-                          f"the cohort {review_item.cohort_label!r} could not be placed")
-            return self._result(
-                review_item, SourceValueResult(found=False, not_found_reason=reason),
-                steps, ReflectionDecision.ESCALATE, CollectionOutcome.UNKNOWN_COHORT)
-
-        # The review's reference list yielded nothing for this study, so there is
-        # no citation to look up. Searching on the study id would just match some
-        # unrelated paper; say so instead.
         if not is_resolvable(reference):
-            return self._result(
-                review_item,
-                SourceValueResult(found=False, not_found_reason=(
-                    "the review's reference list contains no citation for this "
-                    "study, so the source paper could not be identified")),
-                steps, ReflectionDecision.ESCALATE,
-                CollectionOutcome.UNRESOLVED_SOURCE)
+            return StudySource(
+                reference=reference, retrieved=False,
+                outcome=CollectionOutcome.UNRESOLVED_SOURCE,
+                reason=("the review's reference list contains no citation for "
+                        "this study, so the source paper could not be identified"),
+                steps=steps)
 
-        # 0. No printed DOI → resolve the citation to a GATED DOI online before
+        # No printed DOI → resolve the citation to a GATED DOI online before
         # fetching. A low-confidence / no match is UNRESOLVED_SOURCE (we refuse
         # to fetch a wrong paper). References that already carry a DOI skip this.
         if self._resolve is not None and not (reference.doi or "").strip():
@@ -221,12 +229,13 @@ class Collector:
             if rr.status == "resolved" and rr.doi:
                 reference = reference.model_copy(update={"doi": rr.doi})
             else:
-                return self._result(review_item, SourceValueResult(found=False), steps,
-                                    ReflectionDecision.ESCALATE,
-                                    CollectionOutcome.UNRESOLVED_SOURCE)
+                return StudySource(
+                    reference=reference, retrieved=False,
+                    outcome=CollectionOutcome.UNRESOLVED_SOURCE, steps=steps)
 
-        # 1. Fetch the source paper (deterministic; document held in Python).
         fetched = await self._fetch.run(reference)
+        if self._telemetry is not None:
+            self._telemetry.attempt("fetch_fulltext")
         provenance = _provenance(fetched.document)
         steps.append(StepRecord(
             index=len(steps), thought="fetch source full text", tool="fetch_fulltext",
@@ -235,11 +244,52 @@ class Collector:
         ))
         if not fetched.retrieved or fetched.document is None:
             out = self._decider.decide(ReflectionSignals(retrieval_ok=False, attempt=0))
+            return StudySource(reference=reference, retrieved=False,
+                               outcome=CollectionOutcome.SOURCE_ACCESS_FAILED,
+                               reason=out.reason, provenance=provenance, steps=steps)
+        return StudySource(reference=reference, document=fetched.document,
+                           retrieved=True, provenance=provenance, steps=steps)
+
+    async def collect(
+        self,
+        review_item: ReviewDataItem,
+        reference: ReferenceEntry,
+        *,
+        research_context: str = "",
+        source: StudySource | None = None,
+    ) -> CollectResult:
+        steps: list[StepRecord] = []
+
+        # A claim whose cohort could not be placed has nothing specific to look
+        # for. Sending it anyway would ask the paper for an unnamed arm and read
+        # back whatever is nearest — so it stops here, as its own outcome rather
+        # than as MISSING_SOURCE, which would imply the paper omitted the value.
+        if getattr(review_item, "cohort_status", "resolved") in ("unknown", "ambiguous"):
+            reason = next((str(r) for r in getattr(review_item, "reasons", [])
+                           if r.code.startswith("cohort")),
+                          f"the cohort {review_item.cohort_label!r} could not be placed")
+            return self._result(
+                review_item, SourceValueResult(found=False, not_found_reason=reason),
+                steps, ReflectionDecision.ESCALATE, CollectionOutcome.UNKNOWN_COHORT)
+
+        # The paper is opened once per study. Callers that do not pass one get
+        # the old behaviour — opened here, for this claim alone.
+        if source is None:
+            source = await self.open_study(reference)
+        steps.extend(source.steps)
+        reference = source.reference
+
+        provenance = source.provenance
+        if not source.retrieved or source.document is None:
+            outcome = source.outcome or CollectionOutcome.SOURCE_ACCESS_FAILED
+            decision = (ReflectionDecision.ESCALATE
+                        if outcome is CollectionOutcome.UNRESOLVED_SOURCE
+                        else self._decider.decide(
+                            ReflectionSignals(retrieval_ok=False, attempt=0)).decision)
             return self._result(
                 review_item,
-                SourceValueResult(found=False, not_found_reason=out.reason),
-                steps, out.decision, CollectionOutcome.SOURCE_ACCESS_FAILED,
-                provenance=provenance)
+                SourceValueResult(found=False, not_found_reason=source.reason),
+                steps, decision, outcome, provenance=provenance)
 
         # 2. Directed extraction, with a bounded reflection-driven retry loop.
         concept = self._concept_for(review_item.field_type)
@@ -248,7 +298,7 @@ class Collector:
         reflection_reason = ""
         for attempt in range(self._max_attempts):
             result = await self._extract.run(ExtractSourceValueInput(
-                document=fetched.document,
+                document=source.document,
                 field_type=review_item.field_type,
                 group=review_item.group,
                 concept=concept,

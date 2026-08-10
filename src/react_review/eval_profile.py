@@ -48,7 +48,7 @@ from react_review.run_profile import (
 SCHEMA_VERSION = 1
 SCHEMA_VERSIONS = (1, 2)
 
-EXTRACTION_PROFILES = ("legacy_v3", "targeted_v4")
+EXTRACTION_PROFILES = ("legacy_v3", "targeted_v4", "targeted_v5_batch")
 SEMANTIC_PROFILES = ("semantic_v1", "semantic_v2_specificity")
 
 # Exactly the columns each contract file may carry. An unexpected column is a

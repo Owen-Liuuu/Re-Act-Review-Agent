@@ -105,9 +105,15 @@ class AuditPipeline:
 
         for study_id, claims in groups:
             reference = reference_for(study_id)
+            # Opened once for the whole study: every claim about this paper is
+            # then answered from the same retrieval, and the cost of an audit
+            # scales with papers rather than with cells.
+            opener = getattr(self._collector, "open_study", None)
+            source = await opener(reference) if opener is not None else None
             for item in claims:
                 result = await self._collector.collect(
-                    item, reference, research_context=research_context
+                    item, reference, research_context=research_context,
+                    **({"source": source} if source is not None else {})
                 )
                 source_items.append(result.source_item)
                 records.append(result.record)

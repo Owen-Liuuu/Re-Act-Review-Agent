@@ -15,11 +15,15 @@ from __future__ import annotations
 
 LEGACY_V3 = "extract-source-v3-scoped-cohort-counts"
 TARGETED_V4 = "extract-source-v4-targeted-components"
+#: One batched reading of one field, in one shape. Its prompt lives in
+#: tools/batch_prompt.py and asks for EVERY reading rather than one target.
+BATCH_V5 = "extract-source-v5-batch"
 
 #: profile name -> the ``prompt_version`` recorded in the replay cache key.
 PROMPT_VERSIONS = {
     "legacy_v3": LEGACY_V3,
     "targeted_v4": TARGETED_V4,
+    "targeted_v5_batch": BATCH_V5,
 }
 DEFAULT_PROFILE = "legacy_v3"
 

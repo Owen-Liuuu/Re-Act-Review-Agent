@@ -226,6 +226,10 @@ async def run_rows(
     # the audit's semantic-call count depend on how the scorer grades extraction.
     extraction_comparator = CompareValuesTool(tol)
     results: list[RowResult] = []
+    # One retrieval per study, shared by that study's rows — the eval must pay
+    # what a run pays, or its cost numbers describe a pipeline nobody runs.
+    opened: dict[str, Any] = {}
+    opener = getattr(collector, "open_study", None)
     for r in rows:
         # Only a target contract may add to the question the extractor is
         # asked. Deriving a raw field name from the answer key's own column
@@ -247,8 +251,13 @@ async def run_rows(
             unit=(r.get("unit") or ""), column_header=(r.get("column_header") or ""),
             **extra,
         )
+        reference = reference_for(review.study_id)
+        if opener is not None and review.study_id not in opened:
+            opened[review.study_id] = await opener(reference)
+        source = opened.get(review.study_id)
         res = await collector.collect(
-            review, reference_for(review.study_id), research_context=research_context)
+            review, reference, research_context=research_context,
+            **({"source": source} if source is not None else {}))
         si = res.source_item
 
         match = await _compare(
