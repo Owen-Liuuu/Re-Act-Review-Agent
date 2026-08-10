@@ -31,6 +31,7 @@ import json
 
 from pydantic import BaseModel, Field
 
+from react_review.normalize.cohorts import distinguishing_tokens
 from react_review.normalize.population import PopulationScope
 
 #: What kind of thing a batch is about. The prompt asks only for this shape:
@@ -92,9 +93,19 @@ class EntryIdentity(BaseModel):
         Deliberately excludes population, timepoint and effect: those are
         readings OF this target, and folding them in here is what would make one
         arm look like several and break the one-to-one assignment.
+
+        Labels are compared on their distinguishing WORDS, because a paper names
+        the same arm differently in different places — "nivolumab-plus-
+        ipilimumab group" in the results, "Nivolumab plus Ipilimumab" in a table
+        header. Comparing the strings would split one arm in two and lose
+        exactly the case this identity exists to hold together. It stays strict
+        where it must: "nivolumab group" keeps one word where the combination
+        keeps three, so the two never collapse.
         """
+        labels = self.comparison_pair or (self.arm_label,)
         return (self.target_shape, self.target_kind,
-                self.comparison_pair or (self.arm_label,))
+                tuple(tuple(sorted(distinguishing_tokens(label)))
+                      for label in labels))
 
     def selection(self) -> tuple:
         """WHICH READING — what a claim selects among candidates for one target."""

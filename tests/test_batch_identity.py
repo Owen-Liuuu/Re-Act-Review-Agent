@@ -180,3 +180,17 @@ def test_binding_needs_a_document_when_the_quote_does_not_carry_the_phrase():
 def test_an_anchor_knows_whether_it_was_located():
     assert EvidenceAnchor(quote="x").located is False
     assert EvidenceAnchor(quote="x", start=10).located is True
+
+
+def test_one_arm_named_two_ways_is_still_one_arm():
+    """Papers rename their own arms between the results and a table header.
+
+    Comparing the strings would split one arm in two and lose the MA004 case
+    entirely; comparing the distinguishing words keeps it together while still
+    separating a monotherapy arm from the combination that contains its name.
+    """
+    results = EntryIdentity(arm_label="nivolumab-plus-ipilimumab group")
+    table = EntryIdentity(arm_label="Nivolumab plus Ipilimumab")
+    mono = EntryIdentity(arm_label="nivolumab group")
+    assert results.target() == table.target()
+    assert results.target() != mono.target()
