@@ -24,19 +24,24 @@ batch never reported — belong to projection, where the claim is known.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from react_review.normalize.anchors import normalised_contains, value_supported_by_quote
+from react_review.normalize.cohorts import distinguishing_tokens
 from react_review.normalize.population import PopulationScope, classify_population
 from react_review.schemas.batch import (
     ARM,
     COMPARISON,
     STUDY,
+    BatchAggregationEvidence,
+    BatchCohortCount,
     BatchEntry,
     EntryIdentity,
     EvidenceAnchor,
+    PartitionAssessment,
 )
 from react_review.tools.evidence_binding import binding_verdict, bound
 from react_review.tools.target_assignment import _label_in_quote
@@ -52,6 +57,12 @@ class BatchReading(BaseModel):
     #: Entries dropped one by one, with the reason each was dropped.
     rejected: list[dict[str, Any]] = Field(default_factory=list)
     nothing_reported_reason: str = ""
+    #: Components offered toward a total, once each has been anchored. Present
+    #: only when every component survived: a partial set is not a partition.
+    aggregation_evidence: BatchAggregationEvidence | None = None
+    #: Why the components cannot be summed. Independent of ``rejected``: losing
+    #: the aggregation never costs an explicit total the same response carries.
+    aggregation_errors: list[str] = Field(default_factory=list)
 
     @property
     def usable(self) -> list[BatchEntry]:
@@ -60,10 +71,15 @@ class BatchReading(BaseModel):
     def summary(self) -> str:
         return (f"{len(self.usable)} usable reading(s), "
                 f"{len(self.rejected)} rejected"
+                + (f"; {len(self.aggregation_evidence.cohort_counts)} component(s)"
+                   if self.aggregation_evidence else "")
+                + (f"; aggregation unusable: {self.aggregation_errors[0]}"
+                   if self.aggregation_errors else "")
                 + (f"; batch failed: {self.batch_error}" if self.batch_error else ""))
 
 
-def parse_batch(raw: object, document: str, *, target_shape: str = ARM) -> BatchReading:
+def parse_batch(raw: object, document: str, *, target_shape: str = ARM,
+                aggregable: bool = False) -> BatchReading:
     """Read a v5 batch response, isolating what fails from what does not."""
     if not isinstance(raw, dict):
         return BatchReading(batch_error="the response is not a JSON object")
@@ -82,9 +98,121 @@ def parse_batch(raw: object, document: str, *, target_shape: str = ARM) -> Batch
             rejected.append({"index": index, "reason": reason})
         else:
             entries.append(entry)
+
+    evidence, errors = (parse_aggregation(raw, document) if aggregable
+                        else (None, []))
     return BatchReading(
         entries=entries, rejected=rejected,
+        aggregation_evidence=evidence, aggregation_errors=errors,
         nothing_reported_reason=str(raw.get("nothing_reported_reason") or "").strip())
+
+
+def parse_aggregation(raw: dict,
+                      document: str) -> tuple[BatchAggregationEvidence | None, list[str]]:
+    """Read the components of a total, all-or-nothing.
+
+    Unlike a reading, a component has no value on its own: it is only ever an
+    addend. So the isolation that protects the readings is wrong here — dropping
+    one bad component and summing the rest would produce a total that is missing
+    an arm, which is a wrong answer rather than a lost one. One bad component
+    therefore costs the whole aggregation, and nothing else.
+    """
+    counts_raw = raw.get("cohort_counts")
+    if counts_raw in (None, "", []):
+        return None, []
+    if not isinstance(counts_raw, list):
+        return None, ["`cohort_counts` is not a list"]
+
+    counts: list[BatchCohortCount] = []
+    errors: list[str] = []
+    for index, item in enumerate(counts_raw):
+        count, reason = _parse_component(item, index, document)
+        if count is None:
+            errors.append(reason)
+        else:
+            counts.append(count)
+
+    seen: dict[tuple, int] = {}
+    for count in counts:
+        key = tuple(sorted(distinguishing_tokens(count.arm_label)))
+        if key in seen and seen[key] != count.count:
+            errors.append(f"the arm {count.arm_label!r} is given two different "
+                          f"counts ({seen[key]} and {count.count}), so the "
+                          "paper's own account of it is not settled")
+        seen[key] = count.count
+
+    if errors:
+        return None, errors
+    return BatchAggregationEvidence(
+        cohort_counts=counts, partition=_parse_partition(raw, document)), []
+
+
+def _parse_component(item: object, index: int,
+                     document: str) -> tuple[BatchCohortCount | None, str]:
+    """One addend, anchored in the paper — value, arm name and population alike."""
+    if not isinstance(item, dict):
+        return None, f"component {index} is not a structured object"
+    label = str(item.get("arm_label") or "").strip()
+    quote = str(item.get("quote") or "").strip()
+    count = _positive_integer(item.get("count"))
+    if count is None:
+        return None, (f"the count for {label or 'an unnamed arm'} is not one "
+                      "positive whole number")
+    if not quote or not normalised_contains(document, quote):
+        return None, (f"the count {count} for {label or 'an unnamed arm'} has no "
+                      "quote that is a contiguous passage of the document")
+    if not value_supported_by_quote(quote, str(count)):
+        return None, f"the quote for {label or 'an unnamed arm'} does not print {count}"
+    if not label:
+        return None, f"the component counting {count} names no arm"
+    if not _label_in_quote(label, quote):
+        return None, f"the quote for {count} does not name the arm {label!r}"
+
+    phrase = str(item.get("population_phrase") or "").strip()
+    verdict, reason = binding_verdict(phrase, str(count), quote=quote,
+                                      document=document) if phrase else ("", "")
+    if not phrase or not bound(verdict):
+        return None, (f"the arm {label!r} does not say which people its {count} "
+                      "counts" if not phrase else
+                      f"the population {phrase!r} is not printed with the {count} "
+                      f"it is supposed to describe: {reason}")
+    scope = classify_population(phrase, source=verdict)
+    if not scope.stated:
+        return None, (f"{phrase!r} is not a population this contract recognises, "
+                      f"so what the {count} for {label!r} counts is unknown")
+    return BatchCohortCount(arm_label=label, count=count, quote=quote,
+                            population_phrase=phrase, source_index=index,
+                            population=scope), ""
+
+
+def _parse_partition(raw: dict, document: str) -> PartitionAssessment:
+    """The claim that these arms cover the population once each — with its proof.
+
+    The flags are carried as given and the quote is checked. Nothing is decided
+    here: a ``True`` that turns out to be unanchored is refused later, by the
+    policy, which is the only place allowed to permit arithmetic.
+    """
+    body = raw.get("partition")
+    if not isinstance(body, dict):
+        return PartitionAssessment()
+    quote = str(body.get("quote") or "").strip()
+    return PartitionAssessment(
+        complete=bool(body.get("complete")),
+        mutually_exclusive=bool(body.get("mutually_exclusive")),
+        quote=quote, reason=str(body.get("reason") or "").strip(),
+        population_phrase=str(body.get("population_phrase") or "").strip(),
+        anchored=bool(quote) and normalised_contains(document, quote))
+
+
+def _positive_integer(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, float):
+        return int(value) if value.is_integer() and value > 0 else None
+    text = str(value or "").strip()
+    return int(text) if re.fullmatch(r"[1-9][0-9]*", text) else None
 
 
 def parse_one_entry(item: object, index: int, document: str, *,
@@ -181,13 +309,13 @@ def _axis_scope(item: dict, quote: str, value: str,
         # fall through to the quote rather than record a scope nobody defined.
         return classify_population(quote), None
 
-    supporting = str(item.get("population_quote") or "").strip()
-    if supporting:
-        verdict, _ = binding_verdict(phrase, value, quote=quote, document=document)
-        if bound(verdict):
-            return classify_population(phrase, source=verdict), EvidenceAnchor(
-                quote=supporting)
     # Unbound: the axis stays unstated. Borrowing it is exactly the error.
+    #
+    # There used to be a second chance here, in which the model could name a
+    # separate passage carrying the phrase. It could never do anything: the
+    # binding check already searches the whole document for the phrase near this
+    # value, so a passage that would have bound was bound the first time, and one
+    # that would not is precisely the cross-block borrowing being refused.
     return classify_population(quote), None
 
 

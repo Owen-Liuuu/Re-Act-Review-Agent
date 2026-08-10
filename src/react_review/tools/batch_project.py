@@ -30,11 +30,28 @@ from typing import Any
 
 from react_review.normalize.cohorts import ComparisonTarget, label_affinity
 from react_review.normalize.population import PopulationContract, PopulationScope
-from react_review.schemas.batch import ARM, COMPARISON, STUDY, BatchEntry
+from react_review.schemas.batch import (
+    ARM,
+    COMPARISON,
+    STUDY,
+    BatchCohortCount,
+    BatchEntry,
+)
 from react_review.tools.batch_parse import BatchReading
+from react_review.tools.safe_aggregation import (
+    NOT_APPLICABLE,
+    PROTOCOL_ERROR,
+    REJECTED,
+    AggregationPolicy,
+    derive_partitioned_total,
+)
 from react_review.tools.target_assignment import MIN_PAIR_SIDE, assign_arms, resolve_sides
 
 OK = "ok"
+#: The total was not read but computed, under the frozen aggregation policy.
+#: Deliberately not ``OK``: a derived number and a printed one are different
+#: kinds of fact, and a caller that wants only what the paper states can say so.
+DERIVED = "derived"
 NOT_REPORTED = "not_reported"
 AMBIGUOUS = "ambiguous"
 SCOPE_UNRESOLVED = "scope_unresolved"
@@ -54,14 +71,39 @@ class Projection:
     #: Every reading that survived stage one, so a refusal can be inspected.
     candidates: list[BatchEntry] = field(default_factory=list)
     provenance: dict[str, Any] = field(default_factory=dict)
+    #: Set only when the total was computed rather than read. Kept beside the
+    #: entry rather than dressed up as one: a derived number has no quote that
+    #: prints it, and manufacturing a BatchEntry for it would let it be handled
+    #: everywhere as though the paper had stated it.
+    derived_value: int | None = None
+    derivation: str = ""
+    aggregation_status: str = NOT_APPLICABLE
+    aggregation_reason: str = ""
+    cohort_counts: list[BatchCohortCount] = field(default_factory=list)
+    verified_scope: PopulationScope | None = None
+    partition_quote: str = ""
 
     @property
     def ok(self) -> bool:
         return self.status == OK
 
     @property
+    def released(self) -> bool:
+        """Whether this claim got an answer at all, read or computed."""
+        return self.status in (OK, DERIVED)
+
+    @property
     def value(self) -> str | None:
-        return self.entry.value if self.entry else None
+        if self.entry is not None:
+            return self.entry.value
+        return str(self.derived_value) if self.derived_value is not None else None
+
+    @property
+    def evidence_anchors(self) -> list[str]:
+        """Every passage this answer rests on — one per component when derived."""
+        if self.entry is not None:
+            return [self.entry.quote] if self.entry.quote else []
+        return [c.quote for c in self.cohort_counts if c.quote]
 
 
 def project_claim(
@@ -74,11 +116,19 @@ def project_claim(
     required_axes: list[str] | None = None,
     timepoint_label: str = "",
     population_contract: PopulationContract | None = None,
+    aggregation_policy: AggregationPolicy | None = None,
 ) -> Projection:
     """Answer ONE claim from a batched reading, or say why it cannot be."""
     if reading.batch_error:
         return Projection(status=BATCH_FAILED, reason=reading.batch_error)
     entries = reading.usable
+
+    if target_shape == STUDY:
+        return _project_study(
+            reading, entries, requested_scope=requested_scope,
+            required_axes=required_axes or [], timepoint_label=timepoint_label,
+            population_contract=population_contract, policy=aggregation_policy)
+
     if not entries:
         return Projection(
             status=NOT_REPORTED,
@@ -87,17 +137,7 @@ def project_claim(
 
     # --- stage one: which target ------------------------------------------
     groups = _by_target(entries)
-    if target_shape == STUDY:
-        candidates = [e for e in entries if e.identity.target_shape == STUDY]
-        if not candidates:
-            return Projection(
-                status=NOT_REPORTED, candidates=entries,
-                reason=("the batch reports no whole-study value. A total the "
-                        "paper does not print is not a total it reported, and "
-                        "adding the arms up here would be arithmetic, not "
-                        "reading"))
-        provenance: dict[str, Any] = {"stage_one": "study-level, no arm to match"}
-    elif target_shape == COMPARISON:
+    if target_shape == COMPARISON:
         candidates, reason, provenance = _comparison_candidates(
             groups, comparison, review_labels or {})
         if candidates is None:
@@ -114,6 +154,109 @@ def project_claim(
     return _select(candidates, requested_scope=requested_scope,
                    required_axes=required_axes or [], timepoint_label=timepoint_label,
                    population_contract=population_contract, provenance=provenance)
+
+
+def _project_study(reading: BatchReading, entries: list[BatchEntry], *,
+                   requested_scope, required_axes, timepoint_label: str,
+                   population_contract, policy) -> Projection:
+    """A whole-study total: read it if the paper prints it, compute it if not.
+
+    The order is not a preference, it is the difference between a fact and an
+    inference. A printed total is what the paper says; a sum is what the paper
+    implies under conditions that have to hold. So the printed one is looked for
+    first, the computed one is only reached when there is no printed one AT THE
+    POPULATION THE REVIEW REPORTS, and when both exist they must agree — a
+    disagreement is the paper's own accounting failing, and picking whichever
+    number matches the review would hide exactly the discrepancy being audited.
+    """
+    study_entries = [e for e in entries if e.identity.target_shape == STUDY]
+    provenance: dict[str, Any] = {"stage_one": "study-level, no arm to match"}
+    if reading.aggregation_errors:
+        provenance["aggregation_errors"] = list(reading.aggregation_errors)
+
+    explicit = Projection(
+        status=NOT_REPORTED, candidates=study_entries,
+        reason=(reading.nothing_reported_reason
+                or "the batch reports no whole-study value"))
+    if study_entries:
+        explicit = _select(study_entries, requested_scope=requested_scope,
+                           required_axes=required_axes,
+                           timepoint_label=timepoint_label,
+                           population_contract=population_contract,
+                           provenance=provenance)
+
+    summed = derive_partitioned_total(
+        reading.aggregation_evidence, requested_scope,
+        required_axes=required_axes, policy=policy,
+        population_contract=population_contract)
+
+    if explicit.ok:
+        explicit.aggregation_status = summed.status
+        explicit.aggregation_reason = summed.reason
+        explicit.cohort_counts = summed.components
+        if summed.derived:
+            printed = _as_int(explicit.value)
+            explicit.provenance = {**explicit.provenance,
+                                   "cross_check": f"{summed.derivation} vs printed "
+                                                  f"{explicit.value}"}
+            if printed is None:
+                # A total that is not one whole number is not something the arms
+                # could corroborate; the printed value stands on its own.
+                explicit.aggregation_status = NOT_APPLICABLE
+                explicit.aggregation_reason = (
+                    "the printed total is not a single whole number, so the arm "
+                    "counts cannot confirm or contradict it")
+            elif printed != summed.total:
+                return Projection(
+                    status=CONTRADICTORY, candidates=study_entries,
+                    entry=explicit.entry, cohort_counts=summed.components,
+                    derivation=summed.derivation, verified_scope=summed.verified_scope,
+                    aggregation_status=summed.status, aggregation_reason=summed.reason,
+                    provenance=explicit.provenance,
+                    reason=(f"the paper prints {printed} for this population and its "
+                            f"own arms add to {summed.total} ({summed.derivation}); "
+                            "the paper does not agree with itself here, and choosing "
+                            "one of them would hide that"))
+            else:
+                explicit.aggregation_reason = (
+                    f"the arms independently add to the same total "
+                    f"({summed.derivation})")
+        return explicit
+
+    if summed.derived:
+        return Projection(
+            status=DERIVED, candidates=study_entries, derived_value=summed.total,
+            derivation=summed.derivation, aggregation_status=summed.status,
+            aggregation_reason=summed.reason, cohort_counts=summed.components,
+            verified_scope=summed.verified_scope,
+            partition_quote=summed.partition_quote,
+            reason=summed.reason,
+            provenance={**provenance, "explicit_total": explicit.status,
+                        "explicit_reason": explicit.reason,
+                        "policy": f"{summed.policy_id} ({summed.policy_sha256[:12]}…)"})
+
+    # Neither route worked. The refusal that explains the most is the one that
+    # got furthest: if components were offered, say which condition stopped the
+    # sum; otherwise say that the paper simply does not print the total.
+    explicit.aggregation_status = summed.status
+    explicit.aggregation_reason = summed.reason
+    explicit.cohort_counts = summed.components
+    if summed.status in (REJECTED, PROTOCOL_ERROR):
+        explicit.reason = (f"{explicit.reason}; and the arm counts could not be "
+                           f"added up because {summed.reason}")
+    elif explicit.status == NOT_REPORTED:
+        explicit.reason = (f"{explicit.reason}. A total the paper does not print is "
+                           "not a total it reported, and no per-arm counts were "
+                           "offered that could be shown to partition anything")
+    explicit.provenance = {**explicit.provenance, **provenance}
+    return explicit
+
+
+def _as_int(text: str | None) -> int | None:
+    """A printed total, when it is one whole number and nothing else."""
+    digits = "".join(ch for ch in str(text or "") if ch.isdigit() or ch == ",")
+    digits = digits.replace(",", "")
+    return int(digits) if digits and digits == str(text or "").strip().replace(",", "") else None
 
 
 def _by_target(entries: list[BatchEntry]) -> dict[tuple, list[BatchEntry]]:

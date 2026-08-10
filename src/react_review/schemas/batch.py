@@ -141,6 +141,55 @@ class BatchEntry(BaseModel):
         return _digest(list(self.identity.selection()))
 
 
+class BatchCohortCount(BaseModel):
+    """One arm's count, offered as a COMPONENT of a total rather than as a reading.
+
+    Kept apart from :class:`BatchEntry` deliberately. A component is not an
+    answer to anything on its own — it exists only to be summed, and only if the
+    partition evidence holds. Letting it travel as an ordinary reading would put
+    a per-arm number one selection away from being returned as a whole-study
+    total, which is the confusion this separation exists to make impossible.
+    """
+
+    arm_label: str = ""
+    count: int = 0
+    quote: str = ""
+    population_phrase: str = ""
+    #: Position in the model's response, so a rejected component can be named.
+    source_index: int = -1
+    #: Filled by the parser once the phrase has been shown to bind to the count.
+    population: PopulationScope | None = None
+
+
+class PartitionAssessment(BaseModel):
+    """The model's claim that these arms cover the population once each.
+
+    Both flags default to ``False``: an assessment the model did not make is not
+    a partition it established. The quote is what turns either flag from an
+    assertion into evidence — a ``True`` with nothing locatable behind it is
+    worth exactly as much as a ``False``.
+    """
+
+    complete: bool = False
+    mutually_exclusive: bool = False
+    quote: str = ""
+    reason: str = ""
+    population_phrase: str = ""
+    #: Set by the parser when ``quote`` was found in the document.
+    anchored: bool = False
+
+
+class BatchAggregationEvidence(BaseModel):
+    """Everything a batch offers toward computing a total it could not read."""
+
+    cohort_counts: list[BatchCohortCount] = Field(default_factory=list)
+    partition: PartitionAssessment | None = None
+
+    @property
+    def present(self) -> bool:
+        return bool(self.cohort_counts)
+
+
 class ClaimGroupKey(BaseModel):
     """Which claims may be asked in one reading.
 

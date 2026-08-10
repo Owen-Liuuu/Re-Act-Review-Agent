@@ -1,0 +1,87 @@
+"""Turning a projection into the evidence object the rest of the audit reads.
+
+This is the seam. Everything downstream — the comparison, the report, the
+benchmark — consumes :class:`SourceValueResult`, so a batched reading has to
+arrive in exactly that shape or nothing after it can be trusted to mean what it
+used to mean.
+
+Two rules govern what may be written here.
+
+*A field the batch does not assess is left empty, not filled with "ok".* The
+cohort guard belongs to the single-target path and has no counterpart in a
+batch, where the arm is decided by the global assignment instead. Writing its
+default through would report a check as passed that never ran, which is how a
+published result came to claim more than it had.
+
+*A derived total does not get a quote that prints it.* No passage of the paper
+states a number the paper never computed. The partition sentence is carried
+instead, because that is what the arithmetic actually rests on, and the
+components keep their own quotes so a reader can re-add them.
+"""
+from __future__ import annotations
+
+from react_review.schemas.evidence import CohortCount
+from react_review.tools.batch_project import (
+    CONTRADICTORY,
+    DERIVED,
+    OK,
+    Projection,
+)
+from react_review.tools.extract_source import SourceValueResult
+
+#: Projection statuses that mean "the batch answered a different question than
+#: the one asked", which the target guard already has words for.
+_TARGET_CHECK = {
+    "not_reported": "not_reported",
+    "ambiguous": "ambiguous",
+    "unsupported": "unsupported",
+    "contradictory": "inconsistent",
+    "scope_unresolved": "unsupported",
+    "timepoint_unresolved": "unsupported",
+    "batch_failed": "protocol_error",
+}
+
+
+def to_source_result(projection: Projection) -> SourceValueResult:
+    """One claim's projection, as the evidence object the audit already speaks."""
+    counts = [CohortCount(label=c.arm_label, count=c.count, quote=c.quote)
+              for c in projection.cohort_counts]
+    # The batch decides the arm globally and anchors every quote at parse time;
+    # it never runs the single-target cohort guard, so that verdict stays blank
+    # rather than inheriting a default nobody earned.
+    common = dict(cohort_check="", cohort_counts=counts,
+                  aggregation_status=projection.aggregation_status,
+                  aggregation_reason=projection.aggregation_reason)
+
+    if projection.status == DERIVED:
+        return SourceValueResult(
+            found=True, value=str(projection.derived_value),
+            value_origin="derived_sum", derivation=projection.derivation,
+            # Supports the arithmetic, not the number. The components carry the
+            # evidence for each addend.
+            quote=projection.partition_quote,
+            source_scope=projection.verified_scope,
+            target_check="ok", evidence_check="ok", **common)
+
+    if projection.status == OK and projection.entry is not None:
+        entry = projection.entry
+        return SourceValueResult(
+            found=True, value=entry.value, unit=entry.unit, quote=entry.quote,
+            value_origin="verbatim",
+            group_label_in_paper=entry.identity.arm_label,
+            assigned_arm_label=entry.identity.arm_label,
+            source_scope=entry.identity.population,
+            target_check="ok", evidence_check="ok", **common)
+
+    reason = projection.reason or "the batch did not answer this claim"
+    return SourceValueResult(
+        found=False, value=None, value_origin="unresolved",
+        not_found_reason=reason,
+        target_check=_TARGET_CHECK.get(projection.status, "unsupported"),
+        target_reason=reason,
+        # A contradiction is a fact about the paper, so what was read is kept
+        # visible even though none of it may be released as the answer.
+        cohorts_seen=([c.identity.arm_label for c in projection.candidates
+                       if c.identity.arm_label]
+                      if projection.status == CONTRADICTORY else []),
+        evidence_check="ok", **common)

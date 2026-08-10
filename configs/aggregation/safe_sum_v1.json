@@ -1,0 +1,39 @@
+{
+  "policy_id": "safe_sum_v1",
+  "version": 1,
+  "status": "active",
+  "written_on": "2026-08-10",
+  "purpose": "When a whole-study total may be computed from the arms instead of read from the paper. Written as a contract rather than as code branches so that the conditions cannot be relaxed one call site at a time, and so that a run can record which version of them it applied.",
+  "doctrine": "The model reports what the paper says; this policy decides whether that is enough to permit arithmetic. The model is never permitted to add anything up, and a stated total it computed itself is not a total the paper reported.",
+  "applies_to": {
+    "field_types": ["sample_size"],
+    "target_shapes": ["study"],
+    "why_narrow": "Counts of people partition; almost nothing else does. Summing arm-level means, medians, rates or hazard ratios is wrong even when every component is anchored, so the permission is granted by an explicit list rather than withheld by one."
+  },
+  "requirements": {
+    "min_components": 2,
+    "value_type": "positive_integer",
+    "distinct_arms_required": true,
+    "same_population_required": true,
+    "population_must_match_claim": true,
+    "require_component_value_anchor": true,
+    "require_component_label_anchor": true,
+    "require_component_population_anchor": true,
+    "require_partition_anchor": true,
+    "require_complete": true,
+    "require_mutually_exclusive": true
+  },
+  "on_unknown": "reject",
+  "on_explicit_total_conflict": "reject",
+  "statuses": {
+    "derived": "every requirement was met and the components were added by deterministic code",
+    "rejected": "the paper's own evidence does not establish that the components are complete, mutually exclusive, and one population",
+    "protocol_error": "the response was malformed: a non-integer count, an unanchored quote, or one arm given two different counts",
+    "not_applicable": "no arithmetic was performed, because the paper prints the total itself"
+  },
+  "notes": [
+    "A boolean is not evidence. `complete: true` with no locatable quote is treated exactly as `complete: false`.",
+    "Mixing populations is the failure this exists to prevent: allocated counts and an analysed count describe different sets of people, and their sum describes nobody.",
+    "An explicit total that disagrees with a valid sum is not resolved by preferring either one. Both are reported and the claim is refused."
+  ]
+}

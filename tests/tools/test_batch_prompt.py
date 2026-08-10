@@ -66,18 +66,23 @@ def test_the_output_skeleton_is_valid_json():
     body = text[text.index('{"readings"'):]
     parsed = json.loads(body)
     reading = parsed["readings"][0]
-    assert {"arm_label", "value", "quote", "population_phrase", "population_quote",
+    assert {"arm_label", "value", "quote", "population_phrase",
             "timepoint_phrase", "timepoint_quote", "effect_definition",
             "value_components"} <= set(reading)
+    # There is deliberately no `population_quote`. A separate passage could never
+    # bind a population to a value that the document search had not already
+    # bound, so asking for one only invited a phrase from somewhere else.
+    assert "population_quote" not in reading
 
 
 def test_evidence_for_a_population_must_be_a_passage_not_an_assertion():
     text = _prompt()
     assert "the paper's OWN words" in _flat(text)
     assert "one contiguous verbatim passage" in _flat(text)
-    # An honest empty answer is named as acceptable, so the model is not pushed
-    # into inventing a population it did not read.
-    assert "an empty field\n  is an honest answer" in text
+    # The population must come from beside the value, and an honest empty answer
+    # is named as acceptable, so the model is not pushed into inventing one.
+    assert "taken from beside the value itself" in _flat(text)
+    assert "an empty field is an honest answer" in _flat(text)
 
 
 def test_the_timepoint_is_asked_for_when_the_review_declares_one():
@@ -97,3 +102,43 @@ def test_arithmetic_is_refused_in_the_study_shape():
 def test_an_unknown_shape_is_refused():
     with pytest.raises(ValueError, match="unknown target shape"):
         _prompt("paragraph")
+
+
+# --- the aggregation ask is narrow, and forbids the model to do the sum ----
+
+def _study(field_type: str) -> str:
+    return build_batch_prompt(
+        target_shape=STUDY, context="melanoma trials", concept="sample size",
+        raw_label="N", field_type=field_type, concept_variants="N, total",
+        unit_hint="patients", paper_text="PAPER")
+
+
+def test_a_whole_study_count_is_asked_for_its_arms_as_components():
+    text = _flat(_study("sample_size"))
+    assert "cohort_counts" in text and "partition" in text
+    assert "NOT in ``readings``" in text
+
+
+def test_no_other_study_field_may_offer_components():
+    """Means, rates and hazard ratios do not partition, so nothing may add them."""
+    text = _study("progression_free_survival")
+    assert "cohort_counts" not in text and "partition" not in text
+    assert "Arithmetic is not reading" in text
+
+
+def test_the_model_is_forbidden_to_compute_the_total_itself():
+    text = _flat(_study("sample_size"))
+    assert "You must not add them up" in text
+    assert "Do not report a sum" in text
+
+
+def test_an_unanchored_partition_claim_is_named_as_worthless_in_the_prompt():
+    """The rule the parser enforces is stated where the model can act on it."""
+    text = _flat(_study("sample_size"))
+    assert "A true without a locatable quote counts as a false" in text
+    assert "If you are not sure, answer false" in text
+
+
+def test_the_components_must_all_be_one_population():
+    text = _flat(_study("sample_size"))
+    assert "All components must be the same population" in text
