@@ -144,7 +144,7 @@ def test_a_derived_total_never_carries_a_quote_that_prints_it():
 
 def test_the_policy_that_permitted_it_is_recorded_with_its_hash():
     projection = _project(_batch(sets=[_set()]))
-    assert projection.policy_id == "safe_sum_v1"
+    assert projection.policy_id == "safe_sum_v2"
     assert len(projection.policy_sha256) == 64
 
 
@@ -236,9 +236,43 @@ def test_t3_a_quote_that_does_not_name_the_arm_is_refused():
 
 
 def test_t3_one_arm_given_two_different_counts_is_refused():
-    reading = _batch(sets=[_set(counts=[*ALLOCATED_ARMS,
-                                        _count("Nivolumab", 311, ANALYSIS_ROW)])])
-    assert any("two different counts" in e for e in reading.aggregation_errors)
+    reading = _batch(sets=[_set(counts=[_count("nivolumab group", 316),
+                                        _count("nivolumab group", 314)])])
+    assert reading.aggregation_sets == []
+    assert any("twice" in e for e in reading.aggregation_errors)
+
+
+def test_t3_one_arm_given_the_SAME_count_twice_is_also_refused():
+    """The more dangerous case: 316 + 316 is a study of 632 that never existed,
+    and unlike a disagreement it leaves the sum looking perfectly plausible."""
+    reading = _batch(sets=[_set(counts=[_count("nivolumab group", 316),
+                                        _count("nivolumab group", 316)],
+                                partition={**GOOD_PARTITION,
+                                           "declared_arm_count": 2})])
+    assert reading.aggregation_sets == []
+    assert any("twice" in e for e in reading.aggregation_errors)
+    assert _project(reading).status != DERIVED
+
+
+def test_t3_an_arm_label_with_no_distinguishing_word_is_refused():
+    reading = _batch(sets=[_set(counts=[_count("the", 316), *ALLOCATED_ARMS[1:]])])
+    assert reading.aggregation_sets == []
+
+
+def test_t5_an_analysed_count_smuggled_into_an_allocated_set_is_refused():
+    """Listing it beside allocated counts does not make it one of them.
+
+    This is the substitution the sets were meant to prevent, performed one level
+    down: 316 + 313 + 315 = 944, a number for a group of people that never met.
+    """
+    reading = _batch(sets=[_set(counts=[
+        _count("nivolumab group", 316),
+        _count("Nivolumab plus Ipilimumab", 313, ANALYSIS_ROW),
+        _count("ipilimumab group", 315)])])
+    assert reading.aggregation_sets == []
+    assert any("is not printed with the population" in e
+               for e in reading.aggregation_errors)
+    assert _project(reading).status != DERIVED
 
 
 # --- T4: the arm census is what makes "complete" checkable ----------------
@@ -248,8 +282,10 @@ def test_t4_a_missing_arm_is_refused_even_though_the_rest_still_sum():
     projection = _project(_batch(sets=[_set(counts=ALLOCATED_ARMS[:2])]))
     assert projection.status != DERIVED
     assert projection.derived_value is None
-    assert projection.aggregation_status == REJECTED
-    assert "3 groups" in projection.aggregation_reason
+    # Caught at parse time now: the passage says three and two were offered, so
+    # the census contradicts its own witness rather than merely falling short.
+    assert projection.aggregation_status == PROTOCOL_ERROR
+    assert "describes 3 groups" in projection.aggregation_reason
 
 
 def test_t4_a_partition_with_no_census_at_all_is_refused():
@@ -261,24 +297,51 @@ def test_t4_a_partition_with_no_census_at_all_is_refused():
     assert "cannot be checked" in projection.aggregation_reason
 
 
+#: A census by NAME needs a passage that names them. The randomisation sentence
+#: counts the groups; the allocation sentence names them.
+NAMED_PARTITION = {"complete": True, "mutually_exclusive": True,
+                   "quote": ALLOCATION, "declared_arm_labels":
+                       ["nivolumab group", "nivolumab-plus-ipilimumab group",
+                        "ipilimumab group"],
+                   "reason": "the three assigned groups are named here"}
+
+
 def test_t4_a_named_arm_with_no_count_is_refused():
-    partition = {**GOOD_PARTITION, "declared_arm_count": None,
-                 "declared_arm_labels": ["nivolumab group",
-                                         "nivolumab-plus-ipilimumab group",
-                                         "ipilimumab group"]}
     projection = _project(_batch(sets=[_set(counts=ALLOCATED_ARMS[:2],
-                                            partition=partition)]))
+                                            partition=NAMED_PARTITION)]))
     assert projection.status != DERIVED
-    assert "ipilimumab group" in projection.aggregation_reason
+    assert "not the same set of arms" in projection.aggregation_reason
 
 
 def test_t4_the_census_may_be_satisfied_by_labels_alone():
-    partition = {**GOOD_PARTITION, "declared_arm_count": None,
-                 "declared_arm_labels": ["nivolumab group",
-                                         "nivolumab-plus-ipilimumab group",
-                                         "ipilimumab group"]}
-    projection = _project(_batch(sets=[_set(partition=partition)]))
+    projection = _project(_batch(sets=[_set(partition=NAMED_PARTITION)]))
     assert projection.status == DERIVED and projection.derived_value == 945
+
+
+def test_t4_a_declared_label_the_passage_does_not_name_is_refused():
+    """The census must be READ from the passage, not supplied alongside it."""
+    reading = _batch(sets=[_set(partition={**NAMED_PARTITION,
+                                           "quote": PARTITION})])
+    assert reading.aggregation_sets == []
+    assert any("its own partition passage does not name" in e
+               for e in reading.aggregation_errors)
+
+
+def test_t4_a_count_the_passage_does_not_state_is_refused():
+    """"three groups" in the paper, "2" from the model, and 630 summed."""
+    reading = _batch(sets=[_set(counts=ALLOCATED_ARMS[:2],
+                                partition={**GOOD_PARTITION,
+                                           "declared_arm_count": 2})])
+    assert reading.aggregation_sets == []
+    assert any("which its own partition passage does not state" in e
+               for e in reading.aggregation_errors)
+
+
+def test_t4_a_census_written_in_words_is_read():
+    """Papers write "three groups", not "3 groups"."""
+    projection = _project(_batch(sets=[_set()]))
+    assert projection.status == DERIVED
+    assert "three" in GOOD_PARTITION["quote"] and "3" not in GOOD_PARTITION["quote"]
 
 
 def test_not_complete_is_refused():
@@ -394,16 +457,40 @@ def test_t10_two_sets_that_match_equally_well_are_refused():
     assert "equally well" in projection.aggregation_reason
 
 
-def test_a_set_that_fails_to_parse_does_not_cost_the_others():
+def test_a_broken_set_about_other_people_does_not_cost_this_claim():
+    """The claim asks about the analysed; the broken set was about the allocated.
+
+    It never held this claim's answer, so refusing the claim would punish it for
+    a fault in a part of the response that did not concern it. The fault is
+    still reported.
+    """
     broken = _set(counts=[{**ALLOCATED_ARMS[0], "count": -1}])
     reading = _batch(sets=[broken, ANALYSED_SET])
-    assert len(reading.aggregation_sets) == 1
-    assert reading.aggregation_errors
-    # The surviving set is still usable for the claim it answers, and the
-    # broken one is still reported.
+    assert len(reading.aggregation_sets) == 1 and reading.aggregation_errors
     projection = _project(reading, scope=ANALYSED)
+    assert projection.status == DERIVED and projection.derived_value == 936
+    assert projection.unrelated_rejections == ["set 0 (allocated)"]
+
+
+def test_a_broken_set_about_THESE_people_costs_the_claim():
+    """Now nobody can show the surviving set was the only candidate."""
+    broken = _set(counts=[{**ANALYSED_ARMS[0], "count": -1}],
+                  phrase="Analysis population", witness=ANALYSIS_ROW,
+                  partition={**GOOD_PARTITION, "quote": ANALYSIS_PARTITION,
+                             "declared_arm_count": 3})
+    reading = _batch(sets=[broken, ANALYSED_SET])
+    projection = _project(reading, scope=ANALYSED)
+    assert projection.status != DERIVED
     assert projection.aggregation_status == PROTOCOL_ERROR
-    assert projection.aggregation_errors
+
+
+def test_a_broken_set_whose_population_cannot_be_read_costs_the_claim():
+    """Unknown means it might have been the one this claim needed."""
+    reading = _batch(sets=[{"population_phrase": "", "cohort_counts": []},
+                           ANALYSED_SET])
+    projection = _project(reading, scope=ANALYSED)
+    assert projection.status != DERIVED
+    assert projection.aggregation_status == PROTOCOL_ERROR
 
 
 # --- T11: timepoints ------------------------------------------------------
@@ -514,4 +601,98 @@ def test_nothing_is_derived_when_no_components_were_offered():
 
 def test_the_policy_is_hashed_so_a_run_can_say_which_one_it_applied():
     policy = load_aggregation_policy()
-    assert len(policy.sha256) == 64 and policy.policy_id == "safe_sum_v1"
+    assert len(policy.sha256) == 64 and policy.policy_id == "safe_sum_v2"
+
+
+# --- T11 again: a timepoint is checked even with only one candidate -------
+
+#: One passage carrying everything a timed set needs: the population words, the
+#: timepoint words, every arm and its count, and the census. It has to, now that
+#: each component must be shown to be counted at that population AND that
+#: moment — which is the point of the rule and not an inconvenience of it.
+BASELINE = ("At baseline, among those who underwent randomization, 316 patients "
+            "were in the nivolumab group, 314 in the nivolumab-plus-ipilimumab "
+            "group and 315 in the ipilimumab group, one of three groups.")
+TIMED_PAPER = PAPER + "\n\n" + BASELINE
+
+
+def _timed_set(timepoint):
+    return {"population_phrase": "underwent randomization",
+            "population_quote": BASELINE,
+            "timepoint_phrase": timepoint, "timepoint_quote": BASELINE,
+            "cohort_counts": [_count("nivolumab group", 316, BASELINE),
+                              _count("nivolumab-plus-ipilimumab group", 314, BASELINE),
+                              _count("ipilimumab group", 315, BASELINE)],
+            "partition": {**GOOD_PARTITION, "quote": BASELINE,
+                          "declared_arm_count": 3}}
+
+
+def test_t11_the_only_set_is_still_checked_against_the_claims_timepoint():
+    """Being the only candidate is not evidence of being the right one."""
+    reading = parse_batch({"readings": [],
+                           "aggregation_sets": [_timed_set("At baseline")]},
+                          TIMED_PAPER, target_shape=STUDY, aggregable=True)
+    assert len(reading.aggregation_sets) == 1
+    projection = _project(reading, timepoint_label="week 12")
+    assert projection.status != DERIVED
+    assert projection.derived_value is None
+    assert "no set of counts is stated at that timepoint" in projection.aggregation_reason
+
+
+def test_t11_the_matching_timepoint_is_derived():
+    reading = parse_batch({"readings": [],
+                           "aggregation_sets": [_timed_set("At baseline")]},
+                          TIMED_PAPER, target_shape=STUDY, aggregable=True)
+    projection = _project(reading, timepoint_label="at baseline")
+    assert projection.status == DERIVED and projection.derived_value == 945
+
+
+def test_t11_a_set_with_no_timepoint_cannot_answer_a_timed_claim():
+    projection = _project(_batch(sets=[_set()]), timepoint_label="week 12")
+    assert projection.status != DERIVED
+    assert "carry no timepoint of their own" in projection.aggregation_reason
+
+
+def test_t11_a_shared_word_is_not_a_shared_moment():
+    """"overall survival at 5 years" and "median progression-free survival"
+    have "survival" in common and nothing else."""
+    reading = parse_batch(
+        {"readings": [], "aggregation_sets": [_timed_set("At baseline")]},
+        TIMED_PAPER, target_shape=STUDY, aggregable=True)
+    assert _project(reading, timepoint_label="baseline characteristics").status != DERIVED
+
+
+# --- A6.2: the account of a derived total reaches the evidence object -----
+
+def test_a_derived_total_carries_its_policy_and_all_four_kinds_of_anchor():
+    projection = _project(_batch(sets=[_set()]))
+    result = to_source_result(projection)
+    provenance = result.aggregation_provenance
+    assert provenance.policy_id == "safe_sum_v2"
+    assert len(provenance.policy_sha256) == 64
+    assert provenance.aggregation_set.startswith("allocated")
+    assert provenance.population_quote == ALLOCATION
+    assert provenance.partition_quote == PARTITION
+    assert len(provenance.component_quotes) == 3
+    # Four kinds of passage, none of which substitutes for another: what was
+    # added, why adding them is the whole, and whom they count.
+    assert len(provenance.anchors) == 5
+    assert projection.evidence_anchors == provenance.anchors
+
+
+def test_a_timed_derived_total_carries_its_timepoint_anchor_too():
+    reading = parse_batch({"readings": [],
+                           "aggregation_sets": [_timed_set("At baseline")]},
+                          TIMED_PAPER, target_shape=STUDY, aggregable=True)
+    provenance = to_source_result(
+        _project(reading, timepoint_label="at baseline")).aggregation_provenance
+    assert provenance.timepoint_quote == BASELINE
+    assert len(provenance.anchors) == 6
+
+
+def test_a_released_printed_total_still_carries_the_broken_sets():
+    reading = _batch(readings=[
+        _total("945", "A total of 945 patients underwent randomization")],
+        sets=[_set(counts=[{**ALLOCATED_ARMS[0], "count": "not a number"}])])
+    provenance = to_source_result(_project(reading)).aggregation_provenance
+    assert provenance.errors and provenance.policy_id == "safe_sum_v2"

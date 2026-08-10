@@ -4,10 +4,58 @@ A pre-registration that edits its own history is worth nothing. Each version is
 a file that never changes after it is written; a correction is a new version
 with a written reason, and the old one stays exactly as it was.
 
+Hashes are of the file's bytes with LF line endings, which `.gitattributes` now
+enforces. They are checked by `tests/test_contract_pins.py`, so a pin that stops
+matching fails the suite instead of sitting in a document nobody recomputes.
+
 | Version | File | SHA-256 (first 16) | Status |
 | --- | --- | --- | --- |
 | v1 | `configs/gates/cross_domain_v1.json` | `AE182D0097A67A18` | superseded; results withdrawn |
-| v2 | `configs/gates/cross_domain_v2.json` | `7F3FACB0B53CD9DF` | current; **provisional** |
+| v2 | `configs/gates/cross_domain_v2.json` | `E29CF4F803BA0F8A` | current; **provisional** |
+| v1 | `configs/aggregation/safe_sum_v1.json` | `1C99DCE79E4FDD3A` | superseded by v2; never applied to a published result |
+| v2 | `configs/aggregation/safe_sum_v2.json` | `5FED9271920DF0A4` | current |
+
+## The v2 pin was wrong, and the pins were not reproducible
+
+Two faults, found by review on 2026-08-11.
+
+The published v2 pin, `7F3FACB0B53CD9DF`, does not match `cross_domain_v2.json`
+and cannot have matched any version of it: it shares its first twelve characters
+with the file's hash and differs after, which no change of content can produce.
+It was not a stale value. It was a partly-copied one, written by me in `d9d1039`
+— which is worse than a wrong number, because the matching prefix makes it look
+verified. Nothing was published under v2; the gate has returned NOT ESTIMABLE
+throughout.
+
+It happened again while this section was being written: the `safe_sum_v2` row
+was first filled in with a hash that had never been computed from anything. The
+test below caught it within the minute, which is the whole argument for having
+the test rather than the rule.
+
+The reason nobody noticed the first time is the second fault: no test compared
+the pin to the file, and the file's hash was not reproducible anyway. The repository had no
+`.gitattributes`, so a Windows checkout renormalised these files to CRLF and
+changed every hash — `cross_domain_v1.json` happened to keep its LF endings and
+kept matching, which is luck, not integrity. Contract files are now pinned to
+LF and the pins are asserted in the suite.
+
+The gate FILES were not edited. v1 and v2 keep the thresholds they were written
+with; only the recorded hash of v2, and the line endings of the working copy,
+have changed.
+
+## `safe_sum_v1` was edited in place — the same failure, again
+
+`configs/aggregation/safe_sum_v1.json` was published in `fd0c104` and then
+altered in the following commit while its `version` field still read 1. That is
+precisely the mistake this document was written to record the first time, made
+again one phase later, which says the rule was not load-bearing anywhere in the
+process. It is now: `tests/test_contract_pins.py` fails if either policy's bytes
+move.
+
+v1 has been restored to its `fd0c104` bytes and the stricter rules published as
+`safe_sum_v2.json`. No result was ever produced under v1 — the batch path it
+governs is not yet wired into any run — so there is nothing to withdraw, only a
+version to retire.
 
 ## Why v1's results were withdrawn — and why v1 itself was not touched
 

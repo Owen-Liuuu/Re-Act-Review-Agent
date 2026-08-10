@@ -26,6 +26,38 @@ class CohortCount(BaseModel):
     quote: str
 
 
+class AggregationProvenance(BaseModel):
+    """Everything a derived total rests on, and which rules permitted it.
+
+    A computed number is only as good as the account of how it was computed, and
+    that account has to survive as far as the reader. Four separate passages are
+    load-bearing and none substitutes for another: the components say what was
+    added, the partition says why adding them is the whole, the population says
+    whom they count, and the timepoint says when. The policy id and hash say
+    which version of the conditions was applied, so a total derived today can be
+    re-judged against the rules that were in force rather than today's.
+    """
+
+    policy_id: str = ""
+    policy_sha256: str = ""
+    aggregation_set: str = ""               # which population/timepoint won
+    population_quote: str = ""
+    timepoint_quote: str = ""
+    partition_quote: str = ""
+    component_quotes: list[str] = Field(default_factory=list)
+    #: Sets that could not be read. Present even when a printed total was
+    #: released instead, because a broken part of the response is a fact about
+    #: the response rather than about the claim that survived it.
+    errors: list[str] = Field(default_factory=list)
+    #: Broken sets that described other people, and so cost this claim nothing.
+    unrelated_rejections: list[str] = Field(default_factory=list)
+
+    @property
+    def anchors(self) -> list[str]:
+        return [q for q in (self.population_quote, self.timepoint_quote,
+                            self.partition_quote, *self.component_quotes) if q]
+
+
 class SourceNumericComponents(BaseModel):
     """A source value's parts, as the extraction reported them.
 

@@ -30,14 +30,26 @@ names of the arms can be matched against the components actually in hand.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
-from react_review.contracts import ContractError, read_json_object, repo_root, sha256_file
+from react_review.contracts import (
+    ContractError,
+    one_of,
+    read_json_object,
+    repo_root,
+    sha256_file,
+)
 from react_review.normalize.cohorts import distinguishing_tokens
 from react_review.normalize.population import PopulationContract, PopulationScope
-from react_review.schemas.batch import STUDY, AggregationSet, BatchCohortCount
+from react_review.schemas.batch import (
+    STUDY,
+    AggregationSet,
+    BatchCohortCount,
+    RejectedAggregationSet,
+)
 
 #: The four states a sum can end in. They mean what the policy file says they
 #: mean, and they are the same four the legacy result schema already uses.
@@ -46,7 +58,7 @@ REJECTED = "rejected"
 PROTOCOL_ERROR = "protocol_error"
 NOT_APPLICABLE = "not_applicable"
 
-DEFAULT_POLICY = "configs/aggregation/safe_sum_v1.json"
+DEFAULT_POLICY = "configs/aggregation/safe_sum_v2.json"
 
 
 @dataclass(frozen=True)
@@ -62,7 +74,11 @@ class AggregationPolicy:
     require_complete: bool
     require_mutually_exclusive: bool
     require_arm_census: bool
+    require_distinct_arms: bool
     population_must_match_claim: bool
+    timepoint_must_match_claim: bool
+    on_unknown: str
+    timepoint_matching: str
 
     def applies_to(self, target_shape: str, field_type: str) -> bool:
         return target_shape in self.target_shapes and field_type in self.field_types
@@ -81,6 +97,23 @@ def load_aggregation_policy(path: str | Path = DEFAULT_POLICY) -> AggregationPol
         raise ContractError(
             f"{resolved} must say which field types and target shapes it applies "
             "to; a policy that applies to everything is not a policy")
+    # An invariant is not a switch. These describe what the code always does, so
+    # a policy that claims to turn one off is refused rather than quietly
+    # ignored — a file that appears to control behaviour it does not control is
+    # worse than a file that says nothing.
+    for name, value in (body.get("invariants") or {}).items():
+        if not name.startswith("_") and value is not True:
+            raise ContractError(
+                f"{resolved} sets the invariant {name!r} to {value!r}. It is not a "
+                "switch: the code enforces it unconditionally, and a policy that "
+                "reads as though it could disable it would be describing behaviour "
+                "nobody implements")
+    unread = set(required) - _READ_REQUIREMENTS
+    if unread:
+        raise ContractError(
+            f"{resolved} declares requirement(s) {sorted(unread)} that nothing "
+            "reads. A rule the loader ignores is documentation pretending to be a "
+            "contract; move it to `notes` or implement it")
     return AggregationPolicy(
         policy_id=str(body.get("policy_id") or resolved.stem),
         sha256=sha256_file(resolved),
@@ -92,9 +125,30 @@ def load_aggregation_policy(path: str | Path = DEFAULT_POLICY) -> AggregationPol
         require_mutually_exclusive=bool(
             required.get("require_mutually_exclusive", True)),
         require_arm_census=bool(required.get("require_arm_census", True)),
+        require_distinct_arms=bool(required.get("require_distinct_arms", True)),
         population_must_match_claim=bool(
             required.get("population_must_match_claim", True)),
+        timepoint_must_match_claim=bool(
+            required.get("timepoint_must_match_claim", True)),
+        on_unknown=one_of(str(body.get("on_unknown", "reject")),
+                          ("reject",), field="on_unknown"),
+        timepoint_matching=one_of(str(body.get("timepoint_matching",
+                                               "normalised_exact")),
+                                  ("normalised_exact",), field="timepoint_matching"),
     )
+
+
+#: Every key `load_aggregation_policy` actually consumes. Kept beside the loader
+#: so adding a rule to the JSON without reading it fails loudly.
+_READ_REQUIREMENTS = {
+    "min_components", "require_partition_anchor", "require_complete",
+    "require_mutually_exclusive", "require_arm_census", "require_distinct_arms",
+    "population_must_match_claim", "timepoint_must_match_claim",
+    # Enforced in the parser, which has no policy object; declared here so the
+    # file can describe them and the loader can confirm nothing else appears.
+    "require_census_in_quote", "require_census_exact",
+    "require_component_population_binding", "require_component_timepoint_binding",
+}
 
 
 @dataclass
@@ -121,6 +175,10 @@ class AggregationOutcome:
     #: unresolved among the printed totals was actually resolved here.
     scope_matched_exactly: bool = False
     timepoint_verified: bool = False
+    #: Broken sets that described OTHER people. They cost this claim nothing, but
+    #: they happened, and a reader deciding whether to trust the run should see
+    #: that part of the response could not be read.
+    unrelated_rejections: list[str] = field(default_factory=list)
 
     @property
     def derived(self) -> bool:
@@ -134,7 +192,7 @@ def derive_partitioned_total(
     target_shape: str = STUDY,
     field_type: str = "",
     timepoint_label: str = "",
-    parse_errors: list[str] | None = None,
+    rejected_sets: list[RejectedAggregationSet] | None = None,
     policy: AggregationPolicy | None = None,
     population_contract: PopulationContract | None = None,
 ) -> AggregationOutcome:
@@ -159,12 +217,20 @@ def derive_partitioned_total(
                       f"{field_type or 'an unnamed field'} at {target_shape} level")
         return out
 
-    if parse_errors:
+    # A broken set costs this claim only what it was about. One that described
+    # another population never had this claim's answer in it; one that described
+    # THIS population, or whose population could not be read at all, might have —
+    # and then no surviving set can be shown to be the only candidate, which is
+    # the whole basis on which a set is allowed to answer.
+    blocking, aside = _split_rejected(rejected_sets or [], requested_scope,
+                                      rules, population_contract)
+    out.unrelated_rejections = [r.describe() for r in aside]
+    if blocking:
         # A malformed aggregation is a broken answer, not a missing one. Calling
         # it "not applicable" would let a response that tried and failed to
         # describe a partition read exactly like one that never mentioned arms.
         out.status = PROTOCOL_ERROR
-        out.reason = "; ".join(parse_errors)
+        out.reason = "; ".join(e for r in blocking for e in r.errors)
         return out
     if not sets:
         out.status = NOT_APPLICABLE
@@ -234,11 +300,22 @@ def _select_set(sets: list[AggregationSet], requested: PopulationScope | None,
                if scope_verdict(requested, s.population or PopulationScope(),
                                 required_axes=axes,
                                 contract=contract).status == "ok"]
-    if timepoint_label and len(matches) > 1:
-        narrowed = [s for s in matches if s.timepoint_phrase
-                    and _same_timepoint(s.timepoint_phrase, timepoint_label)]
-        if narrowed:
-            matches = narrowed
+    # A declared timepoint is checked whether or not there is a choice. Being
+    # the only candidate is not evidence of being the right one: a set anchored
+    # at baseline answering a claim about week 12 is wrong in exactly the way it
+    # would be wrong if a second set existed.
+    if timepoint_label and rules.timepoint_must_match_claim:
+        unanchored = [s for s in matches if not s.timepoint_phrase]
+        if unanchored:
+            return None, (f"the review reports this at {timepoint_label!r} and "
+                          f"{len(unanchored)} of the response's sets carry no "
+                          "timepoint of their own, so nothing shows they are "
+                          "counted at that moment"), False
+        matches = [s for s in matches
+                   if _same_timepoint(s.timepoint_phrase, timepoint_label)]
+        if not matches:
+            return None, (f"the review reports this at {timepoint_label!r} and no "
+                          "set of counts is stated at that timepoint"), False
     if not matches:
         offered = ", ".join(sorted(s.describe() for s in sets)) or "nothing"
         return None, (f"the review reports the {requested.describe()} population "
@@ -253,14 +330,55 @@ def _select_set(sets: list[AggregationSet], requested: PopulationScope | None,
 
 
 def _same_timepoint(phrase: str, label: str) -> bool:
-    """Words, not spelling — and only to separate sets, never to reject a lone one."""
-    wanted, seen = distinguishing_tokens(label), distinguishing_tokens(phrase)
-    return bool(wanted and seen and wanted & seen)
+    """Normalised exact, because there is no timepoint contract to be lenient with.
+
+    A shared word is not a shared moment: "median progression-free survival" and
+    "overall survival at 5 years" have "survival" in common and nothing else.
+    Until a frozen timepoint vocabulary exists — the same thing the abbreviation
+    problem in ``batch_project`` is waiting on — the only defensible test is
+    whether the two say the same thing, and anything looser refuses nothing.
+    """
+    return _normalise_timepoint(phrase) == _normalise_timepoint(label)
+
+
+def _normalise_timepoint(text: str) -> str:
+    return " ".join(re.sub(r"[^\w\s]", " ", text or "").lower().split())
+
+
+def _split_rejected(rejected: list[RejectedAggregationSet],
+                    requested: PopulationScope | None, rules: AggregationPolicy,
+                    contract: PopulationContract | None
+                    ) -> tuple[list[RejectedAggregationSet],
+                               list[RejectedAggregationSet]]:
+    """Which broken sets could have held this claim's answer, and which could not."""
+    if requested is None or not rules.population_must_match_claim:
+        return list(rejected), []       # nothing distinguishes them; all block
+
+    from react_review.audit.scope import scope_verdict
+
+    axes = ["population_basis"]
+    if requested.axis_stated("analysis_set"):
+        axes.append("analysis_set")
+    blocking, aside = [], []
+    for bad in rejected:
+        if not bad.population_known:
+            blocking.append(bad)        # unknown means it might have been this one
+            continue
+        verdict = scope_verdict(requested, bad.population, required_axes=axes,
+                                contract=contract)
+        (aside if verdict.status != "ok" else blocking).append(bad)
+    return blocking, aside
 
 
 def _partition_holds(chosen: AggregationSet, rules: AggregationPolicy) -> str:
     """Whether this set's arms are shown to be all of them, once each."""
     components = chosen.cohort_counts
+    if rules.require_distinct_arms:
+        keys = [tuple(sorted(distinguishing_tokens(c.arm_label)))
+                for c in components]
+        if len(set(keys)) != len(keys) or not all(keys):
+            return ("the same arm appears more than once among the components, so "
+                    "adding them would count some people twice")
     if len(components) < rules.min_components:
         return (f"only {len(components)} arm count was offered for the "
                 f"{chosen.describe()} population; a total needs at least "

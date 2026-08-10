@@ -14,20 +14,17 @@
     "min_components": 2,
     "value_type": "positive_integer",
     "distinct_arms_required": true,
+    "same_population_required": true,
     "population_must_match_claim": true,
-    "match_on_both_population_axes": true,
     "require_component_value_anchor": true,
     "require_component_label_anchor": true,
-    "require_set_population_anchor": true,
-    "require_set_timepoint_anchor": true,
+    "require_component_population_anchor": true,
     "require_partition_anchor": true,
     "require_complete": true,
-    "require_mutually_exclusive": true,
-    "require_arm_census": true
+    "require_mutually_exclusive": true
   },
   "on_unknown": "reject",
   "on_explicit_total_conflict": "reject",
-  "on_explicit_contradiction": "never_derive",
   "statuses": {
     "derived": "every requirement was met and the components were added by deterministic code",
     "rejected": "the paper's own evidence does not establish that the components are complete, mutually exclusive, and one population",
@@ -36,10 +33,7 @@
   },
   "notes": [
     "A boolean is not evidence. `complete: true` with no locatable quote is treated exactly as `complete: false`.",
-    "A boolean about a list the code cannot see is unfalsifiable, so `complete` alone is never enough: the paper's own count or names of the arms must be quoted, and the components in hand checked against them. That is `require_arm_census`.",
-    "Mixing populations is the failure this exists to prevent: allocated counts and an analysed count describe different sets of people, and their sum describes nobody. Each population is its own aggregation set, so a mixture has nowhere to be written down.",
-    "Populations are matched on BOTH axes. analysed/ITT and analysed/per-protocol are different people, and an unspecified analysis set is unknown rather than compatible.",
-    "An explicit total that disagrees with a valid sum is not resolved by preferring either one. Both are reported and the claim is refused.",
-    "Where the printed totals contradict each other, no sum may be offered instead. Arithmetic that resolves a paper's self-disagreement is not a reading of the paper; it is a decision about which of its statements to ignore."
+    "Mixing populations is the failure this exists to prevent: allocated counts and an analysed count describe different sets of people, and their sum describes nobody.",
+    "An explicit total that disagrees with a valid sum is not resolved by preferring either one. Both are reported and the claim is refused."
   ]
 }

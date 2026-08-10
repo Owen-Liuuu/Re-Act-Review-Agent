@@ -17,7 +17,7 @@ from react_review.llm.base import LLMBackend, parse_llm_response
 from react_review.normalize.anchors import normalised_contains
 from react_review.normalize.cohorts import ComparisonTarget
 from react_review.normalize.population import PopulationScope, classify_population
-from react_review.schemas.evidence import CohortCount, SourceNumericComponents
+from react_review.schemas.evidence import AggregationProvenance, CohortCount, SourceNumericComponents
 from react_review.steps.data_extraction.schemas import PaperDocument
 from react_review.tools.base import Tool, ToolStage
 from react_review.tools.extraction_cache import (
@@ -324,6 +324,10 @@ class SourceValueResult(BaseModel):
     cohort_counts: list[CohortCount] = Field(default_factory=list)
     aggregation_status: str = "not_applicable"  # also derived | rejected | protocol_error
     aggregation_reason: str = ""
+    # How a derived total was arrived at, and under which frozen policy. Only
+    # the batch path fills this; the legacy path predates the policy and would
+    # be claiming a provenance it never had.
+    aggregation_provenance: AggregationProvenance | None = None
     # Which arm/comparison this value was deterministically assigned to, and how
     # that went. ok | reassigned | ambiguous | not_reported | direction_inverted
     # | inconsistent | unsupported | protocol_error.

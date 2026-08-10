@@ -1,0 +1,10 @@
+# Frozen contracts are hash-pinned in docs/acceptance/gate_versions.md and
+# asserted by tests/test_contract_pins.py, so their bytes must not depend on the
+# platform that checked them out. Without this a Windows clone silently
+# renormalises to CRLF and every pinned SHA-256 is wrong.
+#
+# Deliberately narrow. The benchmark profiles under eval/ are pinned too, but
+# their recorded hashes were computed from CRLF bytes; normalising them here
+# would rewrite a frozen benchmark to fix a problem it did not cause.
+configs/gates/*.json text eol=lf
+configs/aggregation/*.json text eol=lf

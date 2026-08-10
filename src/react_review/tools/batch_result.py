@@ -20,7 +20,7 @@ components keep their own quotes so a reader can re-add them.
 """
 from __future__ import annotations
 
-from react_review.schemas.evidence import CohortCount
+from react_review.schemas.evidence import AggregationProvenance, CohortCount
 from react_review.tools.batch_project import (
     CONTRADICTORY,
     DERIVED,
@@ -59,7 +59,18 @@ def to_source_result(projection: Projection) -> SourceValueResult:
     # rather than inheriting a default nobody earned.
     common = dict(cohort_check="", cohort_counts=counts,
                   aggregation_status=projection.aggregation_status,
-                  aggregation_reason=reason)
+                  aggregation_reason=reason,
+                  aggregation_provenance=AggregationProvenance(
+                      policy_id=projection.policy_id,
+                      policy_sha256=projection.policy_sha256,
+                      aggregation_set=projection.aggregation_set,
+                      population_quote=projection.population_quote,
+                      timepoint_quote=projection.timepoint_quote,
+                      partition_quote=projection.partition_quote,
+                      component_quotes=[c.quote for c in projection.cohort_counts
+                                        if c.quote],
+                      errors=list(projection.aggregation_errors),
+                      unrelated_rejections=list(projection.unrelated_rejections)))
 
     if projection.status == DERIVED:
         return SourceValueResult(

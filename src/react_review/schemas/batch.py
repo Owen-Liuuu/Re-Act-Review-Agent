@@ -224,6 +224,33 @@ class AggregationSet(BaseModel):
                 + (f" at {self.timepoint_phrase}" if self.timepoint_phrase else ""))
 
 
+class RejectedAggregationSet(BaseModel):
+    """A set that could not be read, and as much of it as could be.
+
+    Dropping a broken set silently would be wrong twice over. If it described a
+    population the claim does not want, refusing everything punishes a claim the
+    response answered perfectly well. If it described the population the claim
+    DOES want, letting another set answer instead would be worse: nobody can
+    show the good set was the only candidate. Which of those applies depends on
+    what the broken set was about, so whatever was legible about it is kept.
+    """
+
+    source_index: int = -1
+    population: PopulationScope | None = None
+    population_phrase: str = ""
+    timepoint_phrase: str = ""
+    errors: list[str] = Field(default_factory=list)
+
+    @property
+    def population_known(self) -> bool:
+        return self.population is not None and self.population.stated
+
+    def describe(self) -> str:
+        where = (self.population.describe() if self.population_known
+                 else "an unidentified population")
+        return f"set {self.source_index} ({where})"
+
+
 class BatchAggregationEvidence(BaseModel):
     """Everything a batch offers toward computing a total it could not read."""
 

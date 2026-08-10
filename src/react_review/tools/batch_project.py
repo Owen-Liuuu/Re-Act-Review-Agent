@@ -84,6 +84,8 @@ class Projection:
     partition_quote: str = ""
     population_quote: str = ""
     timepoint_quote: str = ""
+    aggregation_set: str = ""
+    unrelated_rejections: list[str] = field(default_factory=list)
     #: Why a set could not be read at all. Survives every path: a released
     #: printed total does not make a malformed aggregation block stop existing.
     aggregation_errors: list[str] = field(default_factory=list)
@@ -107,10 +109,18 @@ class Projection:
 
     @property
     def evidence_anchors(self) -> list[str]:
-        """Every passage this answer rests on — one per component when derived."""
+        """EVERY passage this answer rests on.
+
+        For a derived total that is four kinds of passage, not one: what was
+        added, why adding them is the whole, whom they count and when. Returning
+        only the component quotes would present the arithmetic as though the
+        conditions that licensed it were not evidence.
+        """
         if self.entry is not None:
             return [self.entry.quote] if self.entry.quote else []
-        return [c.quote for c in self.cohort_counts if c.quote]
+        return [q for q in (self.population_quote, self.timepoint_quote,
+                            self.partition_quote,
+                            *(c.quote for c in self.cohort_counts)) if q]
 
 
 def project_claim(
@@ -207,7 +217,7 @@ def _project_study(reading: BatchReading, entries: list[BatchEntry], *,
     summed = derive_partitioned_total(
         reading.aggregation_sets, requested_scope, target_shape=STUDY,
         field_type=field_type, timepoint_label=timepoint_label,
-        parse_errors=reading.aggregation_errors, policy=policy,
+        rejected_sets=reading.rejected_sets, policy=policy,
         population_contract=population_contract)
     provenance["policy"] = f"{summed.policy_id} ({summed.policy_sha256[:12]}…)"
     if summed.chosen_set is not None:
@@ -225,6 +235,11 @@ def _project_study(reading: BatchReading, entries: list[BatchEntry], *,
         projection.policy_sha256 = summed.policy_sha256
         projection.population_quote = summed.population_quote
         projection.timepoint_quote = summed.timepoint_quote
+        projection.partition_quote = (projection.partition_quote
+                                      or summed.partition_quote)
+        projection.unrelated_rejections = list(summed.unrelated_rejections)
+        projection.aggregation_set = (summed.chosen_set.describe()
+                                      if summed.chosen_set else "")
         projection.provenance = {**projection.provenance, **provenance}
         return projection
 
