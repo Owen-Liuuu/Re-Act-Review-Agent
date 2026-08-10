@@ -32,7 +32,8 @@ from react_review.acceptance import (
 )
 from react_review.contracts import ContractError, repo_root
 
-GATE_FILE = repo_root() / "configs" / "gates" / "cross_domain_v1.json"
+GATE_V1 = repo_root() / "configs" / "gates" / "cross_domain_v1.json"
+GATE_FILE = repo_root() / "configs" / "gates" / "cross_domain_v2.json"
 
 
 def _row(study, expected, predicted, found=True):
@@ -153,7 +154,7 @@ def test_resampling_is_over_studies_not_rows():
 
 def test_the_shipped_gate_is_loadable_and_pre_registered():
     gate = load_gate(GATE_FILE)
-    assert gate.gate_id == "cross_domain_v1"
+    assert gate.gate_id == "cross_domain_v2"
     assert gate.status == "provisional"        # not yet signed off by a clinician
     assert gate.sample.held_out_domain_required is True
     assert {h.metric for h in gate.hard_gates} >= {
@@ -378,3 +379,28 @@ def test_the_shipped_register_holds_nothing_available():
     assert register["available_for_holding_out"] == []
     assert all(entry["role"] == "development"
                for entry in register["domains"].values())
+
+
+def test_v1_is_never_edited_after_it_was_written():
+    """A pre-registration that edits its own history is worth nothing.
+
+    The first correction added a "revision" field to v1 in place, contradicting
+    the rule written in the same document. v1 is byte-pinned here so the next
+    such edit fails a test instead of quietly rewriting the record.
+    """
+    from react_review.contracts import sha256_file
+
+    assert sha256_file(GATE_V1).startswith("AE182D0097A67A18")
+    v1 = load_gate(GATE_V1)
+    assert v1.gate_id == "cross_domain_v1"
+    assert "source_coverage" in {c.metric for c in v1.capability_gates}
+
+
+def test_v2_says_what_it_supersedes_and_why():
+    import json
+
+    body = json.loads(GATE_FILE.read_text(encoding="utf-8-sig"))
+    assert body["supersedes"] == "cross_domain_v1"
+    assert "withdrawn" in body["supersedes_reason"]
+    # The estimand choice that helped the numbers is recorded in the file.
+    assert "RAISED" in body["estimand"]["honesty_note"]

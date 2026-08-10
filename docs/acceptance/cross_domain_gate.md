@@ -1,6 +1,8 @@
 # Cross-domain acceptance gate — pre-registration
 
-- Gate file: `configs/gates/cross_domain_v1.json` (hash-pinned, version 1)
+- Gate file: **`configs/gates/cross_domain_v2.json`** (hash-pinned). v1 is kept
+  byte-identical as the pre-registration it was; see `gate_versions.md` for why
+  its results were withdrawn and why the file itself was not touched.
 - Status: **provisional** — the thresholds are stated in advance, not yet signed off
 - Written: 2026-08-10, **before** the evidence that could satisfy it exists
 - Applied with: `python eval/check_gate.py <report.json> [--domain NAME]`

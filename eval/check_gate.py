@@ -43,7 +43,9 @@ HELD_OUT_REGISTER = Path(__file__).resolve().parent.parent / "configs" / "gates"
     / "held_out_register.json"
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_GATE = ROOT / "configs" / "gates" / "cross_domain_v1.json"
+#: v1 is kept byte-identical as the pre-registration it was; v2 is what
+#: a run is judged by. See docs/acceptance/gate_versions.md.
+DEFAULT_GATE = ROOT / "configs" / "gates" / "cross_domain_v2.json"
 
 #: What an attestation must say, and nobody else may say for it.
 ATTESTED_METRICS = ("answer_key_edits_after_freeze", "record_replay_differences")

@@ -6,100 +6,51 @@
   "written_on": "2026-08-10",
   "pre_registered": true,
   "purpose": "Defines what it would mean for this system to have demonstrated cross-domain accuracy. Written BEFORE the evidence that could satisfy it exists, so that the thresholds cannot be chosen to fit a result. Applying it today returns NOT ESTIMABLE, which is the honest current answer.",
+
   "confidence_level": 0.95,
   "bootstrap_resamples": 2000,
   "bootstrap_seed": 20260810,
+
   "sample": {
     "min_domains": 3,
     "min_studies_per_domain": 8,
     "min_rows_per_domain": 100,
     "min_true_discrepancies": 25,
-    "min_rows_per_route": {
-      "numeric": 30,
-      "structured": 30,
-      "semantic": 20
-    },
-    "held_out_domain_required": true,
-    "min_true_discrepancies_per_domain": 8,
-    "min_studies_with_discrepancies": 6
+    "min_rows_per_route": {"numeric": 30, "structured": 30, "semantic": 20},
+    "held_out_domain_required": true
   },
+
   "hard_gates": [
-    {
-      "metric": "silent_release_count",
-      "must_equal": 0,
-      "why": "a discrepancy released as a clean match is the failure the whole design exists to prevent; it is never traded against accuracy"
-    },
-    {
-      "metric": "wrong_target_released_count",
-      "must_equal": 0,
-      "why": "a value released about an arm or comparison it did not come from",
-      "evidence_denominator": "wrong_target_released_count__graded_rows"
-    },
-    {
-      "metric": "wrong_scope_released_count",
-      "must_equal": 0,
-      "why": "a value released as if it counted a population it did not count",
-      "evidence_denominator": "wrong_scope_released_count__graded_rows"
-    },
-    {
-      "metric": "review_visibility_rate",
-      "must_equal": 1.0,
-      "why": "every true discrepancy must reach a human by some route"
-    },
-    {
-      "metric": "answer_key_edits_after_freeze",
-      "must_equal": 0,
-      "why": "an answer key changed to fit model output is not an answer key — only an attestation can state this; a run cannot certify itself"
-    },
-    {
-      "metric": "record_replay_differences",
-      "must_equal": 0,
-      "why": "a result that does not reproduce from its own recording is not a result — only an attestation can state this; a run cannot certify itself"
-    }
+    {"metric": "silent_release_count", "must_equal": 0,
+     "why": "a discrepancy released as a clean match is the failure the whole design exists to prevent; it is never traded against accuracy"},
+    {"metric": "wrong_target_released_count", "must_equal": 0,
+     "why": "a value released about an arm or comparison it did not come from"},
+    {"metric": "wrong_scope_released_count", "must_equal": 0,
+     "why": "a value released as if it counted a population it did not count"},
+    {"metric": "review_visibility_rate", "must_equal": 1.0,
+     "why": "every true discrepancy must reach a human by some route"},
+    {"metric": "answer_key_edits_after_freeze", "must_equal": 0,
+     "why": "an answer key changed to fit model output is not an answer key"},
+    {"metric": "record_replay_differences", "must_equal": 0,
+     "why": "a result that does not reproduce from its own recording is not a result"}
   ],
+
   "capability_gates": [
-    {
-      "metric": "discrepancy_recall",
-      "lower_bound_at_least": 0.7,
-      "why": "the audit's reason to exist is finding real discrepancies; the bound is on the cluster-bootstrap lower limit, not the point estimate"
-    },
-    {
-      "metric": "discrepancy_precision",
-      "lower_bound_at_least": 0.5,
-      "why": "a flag a human must dismiss more often than not is a burden, not a finding; deliberately looser than recall because a false flag costs review time and a missed one costs correctness"
-    },
-    {
-      "metric": "retrieval_coverage",
-      "lower_bound_at_least": 0.7,
-      "why": "a value was located at all. Deliberately NOT evidence that it was the right value: see auditable_coverage, which is reported beside it and is the number that says how much was really audited"
-    },
-    {
-      "metric": "auditable_coverage",
-      "lower_bound_at_least": 0.5,
-      "why": "located AND judgeable: the arm was identified, the population was established, and the evidence protocol held. A system can raise retrieval coverage by accepting anything; this is what it cannot fake"
-    }
+    {"metric": "discrepancy_recall", "lower_bound_at_least": 0.70,
+     "why": "the audit's reason to exist is finding real discrepancies; the bound is on the cluster-bootstrap lower limit, not the point estimate"},
+    {"metric": "discrepancy_precision", "lower_bound_at_least": 0.50,
+     "why": "a flag a human must dismiss more often than not is a burden, not a finding; deliberately looser than recall because a false flag costs review time and a missed one costs correctness"},
+    {"metric": "source_coverage", "lower_bound_at_least": 0.70,
+     "why": "an audit that cannot reach most of the sources has not audited the review, whatever it scored on what it did reach"}
   ],
-  "reported_only": [
-    "label_accuracy",
-    "scope_assessable_rate",
-    "review_burden"
-  ],
+
+  "reported_only": ["label_accuracy"],
+
   "notes": [
     "The unit of analysis is the STUDY. Rows from one paper move together, so intervals are bootstrapped over studies and a one-study benchmark supports no interval at all.",
     "label_accuracy is reported, never gated: it mixes safety, capability and coverage into one number, and a system can raise it by refusing less.",
     "Refusal is measured beside safety (scope_assessable_rate, source_coverage). A system that refuses everything satisfies every hard gate and has audited nothing.",
     "The minimums are provisional. They are stated in advance so that changing them requires a new version and a written reason, not so that they are already known to be right.",
-    "STILL REQUIRED BEFORE THIS GATE CAN BE CALLED FINAL: a clinician's judgement on acceptable missed-discrepancy risk (the 0.70 recall bound is an engineering guess), and confirmation that the answer keys for any new domain were built by someone qualified in that domain.",
-    "An absent safety number is not a zero. Four states per hard gate: never reported, reported with nothing graded against it, graded and held, graded and failed. Only the third is a pass.",
-    "Coverage is two numbers, not one. retrieval_coverage counts a value found; auditable_coverage counts a value the audit could actually judge. The gap between them is the part of a review that was reached but not audited."
-  ],
-  "revision": "1.2 (D6-R1: domain-weighted estimand, per-domain discrepancy minimums, named coverages)",
-  "estimand": {
-    "primary": "domain_weighted",
-    "definition": "Each domain contributes equally; within a domain, studies are resampled with replacement. Rows are never resampled and never pooled across domains for the headline figure.",
-    "why": "Nine EAT studies beside one melanoma study would otherwise make the headline number a report on EAT.",
-    "held_out_domain": "excluded from the pooled estimate and reported on its own; never averaged in",
-    "undefined_draws": "reported as a rate; above max_undefined_draw_rate the interval is refused rather than computed from the draws that happened to work"
-  },
-  "max_undefined_draw_rate": 0.05
+    "STILL REQUIRED BEFORE THIS GATE CAN BE CALLED FINAL: a clinician's judgement on acceptable missed-discrepancy risk (the 0.70 recall bound is an engineering guess), and confirmation that the answer keys for any new domain were built by someone qualified in that domain."
+  ]
 }
