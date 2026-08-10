@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "purpose": "A domain may serve as the held-out evaluation domain exactly once. After an evaluation has read it, it has been seen: any later result on it is a result about a domain the system was tuned against, whether or not anyone intended that.",
+  "rules": [
+    "A domain must be registered here, with a freeze date, BEFORE it is used as held-out.",
+    "An evaluation that names a held-out domain records itself in that domain's used_by list.",
+    "A domain with a non-empty used_by list may not be named as held-out again.",
+    "A domain whose role is 'development' can never become held-out, however long ago it was last read.",
+    "Removing or rewriting an entry to reuse a domain is a change to the pre-registration: it requires a new gate version and a written reason, not an edit here."
+  ],
+  "domains": {
+    "eat_t1dm": {
+      "frozen_on": "2026-08-10",
+      "role": "development",
+      "used_by": ["every phase from 3 to 8"],
+      "note": "The main benchmark. Used continuously to build the system, so it can never serve as held-out."
+    },
+    "melanoma": {
+      "frozen_on": "2026-08-03",
+      "role": "development",
+      "used_by": ["phase6b", "phase7a-7d", "phase8-0"],
+      "note": "Frozen as a cross-domain checkpoint, then read repeatedly to diagnose and fix D6B-01..04 and the Phase 8 scope defect. Whatever it was at the freeze, it is now a development domain."
+    }
+  },
+  "available_for_holding_out": [],
+  "note": "This list is empty on purpose. Nothing the project currently owns can serve as a held-out domain, which is the honest statement of where the cross-domain claim stands."
+}

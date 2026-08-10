@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "attested_by": "(unsigned example — replace with the person taking responsibility)",
+  "attested_on": "",
+  "answer_key_edits_after_freeze": 0,
+  "record_replay_differences": 0,
+  "artifacts": {
+    "p8_0_u13_melanoma.json": "B05486A4DA55786BE8559DAA4375D09EC00DD8A183150A878354673BFE946FFC",
+    "p8_0_final_eat.json": "02F5B471CC81546E772BDEC40E0D2E7131B2AF30E7D7D904D949A4ED9EEFC324"
+  },
+  "how_this_was_checked": [
+    "answer_key_edits_after_freeze: git log on the benchmark answer keys since the freeze commit, plus the profile's base_audit_template_sha256 still matching",
+    "record_replay_differences: eval/compare_projection.py between the recorded run and its replay, on the old schema"
+  ],
+  "note": "This file is evidence about artifacts it names and hashes. It says nothing about any other run, and it is worth exactly as much as the person who signed it."
+}
