@@ -42,6 +42,7 @@ from react_review.normalize.anchors import (
     normalised_contains,
     value_supported_by_quote,
 )
+from react_review.normalize.population import PopulationScope, classify_population
 from react_review.normalize.cohorts import (
     ComparisonTarget,
     distinguishing_tokens,
@@ -73,6 +74,10 @@ class ArmEvidence(BaseModel):
     value: str | None = None
     unit: str = ""
     quote: str = ""
+    # Which population this entry's own quote is talking about. Read from that
+    # quote and nothing else, so one arm's analysis set cannot be attributed to
+    # another's allocation sentence.
+    population: PopulationScope | None = None
     # The parts of this entry's own value, as the response reported them. They
     # belong to the ENTRY rather than to the response as a whole: the entry the
     # assignment picks is not always the one the model would have picked, and
@@ -88,6 +93,7 @@ class ComparisonEvidence(BaseModel):
     value: str | None = None
     unit: str = ""
     quote: str = ""
+    population: PopulationScope | None = None
     components: dict[str, float] = Field(default_factory=dict)
 
 
@@ -106,6 +112,7 @@ class TargetAssignment:
     margin: float = 0.0
     mapping: dict[str, str] = field(default_factory=dict)
     components: dict[str, float] = field(default_factory=dict)
+    population: PopulationScope | None = None
     # The other values reported in the same evidence, so a shared sentence's
     # second interval cannot be read as this value's.
     rival_values: list[str] = field(default_factory=list)
@@ -149,7 +156,8 @@ def parse_arms(raw: object, paper_text: str) -> tuple[list[ArmEvidence], str]:
             return [], f"the entry for arm {label!r} is unusable: {component_error}"
         arms.append(ArmEvidence(label=label, value=value,
                                 unit=str(item.get("unit") or "").strip(),
-                                quote=quote, components=components))
+                                quote=quote, components=components,
+                                population=classify_population(quote)))
     labels = [_key(a.label) for a in arms]
     if len(set(labels)) != len(labels):
         return [], "two enumerated arms carry the same label"
@@ -195,7 +203,8 @@ def parse_comparisons(raw: object, paper_text: str) -> tuple[list[ComparisonEvid
         out.append(ComparisonEvidence(left_label=left, right_label=right,
                                       value=value,
                                       unit=str(item.get("unit") or "").strip(),
-                                      quote=quote, components=components))
+                                      quote=quote, components=components,
+                                      population=classify_population(quote)))
     return out, ""
 
 
@@ -331,7 +340,7 @@ def resolve_arm_target(
     return TargetAssignment(
         status=_STATUS_OK, paper_label=paper_label, value=arm.value,
         unit=arm.unit, quote=arm.quote, margin=margin, mapping=mapping,
-        components=arm.components,
+        components=arm.components, population=arm.population,
         rival_values=[a.value for a in arms if a is not arm and a.value])
 
 
@@ -393,7 +402,7 @@ def resolve_comparison_target(
         margin=best - runner_up,
         mapping={comparison.left: candidate.left_label,
                  comparison.right: candidate.right_label},
-        components=candidate.components,
+        components=candidate.components, population=candidate.population,
         rival_values=[c.value for c in comparisons if c is not candidate and c.value])
 
 

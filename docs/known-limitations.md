@@ -85,7 +85,10 @@
 现有脚本均可输出 JSON + 英文 HTML 报告(打印即 PDF):
 - **审计核心**:`eval/run_benchmark.py`
 - **EAT 全流程冻结 replay**:`eval/run_full_accuracy.py --extraction replay` → label 89.47% / strict precision-recall-F1 80% / silent release 0 / review visibility 100%
-- **melanoma 跨领域冻结 replay**:15 行覆盖 4 semantic / 4 numeric / 7 structured；label 60%,安全可见性 100%,准确率问题延期
+- **melanoma 跨领域冻结 replay**:15 行覆盖 4 semantic / 4 numeric / 7 structured。
+  - Phase 7 契约:label **80.0%**、P/R/F1 100%、静默放行 0(`docs/baselines/melanoma_phase7_metrics.json`)
+  - Phase 8 契约(人群 scope + 计数精确):label **66.7%**、P/R/F1 100%、静默放行 0、scope 可判定率 50%
+  - 两者是**不同的契约**,不是同一条曲线上的两点;门槛仍未通过,且不以通过为验收目标
 - **Parser 准确率**:`eval/run_parser_accuracy.py --html --out`
 - **单篇审计报告**:`react-review run` 先保存 package 再渲染 HTML；`react-review report` 可仅凭已保存 package 重建报告
 - **确定性回归**使用 extraction/semantic replay；live LLM 运行只报告方差,不作为代码门禁

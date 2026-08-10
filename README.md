@@ -18,21 +18,37 @@ operate over a shared, typed tool catalogue.
 
 ## Status
 
-**Phase 6E — final acceptance complete.** The review-to-source pipeline now
+**Phase 7 complete; Phase 8 in progress.** The review-to-source pipeline
 includes review-derived cohort identities, structured numeric comparison,
 controlled semantic escalation, governed DKB/checklist checkpoints, auditable
 source-extraction replay, and HTML rendering from a previously saved Evidence
-Package.
+Package. Phase 7 added directed multi-arm extraction, typed value components,
+confidence-level comparison and a self-consistency control over semantic
+verdicts.
 
-The frozen EAT/T1DM replay scores 89.47% label accuracy, 80% strict discrepancy
-precision/recall/F1, zero silent releases, and 100% human-review visibility.
-The melanoma checkpoint exercised all expected cross-domain paths (semantic,
-numeric, and structured) with zero silent releases, but its 60% label accuracy
-failed the accuracy gate. Those multi-arm extraction and semantic issues are
-preserved for later work; the project therefore claims cross-domain mechanism
-coverage, not established cross-domain accuracy. See
-`docs/baselines/phase6e_acceptance.json` and
-`docs/deferred/phase6b-melanoma-audit.md`.
+Every number below comes from a deterministic replay of a recorded run, and
+each one names the artifact it comes from — see `docs/baselines/README.md` for
+which file publishes which figure.
+
+| Benchmark | Contract | Label accuracy | Discrepancy P/R/F1 | Silent releases |
+| --- | --- | --- | --- | --- |
+| EAT/T1DM (57 rows) | legacy | 89.47% | 80% / 80% / 80% | 0 |
+| melanoma (15 rows) | Phase 7 | 80.0% | 100% / 100% / 100% | 0 |
+| melanoma (15 rows) | Phase 8 (scope + exact counts) | 66.7% | 100% / 100% / 100% | 0 |
+
+The Phase 8 figure is **lower on purpose**. It refuses two rows whose numbers
+looked right while the evidence never said which population it counted — a
+scope error that a relative tolerance had been reading as agreement. Refusing
+is measured too: half the rows that require a population could not be assessed
+at all, which is the capability cost of the fix and the reason it is reported
+beside the safety numbers rather than instead of them.
+
+**The cross-domain accuracy gate has not been passed, and passing it is not a
+Phase 7 or Phase 8 acceptance target.** Fifteen rows cannot establish
+cross-domain accuracy: one row moves label accuracy by 6.7 points. What the
+melanoma checkpoint establishes is categorical — every route is reached,
+failures are visible and reproducible, and three of the four archived defects
+are now closed.
 
 ## Layout
 

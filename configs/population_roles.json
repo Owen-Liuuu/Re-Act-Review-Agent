@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "contract_id": "population_roles_v1",
+  "written_on": "2026-08-10",
+  "purpose": "Which population a printed number belongs to, read from the words the paper itself uses. Trial methodology only: nothing here names a disease, a drug or a field. Two orthogonal axes, because they are orthogonal in trials — a safety population is both treated and an analysis set, and an ITT set is both allocated and analysed.",
+
+  "_basis": "WHO the number counts. allocated = assigned to a study group; treated = actually received something; analysed = entered an analysis. A paper that says none of these leaves the basis unknown, which is a fact about the evidence, not a licence to assume the usual one.",
+  "population_basis": {
+    "allocated": [
+      "underwent randomization", "underwent randomisation",
+      "were randomly assigned", "were randomly allocated",
+      "randomly assigned", "randomly allocated",
+      "were assigned to", "were allocated to", "assigned to the",
+      "allocated to the", "assigned to receive"
+    ],
+    "treated": [
+      "received at least one dose", "received at least 1 dose",
+      "received one or more doses", "who received treatment",
+      "were treated with", "started treatment", "began treatment",
+      "received study drug", "received study treatment"
+    ],
+    "analysed": [
+      "were analysed", "were analyzed", "included in the analysis",
+      "included in the analyses", "were included in the efficacy analysis",
+      "evaluable for response", "analysis population", "analysis set",
+      "were evaluated for"
+    ]
+  },
+
+  "_analysis_set": "WHICH analysis set, when the paper names one. Left unspecified far more often than not, and that is fine: an axis nobody stated is not an axis in conflict.",
+  "analysis_set": {
+    "itt": ["intention-to-treat", "intent-to-treat", "intention to treat", "itt population", "itt analysis"],
+    "mitt": ["modified intention-to-treat", "modified intent-to-treat", "mitt population", "mitt analysis"],
+    "per_protocol": ["per-protocol", "per protocol"],
+    "evaluable": ["evaluable population", "evaluable patients", "evaluable subjects", "response-evaluable"],
+    "safety": ["safety population", "safety analysis set", "safety set", "safety analysis population"]
+  },
+
+  "_randomisation": "Whether the passage SAYS the allocation was random. Recorded on its own and never folded into the basis: 'N were assigned to the control group' establishes allocation, not randomisation, and a system that reads one as the other is inventing a study design.",
+  "randomisation_stated": ["randomization", "randomisation", "randomly", "randomized", "randomised"],
+
+  "_compatible": "Pairs of basis values that may be compared as the same population. Identity is always compatible and is not listed. The list is EMPTY on purpose: allocated, treated and analysed generally count different people, and any equivalence between them is a clinical claim that belongs in a reviewed contract, not in a default.",
+  "compatible_basis_pairs": [],
+  "compatible_analysis_set_pairs": []
+}

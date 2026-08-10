@@ -1,0 +1,18 @@
+{
+  "schema_version": 2,
+  "profile_id": "melanoma_checkpoint_2017_phase8",
+  "written_on": "2026-08-10",
+  "purpose": "Phase 8 contract over the frozen Phase 6A benchmark. Same answer key, same PDFs; a population-scope check and exact counts. The Phase 7 profile beside it keeps replaying under its own rules.",
+  "base_manifest_sha256": "83118EE9EBC08332F3D7ADA34396570B496442301689C23CCB93FD9D116C8D21",
+  "base_audit_template_sha256": "3D4E3899DC5B97DB2351BCE14C2E0A083818D394D315D8B632B444BFB6584496",
+  "run_profile": "configs/run_profiles/phase8.json",
+  "run_profile_sha256": "EAB26A0253A9B4AF908F8F157FFEC0A3325BF46A5EC1639E3240E24F144CC392",
+  "extraction_profile": "targeted_v4",
+  "semantic_prompt_profile": "semantic_v2_specificity",
+  "semantic_expectation_overlay": "phase7_semantic_overlay.csv",
+  "semantic_expectation_overlay_sha256": "98F9B2BBF3DF8248210B7EA9E21399E17A685755CA711608D8888C1E7F2B0367",
+  "target_contract": "phase8_target_contract.csv",
+  "target_contract_sha256": "BC01250DBB823B3A79565B9D21D857FBB5038574B5C16238E633B5C3DB62F92A",
+  "target_gold": "phase8_target_gold.csv",
+  "target_gold_sha256": "2674A36EEA556EC38C7E9D80BACA65DFC3E3A7E1218BBEBC14132F049894E6A5"
+}

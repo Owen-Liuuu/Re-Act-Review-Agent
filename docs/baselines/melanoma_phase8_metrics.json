@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "artifact_kind": "sanitized_phase8_metrics",
+  "generated_on": "2026-08-10",
+  "benchmark_id": "melanoma_checkpoint_2017",
+  "contract": {
+    "benchmark_profile": "eval/benchmarks/melanoma_checkpoint_2017/phase8_profile.json",
+    "run_profile": "configs/run_profiles/phase8.json",
+    "tolerances": "configs/tolerances.phase8.yaml (counts exact)",
+    "scope_policy": "on",
+    "answer_key_unchanged": true,
+    "same_recording_as_phase7": true,
+    "note": "The same recorded model responses as the Phase 7 figure. The difference is what the deterministic layer asks of them, not how the model performed."
+  },
+  "privacy": {
+    "contains_source_quotes": false,
+    "contains_raw_model_responses": false,
+    "contains_local_absolute_paths": false,
+    "private_artifacts_remain_gitignored": true
+  },
+  "metrics_schema_version": 2,
+  "metrics": {
+    "n": 15,
+    "label_accuracy": 0.6666666666666666,
+    "discrepancy": {
+      "tp": 3,
+      "fp": 0,
+      "fn": 0,
+      "tn": 12,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "safety": {
+      "expected_discrepancies": 3,
+      "silent_release_count": 0,
+      "visible_discrepancies": 3,
+      "review_visibility_rate": 1.0,
+      "escalated_not_comparable": 0
+    },
+    "scope": {
+      "required": 4,
+      "scope_assessable_rate": 0.5,
+      "scope_resolved_rate": 0.5,
+      "unresolved_by_field": {
+        "sample_size": 1,
+        "cohort_n": 1
+      },
+      "gold_rows": 7,
+      "scope_wrong": 2,
+      "scope_wrong_released_count": 0
+    },
+    "target": {
+      "correct_target_found_count": 12,
+      "wrong_target_accepted_count": 1,
+      "gold": {
+        "rows": 11,
+        "identity_correct": 11,
+        "identity_wrong": 0,
+        "identity_wrong_released": 0
+      },
+      "ambiguous_target_rejected_count": 0,
+      "unreported_target_count": 0,
+      "reassigned_count": 3,
+      "checks": {
+        "ok": 11,
+        "reassigned": 3,
+        "protocol_error": 1
+      }
+    },
+    "extraction": {
+      "found_rate": 0.8666666666666667,
+      "value_match_rate": 0.3333333333333333
+    },
+    "extraction_quality": {
+      "exact_value_match": 0.2,
+      "value_within_tolerance": 0.3333333333333333,
+      "evidence_protocol_ok": 0.9333333333333333,
+      "component_complete": 1.0,
+      "target_identity": {
+        "not_assessable": 4,
+        "true": 11
+      },
+      "target_scope": {
+        "not_assessable": 8,
+        "false": 2,
+        "true": 5
+      },
+      "extraction_accepted_rate": 0.26666666666666666
+    },
+    "legacy_projection": {
+      "extraction_value_match_rate": 0.3333333333333333,
+      "correct_target_by_value_count": 12,
+      "wrong_target_by_value_count": 1,
+      "note": "value comparisons; see metrics.target.gold for gold-graded identity"
+    }
+  },
+  "telemetry": {
+    "tool_attempts": {
+      "extract_source_value": 25
+    },
+    "backend_requests": 0,
+    "backend_retries": 10,
+    "backend_failures": 0,
+    "prompt_chars": 0,
+    "output_chars": 0,
+    "provider_input_tokens": null,
+    "provider_output_tokens": null,
+    "call_seconds": 0.0,
+    "wall_seconds": 1.5223423999850638,
+    "cache_hits": 29,
+    "cache_misses": 0
+  },
+  "private_artifact_sha256": {
+    "phase7_extraction_cache.json": "E0A00A5CC6F21EE3E9BEB8DA2B0B0DC74C4D6C7DAA79F67FC9E47A5DBA7D3D04",
+    "phase7_semantic_cache.json": "C45E11EF41F02E59C7EEC8A9524CEC7DEC505DAAE3D61EEDAED87BF558EECE11"
+  },
+  "conclusions": [
+    "Lower than the Phase 7 figure by design: two rows whose numbers looked right are refused because the evidence never stated which population it counted.",
+    "Refusal is measured beside safety: half the rows requiring a population could not be assessed at all, and that rate is what a later phase has to improve.",
+    "Silent releases 0, wrong target released 0, wrong scope released 0 — all graded against human gold rather than against the system's own guards.",
+    "The cross-domain accuracy gate remains unpassed and was not a target."
+  ]
+}

@@ -43,3 +43,23 @@ adds a single independently recorded melanoma live run and its exact offline
 replay, the release-artifact hashes, provenance completeness checks, and probe
 cleanup. The live sample remains a failed cross-domain accuracy observation;
 publishing it does not supersede or conceal the Phase 6B deferred archive.
+
+## Which file publishes which number
+
+One figure, one home. A number quoted anywhere in this repository should be
+traceable to exactly one row of this table; if two documents disagree, this
+table is the one that is wrong and gets fixed.
+
+| Figure | Published in | Reproduce with |
+| --- | --- | --- |
+| EAT 89.47% label accuracy, 80% P/R/F1, 0 silent releases | `eat_phase6_manifest.json`, `eat_phase5_phase6_metrics.json` | `eval/run_full_accuracy.py --benchmark-profile legacy_profile.json --extraction replay` |
+| melanoma 60% (Phase 6B, archived failure) | `melanoma_phase6b_metrics.json` | frozen; see `docs/deferred/phase6b-melanoma-audit.md` |
+| melanoma 80.0% under the Phase 7 contract | `melanoma_phase7_metrics.json` | `--benchmark-profile phase7_profile.json --extraction replay` |
+| melanoma 66.7% under the Phase 8 contract | `melanoma_phase8_metrics.json` | `--benchmark-profile phase8_profile.json --extraction replay` |
+| Phase 6E release decision | `phase6e_release.json`, `phase6e_acceptance.json` | — |
+
+Different contracts are different questions. The Phase 7 and Phase 8 melanoma
+figures come from the SAME recorded model responses; they differ because the
+deterministic layer asks more of them, not because the model did better or
+worse. Comparing them as if they were one metric over time would be a category
+error.

@@ -1,0 +1,16 @@
+audit_id,expected_source_target_id,expected_population_scope,reason
+MA001,,,a study-level design statement is about no arm
+MA002,,allocated,the whole-study count is the randomized total
+MA003,nivolumab-plus-ipilimumab group,allocated,the arm named in the randomization sentence
+MA004,nivolumab-plus-ipilimumab group,allocated,the count allocated to that arm
+MA005,ipilimumab group,allocated,the arm named in the randomization sentence
+MA006,ipilimumab group,allocated,the count allocated to that arm
+MA007,nivolumab group,allocated,the arm named in the randomization sentence
+MA008,nivolumab group,allocated,the count allocated to that arm
+MA009,nivolumab-plus-ipilimumab group,,the efficacy sentence states no population
+MA010,ipilimumab group,,the efficacy sentence states no population
+MA011,nivolumab group,,the efficacy sentence states no population
+MA012,nivolumab-plus-ipilimumab group vs ipilimumab group,,the comparison the review reports
+MA013,nivolumab-plus-ipilimumab group vs ipilimumab group,,"the same comparison, read off the forest plot"
+MA014,nivolumab-plus-ipilimumab group vs nivolumab group,,the comparison the review reports
+MA015,nivolumab group vs ipilimumab group,,the comparison the review reports

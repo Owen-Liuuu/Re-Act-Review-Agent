@@ -1,0 +1,16 @@
+audit_id,review_data_source,raw_field_name,cohort_label,cohort_label_source,timepoint,cell_ref,population_scope,population_scope_source
+MA001,M001,Design,,,baseline,table_1:r1c1,,
+MA002,M002,"Randomized patients, n",,,baseline,table_1:r1c2,allocated,"the review's own column heading: 'Randomized patients, n'"
+MA003,M003,"Intervention arm drug, dose, n",Nivolumab (1 mg/kg) + ipilimumab (3 mg/kg),M003,baseline,table_1:r1c3#label,,
+MA004,M006,"Intervention arm drug, dose, n",Nivolumab (1 mg/kg) + ipilimumab (3 mg/kg),M003,baseline,table_1:r1c3#n,allocated,"the arm counts sum to the review's 'Randomized patients, n' (945)"
+MA005,M004,"Control arm drug, dose, n",Ipilimumab (3 mg/kg) + placebo,M004,baseline,table_1:r1c4#label,,
+MA006,M007,"Control arm drug, dose, n",Ipilimumab (3 mg/kg) + placebo,M004,baseline,table_1:r1c4#n,allocated,"the arm counts sum to the review's 'Randomized patients, n' (945)"
+MA007,M005,"Additional arm drug, dose, n",Nivolumab (3 mg/kg) + placebo,M005,baseline,table_1:r1c5#label,,
+MA008,M008,"Additional arm drug, dose, n",Nivolumab (3 mg/kg) + placebo,M005,baseline,table_1:r1c5#n,allocated,"the arm counts sum to the review's 'Randomized patients, n' (945)"
+MA009,M009,PFS,Nivolumab (1 mg/kg) + ipilimumab (3 mg/kg),M003,median_pfs,review_p7:left:pfs_combo,,
+MA010,M010,PFS,Ipilimumab (3 mg/kg) + placebo,M004,median_pfs,review_p7:left:pfs_ipi,,
+MA011,M011,PFS,Nivolumab (3 mg/kg) + placebo,M005,median_pfs,review_p7:left:pfs_nivo,,
+MA012,M012,HR,,,primary_analysis,review_p10:right:hr_combo_vs_ipi,,
+MA013,M013,HR,,,primary_analysis,figure_3:larkin,,
+MA014,M014,HR,,,primary_analysis,review_p10:right:hr_combo_vs_nivo,,
+MA015,M015,HR,,,primary_analysis,review_p10:right:hr_nivo_vs_ipi,,

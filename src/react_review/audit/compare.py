@@ -192,6 +192,19 @@ def _compare_components(
     return None
 
 
+def _scope_outcome(review_scope, source_scope, required_axes):
+    """The population verdict for this pair, as a record."""
+    from react_review.audit.scope import ScopeOutcome, scope_verdict
+    from react_review.normalize.population import PopulationScope
+
+    if review_scope is None and source_scope is None:
+        return ScopeOutcome()
+    as_scope = (lambda v: v if isinstance(v, PopulationScope)
+                else PopulationScope.model_validate(v or {}))
+    return scope_verdict(as_scope(review_scope), as_scope(source_scope),
+                         required_axes=list(required_axes or []))
+
+
 def _with_components(numeric, components):
     """Fill in parts the verbatim string does not carry — never overwrite one.
 
@@ -262,6 +275,9 @@ def compare_values(
     study_id: str = "",
     group: str = "-",
     source_components: Any = None,
+    review_scope: Any = None,
+    source_scope: Any = None,
+    required_scope_axes: list[str] | None = None,
 ) -> MatchResult:
     """Compare a review value against a source value and label the outcome.
 
@@ -285,6 +301,19 @@ def compare_values(
         tolerance_pct=round(rel_tolerance * 100.0, 4),
         sd_tolerance_pct=round(sd_rel_tolerance * 100.0, 4),
     )
+
+    # WHOSE numbers these are, recorded on every result. Phase 8 U7 records it;
+    # U8 is where it starts deciding — separating the two means the check can be
+    # measured on existing recordings before it changes any verdict.
+    scope = _scope_outcome(review_scope, source_scope, required_scope_axes)
+    base["scope_check"] = scope.status
+    base["scope_reason"] = scope.reason
+    if scope.blocks_comparison:
+        # Before the units and before the arithmetic: two numbers that count
+        # different people are not a transcription difference, and a relative
+        # band that calls them equal has answered a question nobody asked.
+        return MatchResult(**base, label=AuditLabel.NOT_COMPARABLE,
+                           reason=scope.reason, review_required=True)
 
     # 0. Existence takes precedence over every assertion about a value.  In
     # particular, a residual unit returned alongside ``source_value=None`` is

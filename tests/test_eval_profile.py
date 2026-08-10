@@ -143,9 +143,9 @@ def test_unknown_profile_names_are_refused(tmp_path):
 
 def test_wrong_schema_version_is_refused(tmp_path):
     body = _profile_body()
-    body["schema_version"] = 2
+    body["schema_version"] = 7
     _profile_in(tmp_path, body)
-    with pytest.raises(ProfileError, match="schema_version"):
+    with pytest.raises(ProfileError, match="is not one of"):
         load_profile(tmp_path, "phase7_profile.json",
                      answer_key_ids=_answer_key_ids())
 
@@ -276,3 +276,90 @@ def test_sha256_file_is_stable(tmp_path):
     path.write_bytes(b"abc")
     assert sha256_file(path) == sha256_file(path)
     assert sha256_file(path).isupper()
+
+
+# --- the runtime contract a benchmark runs under (P8-0 U2) ---
+
+def _v2_profile(tmp_path: Path, **overrides) -> Path:
+    """A schema-2 benchmark profile that names a run contract by path + hash."""
+    from react_review.contracts import repo_root
+
+    for name in ("manifest.json", "audit_template.csv",
+                 "phase7_semantic_overlay.csv", "phase7_target_contract.csv"):
+        (tmp_path / name).write_bytes((BENCHMARK / name).read_bytes())
+    body = json.loads((BENCHMARK / "phase7_profile.json").read_text(encoding="utf-8-sig"))
+    run_profile = repo_root() / "configs" / "run_profiles" / "phase8.json"
+    body.update({
+        "schema_version": 2,
+        "run_profile": "configs/run_profiles/phase8.json",
+        "run_profile_sha256": sha256_file(run_profile),
+    })
+    body.update(overrides)
+    path = tmp_path / "profile_v2.json"
+    path.write_text(json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
+
+
+def test_a_v1_profile_gets_the_contract_it_actually_ran_under():
+    """Phase 7 predates these axes: they are reconstructed, never inherited."""
+    profile = load_profile(BENCHMARK, "phase7_profile.json",
+                           answer_key_ids=_answer_key_ids())
+    contract = profile.run_contract
+    assert contract.derived_from_legacy is True
+    # what the v1 file DID declare survives …
+    assert contract.extraction_profile == "targeted_v4"
+    assert contract.semantic_prompt_profile == "semantic_v2_specificity"
+    # … and every axis it never declared takes the pre-Phase-8 value.
+    assert contract.tolerances_path is None
+    assert contract.population_contract_path is None
+    assert contract.scope_enabled is False
+    assert contract.context_policy == "cli_only"
+
+
+def test_a_frozen_benchmark_does_not_inherit_the_production_contract():
+    """Acceptance 6: switching the production default must not reach Phase 7.
+
+    The reconstruction is compared against the shipped phase8 contract rather
+    than against constants, so this test keeps failing if a future edit makes
+    the two converge by accident.
+    """
+    from react_review.run_profile import load_run_contract
+    from react_review.contracts import repo_root
+
+    phase8 = load_run_contract(repo_root() / "configs" / "run_profiles" / "phase8.json")
+    contract = load_profile(BENCHMARK, "phase7_profile.json",
+                            answer_key_ids=_answer_key_ids()).run_contract
+    assert phase8.scope_enabled and contract.scope_enabled is False
+    assert phase8.tolerances_path is not None and contract.tolerances_path is None
+    assert phase8.context_policy != contract.context_policy
+
+
+def test_a_v2_profile_resolves_its_run_contract(tmp_path):
+    profile = load_profile(tmp_path, _v2_profile(tmp_path),
+                           answer_key_ids=_answer_key_ids())
+    assert profile.schema_version == 2
+    assert profile.run_contract.profile_id == "phase8"
+    assert profile.run_contract.scope_enabled is True
+    assert profile.provenance()["run_scope_policy"] == "on"
+
+
+def test_a_v2_profile_with_a_stale_run_contract_hash_is_refused(tmp_path):
+    path = _v2_profile(tmp_path, run_profile_sha256="0" * 64)
+    with pytest.raises(ProfileError, match="does not match the run_profile_sha256"):
+        load_profile(tmp_path, path, answer_key_ids=_answer_key_ids())
+
+
+def test_two_sources_of_truth_may_not_disagree(tmp_path):
+    """The benchmark's own declaration must agree with the contract it names."""
+    path = _v2_profile(tmp_path, extraction_profile="legacy_v3")
+    with pytest.raises(ProfileError, match="but its run contract"):
+        load_profile(tmp_path, path, answer_key_ids=_answer_key_ids())
+
+
+def test_a_v2_profile_must_name_a_run_contract(tmp_path):
+    path = _v2_profile(tmp_path)
+    body = json.loads(path.read_text(encoding="utf-8-sig"))
+    del body["run_profile"]
+    path.write_text(json.dumps(body), encoding="utf-8")
+    with pytest.raises(ProfileError, match="must name a run_profile"):
+        load_profile(tmp_path, path, answer_key_ids=_answer_key_ids())

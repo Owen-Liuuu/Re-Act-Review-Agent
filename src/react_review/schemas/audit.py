@@ -54,6 +54,11 @@ class MatchResult(BaseModel):
     review_unit: str = ""
     source_value: Value = None
     source_unit: str = ""
+    # not_required | ok | scope_unresolved | scope_mismatch — whether the two
+    # values were shown to count the same people. Recorded on every result, so a
+    # reader can tell "checked and agreed" from "nobody asked".
+    scope_check: str = "not_required"
+    scope_reason: str = ""
     label: AuditLabel = AuditLabel.NOT_COMPARABLE
     rel_error_pct: float | None = None
     sd_rel_error_pct: float | None = None

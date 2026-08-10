@@ -21,6 +21,7 @@ from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
 from react_review.schemas.knowledge import KnowledgeImportRecord
 from react_review.schemas.report import AuditReport, FinalVerification
 from react_review.schemas.resolution import FieldResolutionRecord
+from react_review.schemas.run_manifest import RunManifest
 from react_review.schemas.table import CapturedTableSet
 
 
@@ -29,6 +30,11 @@ class EvidencePackage(BaseModel):
 
     run_id: str
     created_at: datetime = Field(default_factory=datetime.now)
+    # WHICH RULES produced this, and how it was executed. Absent on packages
+    # written before run contracts existed; a partial package carries the
+    # manifest without its cache hashes, because a file still being appended to
+    # has no content hash worth recording.
+    run_manifest: RunManifest | None = None
     review_items: list[ReviewDataItem] = Field(default_factory=list)
     source_items: list[SourceEvidenceItem] = Field(default_factory=list)
     report: AuditReport | None = None

@@ -66,11 +66,15 @@ class AuditPipeline:
         *,
         store: EvidencePackageStore | None = None,
         reporter: StepReporter | None = None,
+        run_manifest=None,
     ) -> None:
         self._collector = collector
         self._auditor = auditor
         self._judge = judge
         self._store = store
+        # Recorded on every package this run writes, partial ones included: a
+        # run that stopped halfway still has to say what rules it was applying.
+        self._run_manifest = run_manifest
         # Default reporter never blocks and never writes — library/CI behaviour.
         self._reporter = reporter or StepReporter()
 
@@ -111,7 +115,8 @@ class AuditPipeline:
             # Progress survives a crash or a Ctrl-C: written after every paper.
             if self._store is not None:
                 self._store.save_partial(EvidencePackage(
-                    run_id=run_id, review_items=review_items, source_items=source_items,
+                    run_id=run_id, run_manifest=self._run_manifest,
+                    review_items=review_items, source_items=source_items,
                     processing_records=records,
                     captured_tables=captured_tables or CapturedTableSet(),
                     cohorts=cohorts or CohortRegistry(),
@@ -172,6 +177,7 @@ class AuditPipeline:
 
         package = EvidencePackage(
             run_id=run_id,
+            run_manifest=self._run_manifest,
             review_items=review_items,
             source_items=source_items,
             report=report,

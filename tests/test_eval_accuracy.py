@@ -232,9 +232,21 @@ def test_target_counters_separate_a_refusal_from_a_wrong_value():
                    outcome="missing_source", extraction=False)
     refused.target_check = "ambiguous"
 
-    target = score_rows([correct, wrong, refused])["target"]
+    metrics = score_rows([correct, wrong, refused])
+    target = metrics["target"]
+    # Schema v2: identity is graded against GOLD. These rows carry none, so the
+    # gold-graded counters stay at zero — "nobody said" is not "correct".
+    # Schema v2: identity is graded against GOLD. These rows carry none, so the
+    # gold-graded counters stay at zero — "nobody said" is not "correct".
+    assert target["gold"]["rows"] == 0
+    assert target["gold"]["identity_correct"] == 0
+    assert target["gold"]["identity_wrong_released"] == 0
+    # The Phase 6/7 value comparison keeps its OLD NAME and its old meaning, so
+    # a Phase 7 artifact still reads the same way.
     assert target["correct_target_found_count"] == 1
     assert target["wrong_target_accepted_count"] == 1
+    # A refusal is still counted as a refusal, which is what this test is for:
+    # "correctly declined" and "never found anything" must not merge.
     assert target["ambiguous_target_rejected_count"] == 1
 
 
@@ -244,6 +256,71 @@ def test_a_partial_interval_is_not_counted_as_a_wrong_target():
     partial.expected_source = "0.42 (99.5% CI 0.31-0.57)"
     partial.extracted_source = "0.42"
 
-    target = score_rows([partial])["target"]
-    assert target["wrong_target_accepted_count"] == 0
-    assert target["correct_target_found_count"] == 1
+    metrics = score_rows([partial])
+    assert metrics["target"]["wrong_target_accepted_count"] == 0
+    # Under the legacy value comparison this still reads as the right target;
+    # what makes it partial is component completeness, not arm identity.
+    assert metrics["target"]["correct_target_found_count"] == 1
+
+
+# --- metrics schema v2: guard status is not a grade (P8-0 U10) ---
+
+def _gold(audit_id="A1", target="", scope=""):
+    from react_review.eval_profile import TargetGoldRow
+    return {audit_id: TargetGoldRow(audit_id=audit_id,
+                                    expected_source_target_id=target,
+                                    expected_population_scope=scope)}
+
+
+def test_identity_is_graded_against_gold_not_against_the_systems_own_guard():
+    """A system scoring itself with its own verdict is arguing, not measuring."""
+    row = _row("match", "match")
+    row.target_guard_status = "ok"          # the guard is happy…
+    row.target_identity_correct = "false"   # …and the gold says otherwise
+    row.review_required = False
+    assert score_rows([row])["target"]["gold"]["identity_wrong_released"] == 1
+
+
+def test_a_refused_row_is_not_counted_as_a_wrong_target():
+    """Getting it wrong and catching yourself is not releasing it."""
+    row = _row("match", "not_comparable", found=True)
+    row.target_scope_correct = "false"
+    row.review_required = True
+    metrics = score_rows([row])
+    assert metrics["scope"]["scope_wrong_released_count"] == 0
+    assert metrics["target"]["gold"]["identity_wrong_released"] == 0
+    # …but the mistake itself stays visible in the distribution.
+    assert metrics["scope"]["scope_wrong"] == 1
+
+
+def test_unknown_against_unknown_never_scores_as_correct():
+    from react_review.eval_accuracy import _graded, _same_scope
+
+    assert _graded(None, "expected_population_scope", "unknown", _same_scope) \
+        == "not_assessable"
+    gold = _gold(scope="")["A1"]
+    assert _graded(gold, "expected_population_scope", "unknown", _same_scope) \
+        == "not_assessable"
+
+
+def test_identity_is_compared_on_words_not_spelling():
+    from react_review.eval_accuracy import _same_identity
+
+    assert _same_identity("nivolumab-plus-ipilimumab group",
+                          "Nivolumab plus Ipilimumab")
+    assert not _same_identity("nivolumab group", "Nivolumab plus Ipilimumab")
+
+
+def test_acceptance_needs_every_necessary_check():
+    row = _row("match", "match")
+    row.value_within_tolerance = True
+    row.evidence_protocol_ok = True
+    row.component_complete = False          # one necessary check fails
+    row.extraction_accepted = False
+    assert score_rows([row])["extraction_quality"]["extraction_accepted_rate"] == 0.0
+
+
+def test_the_legacy_metrics_are_still_published_under_their_own_name():
+    metrics = score_rows([_row("match", "match")])
+    assert metrics["metrics_schema_version"] == 2
+    assert "extraction_value_match_rate" in metrics["legacy_projection"]

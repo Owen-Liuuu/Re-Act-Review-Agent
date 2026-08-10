@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "profile_id": "legacy",
+  "written_on": "2026-08-10",
+  "purpose": "Exactly what the system did before Phase 8: the comparator's own tolerances, no population contract, no scope check, and a research context that comes only from the command line. Kept so every Phase 6/7 recording stays replayable under the rules it was made with.",
+  "extraction_profile": "legacy_v3",
+  "semantic_prompt_profile": "semantic_v1",
+  "tolerances": null,
+  "population_contract": null,
+  "context_policy": "cli_only",
+  "scope_policy": "off",
+  "required_scope_axes": {}
+}

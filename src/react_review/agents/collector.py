@@ -27,6 +27,7 @@ from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
 from react_review.steps.paper_verification.schemas import ReferenceEntry
 from react_review.tools.extract_source import ExtractSourceValueInput, SourceValueResult
 from react_review.tools.extraction_profile import DEFAULT_PROFILE
+from react_review.tools.extraction_profile import DEFAULT_PROFILE
 from react_review.tools.registry import ToolRegistry
 from react_review.tools.search import ResolveReferenceInput
 
@@ -148,6 +149,9 @@ class Collector:
         self._resolve = catalogue.get("resolve_reference") if "resolve_reference" in catalogue else None
         self._kb = knowledge
         self._cohorts = cohorts
+        # Which prompt contract every request runs under. Carried explicitly so
+        # a run's answers are attributable to the profile that produced them.
+        self._extraction_profile = extraction_profile
         self._extraction_profile = extraction_profile
         self._max_attempts = max(1, max_attempts)
         self._decider = decider or ReflectionDecider(max_attempts=self._max_attempts)
@@ -255,8 +259,8 @@ class Collector:
                 cohort_display=review_item.cohort_label,
                 cohorts=self._cohort_variants(),
                 target_kind=_target_kind(review_item),
-                attempt=attempt,
                 extraction_profile=self._extraction_profile,
+                attempt=attempt,
                 # A claim about two arms is carried as a pair, not as one name:
                 # "A vs B" handed over as a single cohort string is what let the
                 # extractor answer with whichever hazard ratio it met first.
@@ -338,6 +342,7 @@ class Collector:
             value_origin=result.value_origin,
             derivation=result.derivation,
             source_components=result.source_components,
+            population_scope=result.source_scope,
             cohort_counts=result.cohort_counts,
             aggregation_status=result.aggregation_status,
             aggregation_reason=result.aggregation_reason,

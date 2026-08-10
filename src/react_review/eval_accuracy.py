@@ -82,6 +82,29 @@ class RowResult:
     assigned_arm_label: str = ""
     source_components: dict[str, Any] = field(default_factory=dict)
     component_status: str = ""
+    # --- extraction quality, as orthogonal facts (metrics schema v2) ---------
+    # One "extraction_correct" number answered several different questions at
+    # once and got them wrong together: 313 against a gold 314 counted as a
+    # correct extraction because it was within a relative band. Each question is
+    # now asked separately, and the summary only calls an extraction ACCEPTED
+    # when every necessary one is true.
+    exact_value_match: bool = False
+    value_within_tolerance: bool = False
+    evidence_protocol_ok: bool = True
+    component_complete: bool = True
+    # true | false | not_assessable — graded against human GOLD, never against
+    # the system's own guard. "unknown vs unknown" is not a correct answer.
+    target_identity_correct: str = "not_assessable"
+    target_scope_correct: str = "not_assessable"
+    extraction_accepted: bool = False
+    # What the run's own guards decided. Descriptive: available in production,
+    # where there is no gold and therefore no notion of "correct".
+    target_guard_status: str = ""
+    scope_guard_status: str = ""
+    review_scope: dict[str, Any] = field(default_factory=dict)
+    source_scope: dict[str, Any] = field(default_factory=dict)
+    scope_check: str = ""
+    scope_reason: str = ""
     semantic_relation: str = ""
     semantic_controls: dict[str, bool] = field(default_factory=dict)
     semantic: dict[str, Any] = field(default_factory=dict)
@@ -95,7 +118,9 @@ class _CollectorLike(Protocol):
 async def _compare(comparator, field_type: str, rv: Any, sv: Any, ru: str, su: str,
                    *, column_header: str = "", quote: str = "",
                    research_context: str = "",
-                   source_components: Any = None) -> MatchResult:
+                   source_components: Any = None,
+                   review_scope: Any = None,
+                   source_scope: Any = None) -> MatchResult:
     """Score through the TOOL, so the eval exercises the same path a run does.
 
     Calling ``compare_values`` directly here meant the eval could never reach the
@@ -109,7 +134,60 @@ async def _compare(comparator, field_type: str, rv: Any, sv: Any, ru: str, su: s
         research_context=research_context,
         source_components=(source_components.model_dump()
                            if hasattr(source_components, "model_dump")
-                           else source_components)))
+                           else source_components),
+        review_scope=_as_dict(review_scope), source_scope=_as_dict(source_scope)))
+
+
+def _graded(gold: Any, field: str, actual: str, same) -> str:
+    """Three states, because "nobody said" is not "correct"."""
+    expected = str(getattr(gold, field, "") or "").strip() if gold else ""
+    if not expected:
+        return "not_assessable"
+    return "true" if same(expected, actual) else "false"
+
+
+def _same_identity(expected: str, actual: str) -> bool:
+    """Identity compared on distinguishing words, not on spelling.
+
+    "Nivolumab plus Ipilimumab" and "nivolumab-plus-ipilimumab group" name the
+    same arm; a byte comparison would grade the speller, not the extractor.
+    """
+    from react_review.normalize.cohorts import distinguishing_tokens
+
+    return bool(actual) and distinguishing_tokens(expected) == distinguishing_tokens(actual)
+
+
+def _same_scope(expected: str, actual: str) -> bool:
+    from react_review.normalize.population import PopulationScope
+
+    want, got = PopulationScope.parse(expected), PopulationScope.parse(actual or "")
+    return want.basis == got.basis and want.analysis_set == got.analysis_set
+
+
+def _exact_text(expected: Any, actual: Any) -> bool:
+    return (expected is not None and actual is not None
+            and str(expected).strip() == str(actual).strip())
+
+
+def _target_scope(target: Any):
+    """The population a target contract declares, if it declares one.
+
+    Tolerant of a plain object standing in for a contract row: the review side
+    simply has no declared scope then, which is the same answer a contract that
+    omits the column gives.
+    """
+    from react_review.normalize.population import PopulationScope
+
+    if hasattr(target, "scope"):
+        return target.scope()
+    declared = getattr(target, "population_scope", "")
+    return PopulationScope.parse(declared, source="contract") if declared else None
+
+
+def _as_dict(value: Any) -> dict | None:
+    if value is None:
+        return None
+    return value.model_dump() if hasattr(value, "model_dump") else dict(value)
 
 
 def _as_bool(value: Any) -> bool:
@@ -132,6 +210,7 @@ async def run_rows(
     research_context: str = "",
     comparator: Any = None,
     targets: dict[str, Any] | None = None,
+    gold: dict[str, Any] | None = None,
 ) -> list[RowResult]:
     """Collect + audit each answer-key row into a scored RowResult.
 
@@ -158,6 +237,9 @@ async def run_rows(
             "raw_field_name": target.raw_field_name,
             "cohort_label": target.cohort_label,
             "timepoint": target.timepoint or "single",
+            "population_scope": _target_scope(target),
+            "population_scope_source": getattr(
+                target, "population_scope_source", ""),
         }
         review = ReviewDataItem(
             study_id=r["study_id"], group=(r.get("group") or "-"),
@@ -174,7 +256,9 @@ async def run_rows(
             review.unit, si.source_unit,
             column_header=(r.get("column_header") or ""), quote=si.source_quote,
             research_context=research_context,
-            source_components=getattr(si, "source_components", None))
+            source_components=getattr(si, "source_components", None),
+            review_scope=review.population_scope,
+            source_scope=getattr(si, "population_scope", None))
         predicted = match.label
         # Extraction is "correct" when the extracted value matches the human's
         # hand-labeled source value within tolerance.  A partial structured
@@ -190,6 +274,41 @@ async def run_rows(
             si.source_value is not None
             and extraction_match.label == AuditLabel.MATCH
             and not extraction_match.review_required
+        )
+
+        # The orthogonal facts. Each one answers exactly one question, and the
+        # gold-graded ones stay "not_assessable" where no human said what the
+        # right answer was — silence is not a pass.
+        # Nothing was claimed about an identity or a population on a row that
+        # produced no value, so there is nothing to grade — not a failure.
+        gold_row = ((gold or {}).get(r.get("audit_id", ""))
+                    if si.source_value is not None else None)
+        identity_correct = _graded(
+            gold_row, "expected_source_target_id",
+            getattr(si, "assigned_arm_label", ""), _same_identity)
+        scope_correct = _graded(
+            gold_row, "expected_population_scope",
+            (si.population_scope.describe()
+             if getattr(si, "population_scope", None) else ""),
+            _same_scope)
+        components = getattr(si, "source_components", None)
+        facts = {
+            "exact_value_match": _exact_text(expected_source, si.source_value),
+            "value_within_tolerance": extraction_correct,
+            "evidence_protocol_ok": (si.evidence_check == "ok"
+                                     and si.aggregation_status != "protocol_error"),
+            "component_complete": (components is None
+                                   or components.status != "incomplete"),
+            "target_identity_correct": identity_correct,
+            "target_scope_correct": scope_correct,
+        }
+        accepted = (
+            si.source_value is not None
+            and facts["value_within_tolerance"]
+            and facts["evidence_protocol_ok"]
+            and facts["component_complete"]
+            and facts["target_identity_correct"] != "false"
+            and facts["target_scope_correct"] != "false"
         )
 
         results.append(RowResult(
@@ -225,6 +344,14 @@ async def run_rows(
                                if getattr(si, "source_components", None) else {}),
             component_status=(si.source_components.status
                               if getattr(si, "source_components", None) else ""),
+            **facts, extraction_accepted=accepted,
+            target_guard_status=getattr(si, "target_check", ""),
+            scope_guard_status=match.scope_check,
+            review_scope=(review.population_scope.model_dump(mode="json")
+                          if review.population_scope else {}),
+            source_scope=(si.population_scope.model_dump(mode="json")
+                          if getattr(si, "population_scope", None) else {}),
+            scope_check=match.scope_check, scope_reason=match.scope_reason,
             target_check=getattr(si, "target_check", ""),
             target_reason=getattr(si, "target_reason", ""),
             assigned_arm_label=getattr(si, "assigned_arm_label", ""),
@@ -277,6 +404,15 @@ def score_rows(results: list[RowResult]) -> dict[str, Any]:
     visibility_rate = (visible_discrepancies / expected_discrepancies
                        if expected_discrepancies else None)
 
+    # Refusing is measured. A system that rejected every count would otherwise
+    # show three green safety numbers and no capability at all, so how OFTEN the
+    # scope question could be answered is reported next to how often it passed.
+    scoped = [r for r in results if r.scope_check and r.scope_check != "not_required"]
+    assessable = [r for r in scoped if r.scope_check in ("ok", "scope_mismatch")]
+    unresolved_by_field: dict[str, int] = {}
+    for r in scoped:
+        if r.scope_check == "scope_unresolved":
+            unresolved_by_field[r.field_type] = unresolved_by_field.get(r.field_type, 0) + 1
     n_found = sum(r.found for r in results)
     n_extract_ok = sum(r.extraction_correct for r in results)
 
@@ -286,16 +422,39 @@ def score_rows(results: list[RowResult]) -> dict[str, Any]:
     # "not found"; only the first is the guard working. And a row that quietly
     # returns another arm's number is the failure this phase exists to remove,
     # so it gets a count of its own that has to stay at zero.
-    correct_target = wrong_target = 0
+    # Graded against GOLD, never against the run's own guard: a system that
+    # scored itself with its own verdict would be arguing, not measuring. Rows
+    # with no gold are not counted either way.
+    identity = Counter(r.target_identity_correct for r in results)
+    scope_graded = Counter(r.target_scope_correct for r in results)
+    # "Accepted" is meant literally: the audit let the value through as a clean
+    # match. A row the audit refused, or flagged for review, got the identity or
+    # the population wrong AND caught itself — that belongs in the distribution
+    # above, not in a counter whose job is to stay at zero.
+    def _released(r: RowResult) -> bool:
+        return r.predicted_label == AuditLabel.MATCH.value and not r.review_required
+
+    wrong_target = sum(1 for r in results
+                       if r.target_identity_correct == "false" and _released(r))
+    wrong_scope = sum(1 for r in results
+                      if r.target_scope_correct == "false" and _released(r))
+    correct_target = identity["true"]
+
+    # The legacy counter, kept under its own name so Phase 7 artifacts remain
+    # comparable. It compares VALUES, which is why it called 313-against-314 a
+    # correct target in the first place.
+    legacy_correct = legacy_wrong = 0
     for r in results:
         if not r.found:
             continue
         if _same_target(r.expected_source, r.extracted_source):
-            correct_target += 1
+            legacy_correct += 1
         elif r.target_check in ("", "ok"):
-            wrong_target += 1
+            legacy_wrong += 1
 
+    accepted = sum(r.extraction_accepted for r in results)
     return {
+        "metrics_schema_version": 2,
         "n": n,
         "label_accuracy": label_correct / n,
         "discrepancy": {
@@ -313,10 +472,39 @@ def score_rows(results: list[RowResult]) -> dict[str, Any]:
             "found_rate": n_found / n,
             "value_match_rate": n_extract_ok / n,
         },
+        "extraction_quality": {
+            "exact_value_match": sum(r.exact_value_match for r in results) / n,
+            "value_within_tolerance": sum(r.value_within_tolerance for r in results) / n,
+            "evidence_protocol_ok": sum(r.evidence_protocol_ok for r in results) / n,
+            "component_complete": sum(r.component_complete for r in results) / n,
+            "target_identity": dict(identity),
+            "target_scope": dict(scope_graded),
+            "extraction_accepted_rate": accepted / n,
+        },
+        "legacy_projection": {
+            # Phase 6/7 definitions, kept so those artifacts stay comparable.
+            # DEPRECATED: "correct" here means "within a relative band", which
+            # is the confusion metrics schema v2 exists to end.
+            "extraction_value_match_rate": n_extract_ok / n,
+            "correct_target_by_value_count": legacy_correct,
+            "wrong_target_by_value_count": legacy_wrong,
+            "note": "value comparisons; see metrics.target.gold for gold-graded identity",
+        },
         "target": {
-            "correct_target_found_count": correct_target,
-            # Accepted a value that is not the arm's own, with nothing flagged.
-            "wrong_target_accepted_count": wrong_target,
+            # DEPRECATED, kept with their Phase 6/7 meaning so those artifacts
+            # stay readable: both compare VALUES, which is why 313 against a
+            # gold 314 counted as the right target. The gold-graded answers are
+            # under "gold" below; a name whose meaning changed silently would be
+            # the very confusion this schema version exists to end.
+            "correct_target_found_count": legacy_correct,
+            "wrong_target_accepted_count": legacy_wrong,
+            "gold": {
+                "rows": identity["true"] + identity["false"],
+                "identity_correct": identity["true"],
+                "identity_wrong": identity["false"],
+                # Released as a clean match while naming the wrong arm.
+                "identity_wrong_released": wrong_target,
+            },
             "ambiguous_target_rejected_count": sum(
                 1 for r in results if not r.found and r.target_check
                 in {"ambiguous", "direction_inverted", "inconsistent"}),
@@ -326,6 +514,17 @@ def score_rows(results: list[RowResult]) -> dict[str, Any]:
             "reassigned_count": sum(1 for r in results
                                     if r.target_check == "reassigned"),
             "checks": dict(Counter(r.target_check for r in results if r.target_check)),
+        },
+        "scope": {
+            "required": len(scoped),
+            "scope_assessable_rate": (len(assessable) / len(scoped)) if scoped else None,
+            "scope_resolved_rate": (sum(r.scope_check == "ok" for r in scoped) / len(scoped))
+                                   if scoped else None,
+            "unresolved_by_field": unresolved_by_field,
+            "gold_rows": scope_graded["true"] + scope_graded["false"],
+            "scope_wrong": scope_graded["false"],
+            # Released as a clean match while counting the wrong population.
+            "scope_wrong_released_count": wrong_scope,
         },
         "outcomes": dict(Counter(r.outcome for r in results)),
         "confusion": {f"{e}->{p}": c
@@ -362,6 +561,7 @@ def format_report(metrics: dict[str, Any]) -> str:
     if metrics.get("n", 0) == 0:
         return "no rows scored."
     d, e, s = metrics["discrepancy"], metrics["extraction"], metrics["safety"]
+    q = metrics["extraction_quality"]
     lines = [
         "",
         "================ C1 accuracy ================",
@@ -377,16 +577,31 @@ def format_report(metrics: dict[str, Any]) -> str:
         f"(visible={s['visible_discrepancies']} "
         f"escalated={s['escalated_not_comparable']})",
         "-- target selection (which arm/comparison the value came from) --",
-        f"  wrong target accepted: {metrics['target']['wrong_target_accepted_count']}"
-        "   (must be 0)",
-        f"  correct target found : {metrics['target']['correct_target_found_count']}"
+        f"  wrong target released: {metrics['target']['gold']['identity_wrong_released']}"
+        "   (must be 0, graded against gold)",
+        f"  target identity gold : {metrics['target']['gold']['identity_correct']}"
+        f" correct / {metrics['target']['gold']['rows']} graded"
         f"  reassigned={metrics['target']['reassigned_count']}",
         f"  refused              : ambiguous="
         f"{metrics['target']['ambiguous_target_rejected_count']} "
         f"unreported={metrics['target']['unreported_target_count']}",
-        "-- source extraction --",
+        "-- population scope (only where a contract required it) --",
+        f"  rows requiring scope : {metrics['scope']['required']}",
+        f"  assessable           : {_pct(metrics['scope']['scope_assessable_rate'])}"
+        f"  resolved: {_pct(metrics['scope']['scope_resolved_rate'])}",
+        f"  wrong scope released : {metrics['scope']['scope_wrong_released_count']}"
+        "   (must be 0, graded against gold)",
+        f"  unresolved by field  : {metrics['scope']['unresolved_by_field'] or '{}'}",
+        "-- source extraction (schema v2: orthogonal, gold-graded) --",
         f"  found rate           : {_pct(e['found_rate'])}",
-        f"  value match rate     : {_pct(e['value_match_rate'])}",
+        f"  accepted             : {_pct(q['extraction_accepted_rate'])}"
+        "   (all necessary checks true)",
+        f"  exact value          : {_pct(q['exact_value_match'])}"
+        f"  within tolerance: {_pct(q['value_within_tolerance'])}",
+        f"  evidence protocol ok : {_pct(q['evidence_protocol_ok'])}"
+        f"  components complete: {_pct(q['component_complete'])}",
+        f"  target identity      : {q['target_identity']}",
+        f"  target scope         : {q['target_scope']}",
         f"collection outcomes    : {metrics['outcomes']}",
         "=============================================",
     ]

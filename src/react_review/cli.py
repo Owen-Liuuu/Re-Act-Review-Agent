@@ -476,31 +476,13 @@ def _render_saved_package_html(store, run_id: str, out: Path | None = None) -> P
     return report_path
 
 
-def _run_main(argv: list[str] | None = None) -> None:
-    """Full LLM pipeline: review PDF → Parser → Collector → Auditor → Judge.
+def run_parser() -> argparse.ArgumentParser:
+    """The `run` command line, as its own object.
 
-    Parses the review PDF, resolves each study to the included-studies registry,
-    reads the LOCAL source PDFs, extracts + audits + adjudicates, persists the
-    EvidencePackage, then reloads it to render HTML. Requires ``--config`` with
-    an LLM api_key (GLM etc.).
+    Built here rather than inside the command so the contract and
+    execution flags can be checked without starting an audit — the
+    defaults are part of the contract story and deserve a test.
     """
-    import sys
-    import uuid
-
-    from react_review.checklist import Checklist
-    from react_review.core.exceptions import RunStopped
-    from react_review.dkb import FieldResolver, load_runtime_knowledge
-    from react_review.hitl import (
-        AutoContinue,
-        CheckpointPolicy,
-        ConsoleCheckpoint,
-        RunJournal,
-        StepReporter,
-    )
-    from react_review.parser.review_parser import ReviewParser
-    from react_review.pipeline.factory import _create_llm_backend
-    from react_review.store import EvidencePackageStore
-
     ap = argparse.ArgumentParser(
         prog="react-review run",
         description="Full audit: review PDF → Collector → Auditor → Judge.",
@@ -515,6 +497,18 @@ def _run_main(argv: list[str] | None = None) -> None:
     ap.add_argument("--pdf-dir", type=Path, default=None,
                     help="base dir for source_pdf paths (default: the --studies parent)")
     ap.add_argument("--tolerances", type=Path, default=None)
+    ap.add_argument("--profile", type=Path, default=None,
+                    help="run contract profile: which prompt contracts, "
+                         "tolerances and policies decide the answer "
+                         "(default: configs/run_profiles/legacy.json)")
+    ap.add_argument("--extraction", choices=("live", "record", "replay"),
+                    default="live",
+                    help="live calls the model; record also saves the raw "
+                         "responses so the run can be replayed offline; replay "
+                         "makes no extraction calls")
+    ap.add_argument("--extraction-cache", type=Path, default=None,
+                    help="raw extraction recording used by record/replay "
+                         "(default: <out>/<run-id>/extraction_cache.json)")
     ap.add_argument("--context", default="", help="one-sentence research context")
     ap.add_argument("--out", type=Path, default=Path("output/runs"))
     ap.add_argument("--html", type=Path, default=None,
@@ -552,6 +546,35 @@ def _run_main(argv: list[str] | None = None) -> None:
     ap.add_argument("--semantic-cache", type=Path, default=None,
                     help="file of recorded judgements to reuse and extend "
                          "(default: <out>/<run_id>/semantic_cache.json)")
+    return ap
+
+
+def _run_main(argv: list[str] | None = None) -> None:
+    """Full LLM pipeline: review PDF → Parser → Collector → Auditor → Judge.
+
+    Parses the review PDF, resolves each study to the included-studies registry,
+    reads the LOCAL source PDFs, extracts + audits + adjudicates, persists the
+    EvidencePackage, then reloads it to render HTML. Requires ``--config`` with
+    an LLM api_key (GLM etc.).
+    """
+    import sys
+    import uuid
+
+    from react_review.checklist import Checklist
+    from react_review.core.exceptions import RunStopped
+    from react_review.dkb import FieldResolver, load_runtime_knowledge
+    from react_review.hitl import (
+        AutoContinue,
+        CheckpointPolicy,
+        ConsoleCheckpoint,
+        RunJournal,
+        StepReporter,
+    )
+    from react_review.parser.review_parser import ReviewParser
+    from react_review.pipeline.factory import _create_llm_backend
+    from react_review.store import EvidencePackageStore
+
+    ap = run_parser()
     args = ap.parse_args(argv)
 
     # Prefer real UTF-8 output; safe_print still covers consoles that refuse.
@@ -652,6 +675,14 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
     from react_review.tools.semantic_compare import SemanticCompareTool
     from react_review.tools.extract import FetchFullTextTool
     from react_review.tools.extract_source import ExtractSourceValueTool
+    from react_review.contracts import repo_root
+    from react_review.run_profile import (
+        ExecutionMode,
+        RunManifest,
+        guard_contract_overrides,
+        load_run_contract,
+    )
+    from react_review.tools.extraction_cache import ExtractionCache
     from react_review.tools.registry import ToolRegistry
     from react_review.tools.search import (
         CrossRefResolver,
@@ -664,6 +695,19 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
     _safe_print(f"Parsing review PDF: {args.pdf}")
     parsed = asyncio.run(review_parser.parse(args.pdf, research_context=args.context))
     _safe_print(f"  parsed {len(parsed.items)} review items")
+
+    # Whose words describe this review. The parser reads one out of the review
+    # itself, which was being extracted and then dropped; whether the audit may
+    # use it is a CONTRACT decision, because the context reaches the prompt and
+    # therefore the cache key — a silent fallback would change the question
+    # without changing the profile that is supposed to define it.
+    research_context, context_source = args.context, "cli"
+    if not research_context:
+        if contract.context_policy == "cli_then_parsed" and parsed.research_context:
+            research_context, context_source = parsed.research_context, "parsed"
+            _safe_print(f"  context (from the review): {research_context}")
+        else:
+            context_source = "default"
 
     # References + retriever: LOCAL (included_studies.csv → local source PDFs) or
     # ONLINE (references from the review's own reference list → online full text).
@@ -688,7 +732,26 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
     if args.limit:
         review_items = review_items[: args.limit]
 
-    tol = ToleranceTable.from_yaml(args.tolerances) if args.tolerances else ToleranceTable()
+    # The contract decides the answer; the flags below decide only how the model
+    # was reached. A flag that would move a tolerance or a prompt version is
+    # refused rather than silently winning — see react_review.run_profile.
+    contract = load_run_contract(
+        args.profile or (repo_root() / "configs" / "run_profiles" / "legacy.json"))
+    guard_contract_overrides(contract, {"--tolerances": args.tolerances})
+    execution = ExecutionMode(
+        extraction_mode=args.extraction,
+        extraction_cache=(args.extraction_cache
+                          or (args.out / run_id / "extraction_cache.json")
+                          if args.extraction != "live" else None),
+        semantic_mode=args.semantic,
+        semantic_cache=(args.semantic_cache or (args.out / run_id / "semantic_cache.json")
+                        if args.semantic != "off" else None),
+    ).validate_modes()
+
+    if contract.tolerances_path is not None:
+        tol = ToleranceTable.from_yaml(contract.tolerances_path)
+    else:
+        tol = ToleranceTable.from_yaml(args.tolerances) if args.tolerances else ToleranceTable()
     mailto = config.unpaywall.email or config.pubmed.email or config.crossref.mailto
     reconciler = ReferenceReconciler([
         CrossRefResolver(base_url=config.crossref.base_url, mailto=mailto,
@@ -698,30 +761,45 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
     ])
     reg = ToolRegistry()
     reg.register(FetchFullTextTool(retriever))
-    reg.register(ExtractSourceValueTool(backend))
+    extraction_cache = (None if execution.extraction_mode == "live"
+                        else ExtractionCache(execution.extraction_cache))
+    reg.register(ExtractSourceValueTool(
+        backend, cache=extraction_cache, cache_mode=execution.extraction_mode))
     reg.register(ResolveReferenceTool(reconciler))          # no-DOI refs → gated online DOI
     # Text the numeric comparison cannot read ("ICU" vs "intensive care unit")
     # goes to the model, and its answer then goes through the deterministic
     # controls. Every judgement is recorded so the run can be replayed offline.
-    semantic_cache = None
-    if args.semantic != "off":
-        semantic_cache = SemanticCache(
-            args.semantic_cache or (args.out / run_id / "semantic_cache.json"))
+    semantic_cache = (SemanticCache(execution.semantic_cache)
+                      if execution.semantic_cache is not None else None)
     reg.register(CompareValuesTool(
         tol,
-        semantic=SemanticCompareTool(backend) if args.semantic == "on" else None,
+        semantic=(SemanticCompareTool(
+            backend, profile=contract.semantic_prompt_profile)
+            if args.semantic == "on" else None),
         semantic_mode=args.semantic, semantic_cache=semantic_cache,
-        min_confidence=tol.semantic_min_confidence))
+        min_confidence=tol.semantic_min_confidence,
+        semantic_profile=contract.semantic_prompt_profile))
+    manifest = RunManifest.of(
+        contract, execution, context_source=context_source,
+        inputs={"review_pdf": str(args.pdf.name),
+                "studies": str(args.studies.name) if args.studies else ""})
+    _safe_print(f"Contract:   {contract.profile_id} "
+                f"[extraction={contract.extraction_profile} "
+                f"semantic={contract.semantic_prompt_profile} "
+                f"scope={contract.scope_policy} context={context_source}]")
+    _safe_print(f"Execution:  extraction={execution.extraction_mode} "
+                f"semantic={execution.semantic_mode}")
     pipeline = AuditPipeline(
-        Collector(reg, knowledge=kb, cohorts=parsed.cohorts),
+        Collector(reg, knowledge=kb, cohorts=parsed.cohorts,
+                  extraction_profile=contract.extraction_profile),
         AuditOrchestrator(reg), Judge(),
-        store=store, reporter=reporter,
+        store=store, reporter=reporter, run_manifest=manifest,
     )
 
     _safe_print(f"Auditing {len(review_items)} items (run {run_id}) …")
     pkg = asyncio.run(pipeline.run(
         review_items, reference_resolver,
-        research_context=args.context, run_id=run_id, parser_record=parsed.record,
+        research_context=research_context, run_id=run_id, parser_record=parsed.record,
         captured_tables=parsed.tables, cohorts=parsed.cohorts,
         field_resolutions=parsed.field_resolutions,
         knowledge_imports=parsed.knowledge_imports,

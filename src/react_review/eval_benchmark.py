@@ -35,8 +35,16 @@ def validate_frozen_benchmark(
 
     Legacy benchmarks without ``manifest.json`` remain usable and are marked as
     ``legacy_unfrozen``.  A frozen benchmark fails closed on a missing/mutated
-    review or source PDF, a changed whitelist, missing contract files, or no
-    declared semantic row.
+    review or source PDF, a changed whitelist, missing contract files, or a
+    route it declares and its answer key does not exercise.
+
+    Two manifest schemas. **v1** names one review and one ``selected_source``,
+    and requires a semantic row — the shape the melanoma checkpoint was frozen
+    in. **v2** takes ``artifacts`` with a role each, so a benchmark with nine
+    source papers can be pinned at all, and states its ``required_routes``
+    instead of having "there must be a semantic row" wired into this function:
+    a benchmark that audits only numbers is a legitimate benchmark, and the
+    rule it is held to belongs in its own file where it can be reviewed.
     """
     benchmark = benchmark.resolve()
     manifest_path = benchmark / "manifest.json"
@@ -52,6 +60,65 @@ def validate_frozen_benchmark(
     errors: list[str] = []
     checks: dict[str, Any] = {}
 
+    version = int(manifest.get("schema_version") or 1)
+    checks["manifest_schema_version"] = version
+    if version >= 2:
+        _check_artifacts(benchmark, manifest, checks, errors)
+    else:
+        _check_v1_pdfs(benchmark, manifest, checks, errors)
+
+    _check_contract_files(benchmark, manifest, checks, errors)
+    _check_whitelist(benchmark, manifest, checks, errors)
+    _check_routes(manifest, rows, checks, errors, version=version)
+
+    checks["declared_known_gaps"] = [
+        {"audit_id": str(row.get("audit_id") or ""),
+         "gap": str(row.get("known_gap") or "")}
+        for row in rows if (row.get("known_gap") or "").strip()
+    ]
+    return {
+        "status": "pass" if not errors else "failed",
+        "benchmark_id": str(manifest.get("benchmark_id") or benchmark.name),
+        "benchmark": str(benchmark),
+        "checks": checks,
+        "errors": errors,
+    }
+
+
+def _check_artifacts(benchmark: Path, manifest: dict, checks: dict,
+                     errors: list[str]) -> None:
+    """v2: every declared artifact exists and still hashes to what it did."""
+    by_role: dict[str, int] = {}
+    verified = 0
+    for spec in (manifest.get("artifacts") or []):
+        relative = str(spec.get("path") or "")
+        role = str(spec.get("role") or "unknown")
+        by_role[role] = by_role.get(role, 0) + 1
+        try:
+            path = _within(benchmark, relative)
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
+        if not path.is_file():
+            errors.append(f"{role} artifact is missing: {relative}")
+            continue
+        declared = str(spec.get("sha256") or "").upper()
+        if not declared:
+            errors.append(f"{role} artifact declares no sha256: {relative}")
+        elif _sha256(path) != declared:
+            errors.append(f"{role} artifact hash differs from manifest: {relative}")
+        else:
+            verified += 1
+    checks["artifacts_by_role"] = by_role
+    checks["artifacts_verified"] = verified
+    if not by_role.get("review"):
+        errors.append("the manifest declares no review artifact")
+    if not by_role.get("source"):
+        errors.append("the manifest declares no source artifact")
+
+
+def _check_v1_pdfs(benchmark: Path, manifest: dict, checks: dict,
+                   errors: list[str]) -> None:
     for name in ("review", "selected_source"):
         spec = manifest.get(name) or {}
         relative = str(spec.get("path") or "")
@@ -73,6 +140,9 @@ def validate_frozen_benchmark(
         elif not matches:
             errors.append(f"{name} PDF hash differs from manifest: {relative}")
 
+
+def _check_contract_files(benchmark: Path, manifest: dict, checks: dict,
+                          errors: list[str]) -> None:
     missing_contract = [
         name for name in (manifest.get("contract_files") or [])
         if not _within(benchmark, str(name)).is_file()
@@ -81,6 +151,9 @@ def validate_frozen_benchmark(
     if missing_contract:
         errors.append("missing contract files: " + ", ".join(missing_contract))
 
+
+def _check_whitelist(benchmark: Path, manifest: dict, checks: dict,
+                     errors: list[str]) -> None:
     manifest_whitelist = list(manifest.get("table_whitelist") or [])
     preflight_path = benchmark / "preflight.json"
     preflight = (json.loads(preflight_path.read_text(encoding="utf-8-sig"))
@@ -88,31 +161,42 @@ def validate_frozen_benchmark(
     frozen_whitelist = list(
         ((preflight.get("capture") or {}).get("frozen_whitelist") or []))
     checks["table_whitelist"] = manifest_whitelist
+    if not manifest_whitelist and not frozen_whitelist:
+        # A benchmark whose answer key was not built from a frozen table capture
+        # has no whitelist to agree with. Silence on both sides is consistent;
+        # only a disagreement is a failure.
+        checks["table_whitelist_matches_preflight"] = "not_declared"
+        return
     checks["table_whitelist_matches_preflight"] = (
-        bool(manifest_whitelist) and manifest_whitelist == frozen_whitelist)
-    if not checks["table_whitelist_matches_preflight"]:
+        manifest_whitelist == frozen_whitelist and bool(manifest_whitelist))
+    if checks["table_whitelist_matches_preflight"] is not True:
         errors.append("manifest table whitelist differs from frozen preflight")
 
-    semantic_rows = [
-        str(row.get("audit_id") or "") for row in rows
-        if (row.get("expected_match_mode") or "").strip() == "semantic"
-    ]
-    checks["semantic_expected_rows"] = semantic_rows
-    if not semantic_rows:
-        errors.append("no answer-key row expects semantic comparison")
 
-    checks["declared_known_gaps"] = [
-        {"audit_id": str(row.get("audit_id") or ""),
-         "gap": str(row.get("known_gap") or "")}
-        for row in rows if (row.get("known_gap") or "").strip()
-    ]
-    return {
-        "status": "pass" if not errors else "failed",
-        "benchmark_id": str(manifest.get("benchmark_id") or benchmark.name),
-        "benchmark": str(benchmark),
-        "checks": checks,
-        "errors": errors,
-    }
+def _check_routes(manifest: dict, rows: list[dict[str, str]], checks: dict,
+                  errors: list[str], *, version: int) -> None:
+    """Every route the benchmark says it exercises must appear in its key.
+
+    v1 had one route hard-coded here ("there must be a semantic row"), which
+    made a numbers-only benchmark impossible to freeze. v2 declares its own
+    routes, so the rule is visible in the file being judged — and declaring
+    none is a statement a reader can see and dispute, not a hidden exemption.
+    """
+    modes = {(row.get("expected_match_mode") or "").strip()
+             for row in rows} - {""}
+    checks["observed_expected_modes"] = sorted(modes)
+    checks["semantic_expected_rows"] = [
+        str(row.get("audit_id") or "") for row in rows
+        if (row.get("expected_match_mode") or "").strip() == "semantic"]
+
+    required = ([str(r) for r in (manifest.get("required_routes") or [])]
+                if version >= 2 else ["semantic"])
+    checks["required_routes"] = required
+    for route in required:
+        if route not in modes:
+            errors.append(
+                f"the manifest requires a {route} route, which no answer-key "
+                "row expects")
 
 
 def benchmark_diagnostics(results: Iterable[Any]) -> dict[str, Any]:

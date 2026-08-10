@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "profile_id": "phase8",
+  "written_on": "2026-08-10",
+  "purpose": "The Phase 8 contract. Carries the Phase 7 prompt contracts into production and adds the axes Phase 8 introduces. The scope check it declares is enforced from P8-0 U8; the tolerance table it pins is behaviourally identical to the defaults until U9 changes THAT file.",
+  "extraction_profile": "targeted_v4",
+  "semantic_prompt_profile": "semantic_v2_specificity",
+  "tolerances": "../tolerances.phase8.yaml",
+  "tolerances_sha256": "B2C217445C1AC7CF9F140ACC97459278B9A76D269FBF41D12E49115EB1269EDF",
+  "population_contract": null,
+  "context_policy": "cli_then_parsed",
+  "scope_policy": "on",
+  "required_scope_axes": {
+    "sample_size": [
+      "population_basis"
+    ],
+    "cohort_n": [
+      "population_basis"
+    ],
+    "event_count": [
+      "population_basis",
+      "analysis_set"
+    ]
+  }
+}

@@ -48,6 +48,7 @@ class CompareValuesTool(Tool):
         semantic_cache: SemanticCache | None = None,
         min_confidence: float = DEFAULT_MIN_CONFIDENCE,
         semantic_profile: str = DEFAULT_SEMANTIC_PROFILE,
+        required_scope_axes: dict[str, list[str]] | None = None,
     ) -> None:
         self._tol = tolerance
         self._semantic = semantic
@@ -58,6 +59,9 @@ class CompareValuesTool(Tool):
         # a judgement recorded under one contract must not be served to a run
         # asking under another.
         self._semantic_version = semantic_prompt_version(semantic_profile)
+        # Which axes each field needs before its numbers may be compared. Empty
+        # by default: no contract, no scope requirement, no behaviour change.
+        self._scope_axes = {k.lower(): v for k, v in (required_scope_axes or {}).items()}
 
     async def run(self, payload: CompareInput) -> MatchResult:
         ft = payload.field_type
@@ -72,6 +76,8 @@ class CompareValuesTool(Tool):
             p_value_abs_tolerance=self._tol.p_value_abs_tolerance(ft),
             null_value=self._tol.null_value(ft),
             source_components=payload.source_components,
+            review_scope=payload.review_scope, source_scope=payload.source_scope,
+            required_scope_axes=self._scope_axes.get(ft.lower(), []),
         )
         if not self._should_escalate(payload, result):
             return result

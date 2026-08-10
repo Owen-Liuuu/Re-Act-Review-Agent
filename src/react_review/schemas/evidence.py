@@ -12,6 +12,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from react_review.core.enums import CollectionOutcome
+from react_review.normalize.population import PopulationScope
 from react_review.schemas.reason import ReasonRecord
 
 Value = str | int | float | None
@@ -75,6 +76,10 @@ class ReviewDataItem(BaseModel):
     cell_ref: tuple[int, int] | None = None    # (row, column) in the captured table
     column_header: str = ""                    # the header path, verbatim
     cohort_label: str = ""                     # the review's OWN word for the cohort
+    # What population the REVIEW says this cell counts, and where that came
+    # from (a declared evaluation contract, or the review's own column words).
+    population_scope: PopulationScope | None = None
+    population_scope_source: str = ""          # contract | column_header | ""
     # How that label was placed: resolved | alias | combined | ambiguous |
     # unknown | not_applicable (a study-level field has no cohort dimension).
     # "unknown"/"ambiguous" must reach a human — never be treated as a cohort.
@@ -115,6 +120,10 @@ class SourceEvidenceItem(BaseModel):
     # Structured parts of the source value (Phase 7B). ``None`` means the
     # extraction contract that produces them did not run for this item.
     source_components: SourceNumericComponents | None = None
+    # WHICH POPULATION this value counts, read from its own supporting quote.
+    # 313 analysed and 314 allocated are different quantities, not a 0.3%
+    # transcription difference, and nothing upstream of this could say so.
+    population_scope: PopulationScope | None = None
     cohort_counts: list[CohortCount] = Field(default_factory=list)
     aggregation_status: str = "not_applicable"  # not_applicable | derived | rejected | protocol_error
     aggregation_reason: str = ""

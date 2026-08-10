@@ -1,0 +1,119 @@
+{
+  "schema_version": 2,
+  "benchmark_id": "eat_t1dm_2025",
+  "frozen_phase": "P8-0",
+  "frozen_date": "2026-08-10",
+  "domain": "EAT thickness/volume in T1DM vs healthy controls",
+  "note": "Written in P8-0 so the main benchmark is pinned like the melanoma one. The nine source PDFs are copyrighted and git-ignored: this manifest pins what a local checkout must contain, and the gate fails closed where they are absent rather than passing on files it never saw.",
+  "artifacts": [
+    {
+      "path": "raw/EAT_T1DM_SRMA.pdf",
+      "role": "review",
+      "sha256": "30170539BDB5F46755A2F56B6ED66A2CB4B0FD6AB3DD7D13BFB7070394236EDD",
+      "git_tracked": true
+    },
+    {
+      "path": "pdf/Ahmad et al. [2022].pdf",
+      "role": "source",
+      "sha256": "9E32765A06C09FD269B6B848725CBE3F7EC8671314A7ECF4E70022C8F2514E30",
+      "study_id": "ahmad_2022",
+      "git_tracked": false
+    },
+    {
+      "path": "pdf/Svanteson et al. [2019].pdf",
+      "role": "source",
+      "sha256": "CB9B719E1E3BE8C46E0385304C37ED929878B355B37173BA4E47A8F30D45BDEA",
+      "study_id": "svanteson_2019",
+      "git_tracked": false
+    },
+    {
+      "path": "pdf/de Gonzalo-Calvo et al..pdf",
+      "role": "source",
+      "sha256": "AFB44795ACA10F60A7C1AD7D0E168C4AF27682FC558CCC69EE86C04C5815A575",
+      "study_id": "de_gonzalo_calvo_2018",
+      "git_tracked": false
+    },
+    {
+      "path": "pdf/Keles et al. [2016].pdf",
+      "role": "source",
+      "sha256": "7CC35D4A31C1B8098CB368D351F5E4B450EBA896F4A3AB78E393D20792E92D47",
+      "study_id": "keles_2016",
+      "git_tracked": false
+    },
+    {
+      "path": "pdf/Echocardiography - 2015 - Aslan - The Relationship between Epicardial Fat Thickness and Endothelial Dysfunction in Type I.pdf",
+      "role": "source",
+      "sha256": "E195AF4BBFFDB26BCE91F932185C3641CA62943AA2FB08D9205303F1EDBBB064",
+      "study_id": "aslan_2015",
+      "git_tracked": false
+    },
+    {
+      "path": "pdf/Iacobellis et al. [2014].pdf",
+      "role": "source",
+      "sha256": "B68FAC024F31D0CB83BB1CDC4E2FE6CE211D2FF4F6D766FBC105000492BCCE99",
+      "study_id": "iacobellis_2014",
+      "git_tracked": false
+    },
+    {
+      "path": "pdf/Yazıcı et al. [2011].pdf",
+      "role": "source",
+      "sha256": "4F43D47E1018543943C6C66FD62C35242F2621CB6275366296E54E4F5AC30BCF",
+      "study_id": "yazici_2011",
+      "git_tracked": false
+    },
+    {
+      "path": "pdf/Colom et al. [2018].pdf",
+      "role": "source",
+      "sha256": "9E826B6B6BAAD842D606534F1F1D33B9A01EA6EFAFCA31733D262B025A56FA0F",
+      "study_id": "colom_2018",
+      "git_tracked": false
+    },
+    {
+      "path": "pdf/ElBaky et al. [2023] .pdf",
+      "role": "source",
+      "sha256": "FF70CBD49FFD6F04F344C35A865B9F1F4447EC0B09BB5AA7CC4B53B4F6A95281",
+      "study_id": "elbaky_2023",
+      "git_tracked": false
+    },
+    {
+      "path": "audit_template.csv",
+      "role": "contract",
+      "sha256": "B0D610D9443D44087BEE0050C54ED0E7AE1AA35C5AA7899B56625A71397C87A5",
+      "git_tracked": true
+    },
+    {
+      "path": "included_studies.csv",
+      "role": "contract",
+      "sha256": "5E02515D4AA1CAF01814859F5986BE99CB0395AE6CBCE9F6D9AC915480EB831C",
+      "git_tracked": true
+    },
+    {
+      "path": "review_ground_truth.csv",
+      "role": "contract",
+      "sha256": "70D7E85721E82547888E7D870F0E7F5A52CC5879F9E755E218B13FDB0B0A5FB7",
+      "git_tracked": true
+    },
+    {
+      "path": "seeded_discrepancies.csv",
+      "role": "contract",
+      "sha256": "8ACBF2EAAC879BC0F4FC141324C376351FB31F22CAD20388774D684724BC13D5",
+      "git_tracked": true
+    },
+    {
+      "path": "internal_consistency.csv",
+      "role": "contract",
+      "sha256": "512ABFAD9666DF753A032CFB2BBEBAE1A317FE75FC54450E09D91544CF827C2C",
+      "git_tracked": true
+    }
+  ],
+  "required_routes": [],
+  "route_note": "This answer key predates the expected_match_mode column, so it declares no route. A numbers-only benchmark is a legitimate benchmark; the claim it supports is just narrower, and saying so here is what makes that visible.",
+  "contract_files": [
+    "README.md",
+    "audit_template.csv",
+    "included_studies.csv",
+    "review_ground_truth.csv"
+  ],
+  "status": "frozen",
+  "domain_note": "Verbatim the research context every EAT recording was made with. It is part of the prompt, so it is part of the frozen contract: rewording it would invalidate every cache."
+}

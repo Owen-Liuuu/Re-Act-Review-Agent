@@ -27,14 +27,26 @@ Three artifacts, with different authority:
 from __future__ import annotations
 
 import csv
-import hashlib
-import json
 from pathlib import Path
 from typing import Iterable, Sequence
 
 from pydantic import BaseModel, Field
 
+from react_review.contracts import (
+    ContractError,
+    read_json_object,
+    repo_root,
+    sha256_file,
+    verify_declared_hash,
+)
+from react_review.run_profile import (
+    RunContractProfile,
+    legacy_contract,
+    load_run_contract,
+)
+
 SCHEMA_VERSION = 1
+SCHEMA_VERSIONS = (1, 2)
 
 EXTRACTION_PROFILES = ("legacy_v3", "targeted_v4")
 SEMANTIC_PROFILES = ("semantic_v1", "semantic_v2_specificity")
@@ -49,6 +61,18 @@ _OVERLAY_COLUMNS = {
 _TARGET_COLUMNS = {
     "audit_id", "review_data_source", "raw_field_name", "cohort_label",
     "cohort_label_source", "timepoint", "cell_ref",
+    # v2: what population the REVIEW's own column says this cell counts
+    # ("allocated", "analysed/itt"). Still a review-side observable and still
+    # no expectation: it says what the review claims to report, never what the
+    # source ought to say.
+    "population_scope", "population_scope_source",
+}
+
+# The GOLD file. Separate from the target contract on purpose: the contract is
+# an input the extractor is allowed to see, and this is what the extractor is
+# graded against. One file that could be both is one file that could leak.
+_GOLD_COLUMNS = {
+    "audit_id", "expected_source_target_id", "expected_population_scope", "reason",
 }
 
 _RELATIONS = {"same", "review_broader", "source_broader", "different", "unknown"}
@@ -57,12 +81,9 @@ _TRUE = {"1", "true", "yes", "y"}
 _FALSE = {"0", "false", "no", "n", ""}
 
 
-class ProfileError(ValueError):
-    """A profile, overlay or target contract that must not be used as given."""
-
-
-def sha256_file(path: Path) -> str:
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest().upper()
+#: Kept under its original name; the rules now live with the other contract
+#: loaders so a benchmark and a run cannot verify a hash by different standards.
+ProfileError = ContractError
 
 
 class SemanticExpectation(BaseModel):
@@ -85,6 +106,36 @@ class TargetContractRow(BaseModel):
     cohort_label_source: str = ""     # which review row supplied that word
     timepoint: str = ""
     cell_ref: str = ""
+    population_scope: str = ""          # "" | basis | basis/analysis_set
+    population_scope_source: str = ""   # which review words say so
+
+    def scope(self):
+        """The declared population, refused if it names an undefined value."""
+        from react_review.normalize.population import PopulationScope
+
+        return PopulationScope.parse(self.population_scope, source="contract")
+
+
+class TargetGoldRow(BaseModel):
+    """What a human says the source evidence should have been about.
+
+    Never handed to the extractor — the audit's own ``target_check`` says what
+    its guard decided, which is a different question from whether the guard was
+    right. Grading a system with its own verdict is not grading.
+    """
+
+    audit_id: str
+    expected_source_target_id: str = ""     # the paper's own label, or "A vs B"
+    expected_population_scope: str = ""     # basis | basis/analysis_set
+    reason: str = ""
+
+    @property
+    def identity_assessable(self) -> bool:
+        return bool(self.expected_source_target_id.strip())
+
+    @property
+    def scope_assessable(self) -> bool:
+        return bool(self.expected_population_scope.strip())
 
 
 class BenchmarkProfile(BaseModel):
@@ -101,6 +152,18 @@ class BenchmarkProfile(BaseModel):
     target_contract_sha256: str = ""
     semantic: dict[str, SemanticExpectation] = Field(default_factory=dict)
     targets: dict[str, TargetContractRow] = Field(default_factory=dict)
+    # The RUNTIME contract this benchmark runs under. A v2 profile names one and
+    # pins its hash; a v1 profile predates the idea, so one is reconstructed
+    # from what it did declare — never inherited from whatever the current
+    # production default happens to be, which is how a frozen benchmark would
+    # quietly start replaying under new rules.
+    run_contract: RunContractProfile | None = None
+    target_gold_path: Path | None = None
+    target_gold_sha256: str = ""
+    gold: dict[str, TargetGoldRow] = Field(default_factory=dict)
+
+    def gold_for(self, audit_id: str) -> TargetGoldRow | None:
+        return self.gold.get(audit_id)
 
     def target_for(self, audit_id: str) -> TargetContractRow | None:
         return self.targets.get(audit_id)
@@ -119,6 +182,8 @@ class BenchmarkProfile(BaseModel):
             "semantic_overlay_sha256": self.semantic_overlay_sha256,
             "target_contract": str(self.target_contract_path or ""),
             "target_contract_sha256": self.target_contract_sha256,
+            **{f"run_{k}": str(v) for k, v in
+               (self.run_contract.identity() if self.run_contract else {}).items()},
         }
 
 
@@ -199,6 +264,26 @@ def load_semantic_overlay(
     return overlay
 
 
+def load_target_gold(
+    path: Path, answer_key_ids: Iterable[str],
+) -> dict[str, TargetGoldRow]:
+    """Load the human gold for target identity and population scope."""
+    path = Path(path)
+    if not path.is_file():
+        raise ProfileError(f"target gold does not exist: {path}")
+    rows = _read_rows(path, _GOLD_COLUMNS, "target gold")
+    _checked_ids(rows, set(answer_key_ids), "target gold", path)
+    from react_review.normalize.population import PopulationScope
+
+    gold: dict[str, TargetGoldRow] = {}
+    for row in rows:
+        # Validated here so an undefined population can never sit in a gold file
+        # waiting to be compared against something.
+        PopulationScope.parse(row.get("expected_population_scope", ""))
+        gold[row["audit_id"]] = TargetGoldRow(**row)
+    return gold
+
+
 def load_target_contract(
     path: Path, answer_key_ids: Sequence[str],
 ) -> dict[str, TargetContractRow]:
@@ -237,20 +322,13 @@ def load_profile(
     path = Path(spec)
     if not path.is_absolute():
         path = benchmark / path
-    if not path.is_file():
-        raise ProfileError(f"benchmark profile does not exist: {path}")
-
-    try:
-        body = json.loads(path.read_text(encoding="utf-8-sig"))
-    except json.JSONDecodeError as exc:
-        raise ProfileError(f"benchmark profile is not valid JSON: {exc}") from exc
-    if not isinstance(body, dict):
-        raise ProfileError("benchmark profile must be a JSON object")
+    body = read_json_object(path, kind="benchmark profile")
 
     version = body.get("schema_version")
-    if version != SCHEMA_VERSION:
+    if version not in SCHEMA_VERSIONS:
         raise ProfileError(
-            f"benchmark profile schema_version {version!r} is not {SCHEMA_VERSION}")
+            f"benchmark profile schema_version {version!r} is not one of "
+            f"{', '.join(str(v) for v in SCHEMA_VERSIONS)}")
 
     extraction = str(body.get("extraction_profile") or "")
     semantic_profile = str(body.get("semantic_prompt_profile") or "")
@@ -295,14 +373,64 @@ def load_profile(
             body, "target_contract_sha256", target_path)
         targets = load_target_contract(target_path, answer_key_ids)
 
+    run_contract = _run_contract_for(body, path, version, extraction, semantic_profile)
+
+    gold_path = gold_sha = ""
+    gold: dict[str, TargetGoldRow] = {}
+    if body.get("target_gold"):
+        gold_path = benchmark / str(body["target_gold"])
+        gold_sha = _verify_declared(body, "target_gold_sha256", gold_path)
+        gold = load_target_gold(gold_path, answer_key_ids)
+
     return BenchmarkProfile(
-        path=path, sha256=sha256_file(path), schema_version=SCHEMA_VERSION,
+        path=path, sha256=sha256_file(path), schema_version=version,
         extraction_profile=extraction, semantic_prompt_profile=semantic_profile,
         semantic_overlay_path=(overlay_path or None),
         semantic_overlay_sha256=overlay_sha,
         target_contract_path=(target_path or None),
         target_contract_sha256=target_sha,
-        semantic=semantic, targets=targets)
+        semantic=semantic, targets=targets, run_contract=run_contract,
+        target_gold_path=(gold_path or None), target_gold_sha256=gold_sha, gold=gold)
+
+
+def _run_contract_for(body: dict, path: Path, version: int,
+                      extraction: str, semantic_profile: str) -> RunContractProfile:
+    """The runtime contract this benchmark profile runs under.
+
+    A v2 profile names a run-profile FILE and pins its hash, and its own
+    extraction/semantic declarations must agree with it — two sources of truth
+    that could disagree are worse than one. A v1 profile predates all of this,
+    so the axes it never declared are filled with what it actually used:
+    the comparator's own tolerances, no population contract, no scope check, and
+    a context that came only from the command line. Nothing is inherited from
+    the current production default.
+    """
+    if not body.get("run_profile"):
+        if version != 1:
+            raise ProfileError(
+                "a schema_version 2 benchmark profile must name a run_profile")
+        return legacy_contract(extraction_profile=extraction,
+                               semantic_prompt_profile=semantic_profile,
+                               source=f"{path.stem}:v1-compatibility")
+
+    run_path = Path(str(body["run_profile"]))
+    if not run_path.is_absolute():
+        # Resolved against the repository root, never against the benchmark
+        # directory: run profiles live with the code, and a frozen benchmark
+        # must not be able to redefine production rules by shipping its own.
+        run_path = repo_root() / run_path
+    verify_declared_hash(body, "run_profile_sha256", run_path,
+                         kind="run contract profile")
+    contract = load_run_contract(run_path)
+    for field, declared, actual in (
+            ("extraction_profile", extraction, contract.extraction_profile),
+            ("semantic_prompt_profile", semantic_profile,
+             contract.semantic_prompt_profile)):
+        if declared != actual:
+            raise ProfileError(
+                f"the benchmark profile declares {field}={declared!r} but its "
+                f"run contract {contract.profile_id!r} says {actual!r}")
+    return contract
 
 
 def _verify_declared(body: dict, key: str, path: Path) -> str:

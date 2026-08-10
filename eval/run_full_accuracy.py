@@ -41,6 +41,8 @@ from react_review.eval_benchmark import (
 )
 from react_review.eval_profile import ProfileError, load_profile
 from react_review.dkb import load_runtime_knowledge
+from react_review.llm.metered import MeteredBackend
+from react_review.schemas.telemetry import RunTelemetry, wall_clock
 from react_review.pipeline.factory import _create_llm_backend
 from react_review.retrieval.local_pdf import LocalPdfRetriever
 from react_review.steps.paper_verification.schemas import ReferenceEntry
@@ -182,11 +184,16 @@ def main(argv: list[str] | None = None) -> None:
 
     print(f"benchmark: {benchmark} [{gate['status']}]")
     if profile is not None:
+        contract = profile.run_contract
         print(f"profile  : {profile.path.name} "
               f"[extraction={profile.extraction_profile} "
               f"semantic={profile.semantic_prompt_profile} "
               f"targets={len(profile.targets)} "
               f"semantic_overlay={len(profile.semantic)}]")
+        if contract is not None:
+            print(f"contract : {contract.profile_id} "
+                  f"[tolerances={(contract.tolerances_path.name if contract.tolerances_path else 'defaults')} "
+                  f"scope={contract.scope_policy}]")
     if args.dry_run:
         print(f"rows: {len(rows)}")
         print("by study        :", dict(Counter(r["study_id"] for r in rows)))
@@ -205,8 +212,11 @@ def main(argv: list[str] | None = None) -> None:
     studies = load_included_studies(studies_path)
     by_id = {s.study_id: s for s in studies}
 
+    telemetry = RunTelemetry()
     backend = (_create_llm_backend(load_config(args.config))
                if args.config is not None else None)
+    if backend is not None:
+        backend = MeteredBackend(backend, telemetry)
     tol = ToleranceTable.from_yaml(args.tolerances) if args.tolerances else ToleranceTable()
     retriever = LocalPdfRetriever(
         {s.doi: s.source_pdf for s in studies if s.doi and s.source_pdf}, base_dir=benchmark)
@@ -215,7 +225,8 @@ def main(argv: list[str] | None = None) -> None:
     extraction_cache = (None if args.extraction == "live"
                         else ExtractionCache(extraction_cache_path))
     reg.register(ExtractSourceValueTool(
-        backend, cache=extraction_cache, cache_mode=args.extraction))
+        backend, cache=extraction_cache, cache_mode=args.extraction,
+        telemetry=telemetry))
     kb = load_runtime_knowledge(
         ROOT / "configs" / "knowledge.seed.json", ROOT / "configs" / "ontology")
     # The cohorts come from the profile's target contract — the review's own
@@ -232,13 +243,21 @@ def main(argv: list[str] | None = None) -> None:
     cache = None if args.semantic == "off" else SemanticCache(semantic_cache_path)
     semantic_profile = (profile.semantic_prompt_profile if profile is not None
                         else "semantic_v1")
+    # The runtime contract decides tolerances and scope requirements. Without a
+    # profile nothing changes: no contract, no requirements, no new behaviour.
+    run_contract = profile.run_contract if profile is not None else None
+    if run_contract is not None and run_contract.tolerances_path is not None:
+        tol = ToleranceTable.from_yaml(run_contract.tolerances_path)
+    scope_axes = (run_contract.required_scope_axes
+                  if run_contract is not None and run_contract.scope_enabled else {})
     comparator = CompareValuesTool(
         tol,
         semantic=(SemanticCompareTool(backend, profile=semantic_profile)
                   if args.semantic == "on" else None),
         semantic_mode=args.semantic, semantic_cache=cache,
         min_confidence=tol.semantic_min_confidence,
-        semantic_profile=semantic_profile)
+        semantic_profile=semantic_profile,
+        required_scope_axes=scope_axes)
 
     def reference_for(study_id: str) -> ReferenceEntry:
         s = by_id.get(study_id)
@@ -246,10 +265,14 @@ def main(argv: list[str] | None = None) -> None:
                               doi=(s.doi if s else None))
 
     print(f"running {len(rows)} rows through Collector + audit …")
-    results = asyncio.run(run_rows(
-        rows, collector, tol, reference_for, context, comparator=comparator,
-        targets=(profile.targets if profile is not None else None)))
+    with wall_clock(telemetry):
+        results = asyncio.run(run_rows(
+            rows, collector, tol, reference_for, context, comparator=comparator,
+            targets=(profile.targets if profile is not None else None),
+            gold=(profile.gold if profile is not None else None)))
     if extraction_cache is not None:
+        telemetry.record_cache(hits=extraction_cache.hits,
+                               misses=extraction_cache.misses)
         if args.extraction == "record":
             extraction_cache.save()
         print(f"extraction: mode={args.extraction} "
@@ -258,6 +281,7 @@ def main(argv: list[str] | None = None) -> None:
     else:
         print("extraction: mode=live; model variance is not hidden by a replay")
     if cache is not None:
+        telemetry.record_cache(hits=cache.hits, misses=cache.misses)
         cache.save()
         print(f"semantic: mode={args.semantic} "
               f"min_confidence={tol.semantic_min_confidence} "
@@ -276,6 +300,7 @@ def main(argv: list[str] | None = None) -> None:
 
     metrics = score_rows(results)
     print(format_report(metrics))
+    print(f"cost: {telemetry.summary()}")
     diagnostics = benchmark_diagnostics(results)
     diagnostic_report = format_benchmark_diagnostics(diagnostics)
     if diagnostic_report:
@@ -313,6 +338,7 @@ def main(argv: list[str] | None = None) -> None:
             "semantic_cache_hits": cache.hits if cache is not None else 0,
             "semantic_cache_misses": cache.misses if cache is not None else 0,
             "semantic_cache_entries": len(cache) if cache is not None else 0,
+            "telemetry": telemetry.model_dump(mode="json"),
         }
         args.out.write_text(
             json.dumps({"run": run_meta, "metrics": metrics,

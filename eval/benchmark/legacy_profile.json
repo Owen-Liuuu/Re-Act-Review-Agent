@@ -1,0 +1,12 @@
+{
+  "schema_version": 2,
+  "profile_id": "eat_t1dm_legacy",
+  "written_on": "2026-08-10",
+  "purpose": "Pins the EAT benchmark to the contract its recordings were made under. Phase 6/7 caches replay only here; a Phase 8 run of this benchmark needs its own profile and its own recording.",
+  "base_manifest_sha256": "3CE7031B84312DFE5182FE1D3C7FD1014FA7A2F1725B4C6E2A7874E1AF4017D6",
+  "base_audit_template_sha256": "B0D610D9443D44087BEE0050C54ED0E7AE1AA35C5AA7899B56625A71397C87A5",
+  "run_profile": "configs/run_profiles/legacy.json",
+  "run_profile_sha256": "899074E71FFA9B26D4E43DB416F37E48573595FD1340DCE553F954FEA82CF25E",
+  "extraction_profile": "legacy_v3",
+  "semantic_prompt_profile": "semantic_v1"
+}

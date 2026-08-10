@@ -29,6 +29,10 @@ class CompareInput(BaseModel):
     # string rather than instead of it: the audit still displays what the paper
     # printed, and compares what the extraction actually read.
     source_components: dict | None = None
+    # Which population each side counts. Compared before the arithmetic,
+    # because it decides whether the arithmetic is about the same people.
+    review_scope: dict | None = None
+    source_scope: dict | None = None
 
 
 class CountInput(BaseModel):

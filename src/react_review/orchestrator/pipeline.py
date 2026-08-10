@@ -63,6 +63,13 @@ class AuditOrchestrator:
                         column_header=review.column_header or review.raw_field_name,
                         source_quote=source.source_quote,
                         research_context=research_context,
+                        source_components=(
+                            source.source_components.model_dump()
+                            if source.source_components else None),
+                        review_scope=(review.population_scope.model_dump()
+                                      if review.population_scope else None),
+                        source_scope=(source.population_scope.model_dump()
+                                      if source.population_scope else None),
                     )
                 )
             except Exception as exc:  # a bad pair must not abort the whole run

@@ -1,0 +1,23 @@
+# Phase 8 tolerance table.
+#
+# configs/tolerances.yaml and the Python defaults are NOT touched, so every
+# Phase 6/7 recording keeps replaying under the rules it was made with. Only a
+# run whose contract names THIS file gets the bands below.
+
+default_rel_tolerance: 0.01
+default_sd_rel_tolerance: 0.03
+p_value_abs_tolerance: 0.0
+semantic_min_confidence: 0.70
+
+per_field_type:
+  # A head count is a count. 313 and 314 are not 0.3% apart in any sense that
+  # matters: they are different numbers of people, and a relative band that
+  # calls them equal is how an analysis population passed for an allocated one.
+  # Only reachable once the scope check has established that the two sides
+  # count the SAME people — exactness on its own would merely turn a silent
+  # wrong match into a loud wrong mismatch.
+  sample_size: 0.0
+  cohort_n: 0.0
+  event_count: 0.0
+per_field_type_sd: {}
+null_value_by_field_type: {}

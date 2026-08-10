@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from react_review.llm.base import LLMBackend, parse_llm_response
 from react_review.normalize.anchors import normalised_contains
 from react_review.normalize.cohorts import ComparisonTarget
+from react_review.normalize.population import PopulationScope, classify_population
 from react_review.schemas.evidence import CohortCount, SourceNumericComponents
 from react_review.steps.data_extraction.schemas import PaperDocument
 from react_review.tools.base import Tool, ToolStage
@@ -327,6 +328,10 @@ class SourceValueResult(BaseModel):
     # The parts of the returned value, verified against its own quote. ``None``
     # means the contract that produces them did not run for this request.
     source_components: SourceNumericComponents | None = None
+    # Which population the supporting quote is talking about. Classified from
+    # that quote alone, so it travels with the evidence rather than with the
+    # request that asked for it.
+    source_scope: PopulationScope | None = None
     evidence_check: str = "ok"  # ok | protocol_error
     evidence_reason: str = ""
     error: str = ""
@@ -346,6 +351,7 @@ class ExtractSourceValueTool(Tool):
         *,
         cache: ExtractionCache | None = None,
         cache_mode: str = "live",
+        telemetry=None,
     ) -> None:
         if cache_mode not in {"live", "record", "replay"}:
             raise ValueError("cache_mode must be live, record, or replay")
@@ -356,8 +362,13 @@ class ExtractSourceValueTool(Tool):
         self._backend = backend
         self._cache = cache
         self._cache_mode = cache_mode
+        self._telemetry = telemetry
 
     async def run(self, payload: ExtractSourceValueInput) -> SourceValueResult:
+        if self._telemetry is not None:
+            self._telemetry.attempt("extract_source_value")
+            if payload.attempt:
+                self._telemetry.repeated_attempts += 1
         # The target description prefers the canonical concept, but falls back to
         # the review's RAW column label — so an UNRESOLVED field (no field_type)
         # is still extractable: the raw name itself says what to look for.
@@ -432,7 +443,13 @@ class ExtractSourceValueTool(Tool):
                 found=False, error=str(exc)[:300],
                 not_found_reason=f"the extraction call failed: {type(exc).__name__}")
 
-        return _finalize_result(data, payload)
+        result = _finalize_result(data, payload)
+        # The population belongs to the EVIDENCE, so it is read from the quote
+        # the result actually rests on — after the assignment has decided which
+        # quote that is, and in one place rather than on every return path.
+        if result.source_scope is None and result.quote:
+            result.source_scope = classify_population(result.quote)
+        return result
 
 
 def _targeted_applies(payload: ExtractSourceValueInput) -> bool:
@@ -484,10 +501,16 @@ def _assign_target(data: dict, payload: ExtractSourceValueInput
 
 def _finalize_result(data: dict, payload: ExtractSourceValueInput) -> SourceValueResult:
     """Validate raw model JSON and perform the one permitted derivation."""
+
     arms_reported: list[ArmEvidence] = []
     comparisons_reported: list[ComparisonEvidence] = []
     target_check, target_reason, assigned_label, target_margin = "ok", "", "", 0.0
     source_components: SourceNumericComponents | None = None
+    source_scope: PopulationScope | None = None
+    # Which population the supporting quote is talking about. Classified from
+    # that quote alone, so it travels with the evidence rather than with the
+    # request that asked for it.
+    source_scope: PopulationScope | None = None
 
     if _targeted_applies(payload):
         assignment, arms_reported, comparisons_reported = _assign_target(data, payload)
@@ -534,6 +557,7 @@ def _finalize_result(data: dict, payload: ExtractSourceValueInput) -> SourceValu
                 source_components=components,
                 evidence_check="protocol_error", evidence_reason=component_reason)
         source_components = components
+        source_scope = assignment.population
         assigned_label = assignment.paper_label
         target_margin = round(assignment.margin, 4)
         own_pick = str(data.get("value") or "").strip()
@@ -703,7 +727,7 @@ def _finalize_result(data: dict, payload: ExtractSourceValueInput) -> SourceValu
         target_check=target_check, target_reason=target_reason,
         assigned_arm_label=assigned_label, target_margin=target_margin,
         arms_reported=arms_reported, comparisons_reported=comparisons_reported,
-        source_components=source_components,
+        source_components=source_components, source_scope=source_scope,
     )
 
 

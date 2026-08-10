@@ -1,0 +1,52 @@
+"""A backend that counts what it actually did.
+
+Wrapping the backend rather than instrumenting each caller means every model
+call is counted the same way, whoever makes it — and that a replayed or cached
+attempt is counted as what it is: not a call.
+
+The wrapper never changes an answer. It records, re-raises, and gets out of the
+way; a failed call is still counted, because a failure costs time and a report
+that hides it understates what the run did.
+"""
+from __future__ import annotations
+
+import time
+
+from react_review.llm.base import LLMBackend
+from react_review.schemas.telemetry import RunTelemetry
+
+
+class MeteredBackend(LLMBackend):
+    """Delegates to a real backend and records the cost of each call."""
+
+    def __init__(self, backend: LLMBackend, telemetry: RunTelemetry) -> None:
+        super().__init__()
+        self._backend = backend
+        self._telemetry = telemetry
+
+    @property
+    def model_id(self) -> str:
+        return self._backend.model_id
+
+    @property
+    def telemetry(self) -> RunTelemetry:
+        return self._telemetry
+
+    def __getattr__(self, name: str):
+        # Anything the wrapper does not define belongs to the backend it wraps.
+        return getattr(self._backend, name)
+
+    async def complete(self, prompt: str, *, seed: int = 42) -> str:
+        started = time.perf_counter()
+        try:
+            output = await self._backend.complete(prompt, seed=seed)
+        except Exception:
+            self._telemetry.record_call(
+                prompt=prompt, output="", failed=True,
+                seconds=time.perf_counter() - started)
+            raise
+        self._telemetry.record_call(
+            prompt=prompt, output=output or "",
+            seconds=time.perf_counter() - started,
+            usage=getattr(self._backend, "last_usage", None))
+        return output
