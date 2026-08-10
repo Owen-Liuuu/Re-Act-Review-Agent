@@ -277,6 +277,14 @@ class ExtractSourceValueInput(BaseModel):
     # so the guard can check the paper's label without any disease vocabulary.
     cohort_display: str = ""
     cohorts: dict[str, list[str]] = {}
+    # WHEN and WHICH EFFECT, carried from the review. Present from P8 D1-0 but
+    # not rendered by the legacy or targeted_v4 prompts, whose bytes are frozen;
+    # the v5 batch contract is where they are asked for and guarded. A timepoint
+    # that only exists in a cache key cannot stop the model returning the wrong
+    # one, which is why it has to travel with the request first.
+    timepoint: str = ""
+    timepoint_label: str = ""
+    effect_definition: str = ""
     attempt: int = 0
     # Which prompt contract this request runs under. Carried explicitly so a
     # frozen benchmark cannot drift onto a new prompt by accident; see
