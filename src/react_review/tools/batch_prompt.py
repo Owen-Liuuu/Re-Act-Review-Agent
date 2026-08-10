@@ -88,33 +88,56 @@ If it prints such a total for more than one population, list each separately.
 
 Return those in ``readings``.
 
-## SEPARATELY: THE ARMS, AS COMPONENTS
+## SEPARATELY: THE ARMS, GROUPED BY POPULATION
 
 Whether or not the paper prints a total, also report every per-arm count it
-states, in ``cohort_counts`` — NOT in ``readings``. These are not answers; they
-are components that code may add up, and only if you can show the paper says
-they cover everyone once each.
+states, in ``aggregation_sets`` — NOT in ``readings``. These are not answers;
+they are components that code may add up, and only if you can show the paper
+says they cover everyone once each.
 
 **You must not add them up.** Do not report a sum, a subtotal, a remainder, or
 a number you worked out. If you return a total, it must be one the paper prints,
 and ``quote`` must be the passage that prints it. A computed number presented as
 a quoted one is the single worst thing you can return here, and it is checked.
 
-For each component give ``arm_label``, ``count`` (a whole number), ``quote``
-(one contiguous verbatim passage naming that arm and printing that number), and
-``population_phrase`` (the paper's own words for which people it counts). All
-components must be the same population: do not put a count of those randomised
-and a count of those analysed in the same list.
+**One set per population, per timepoint.** Those randomised, those treated and
+those analysed are different people, and their counts must never end up in the
+same set. If the paper reports arms for three populations, return three sets. If
+it reports them at two timepoints, those are separate sets too.
 
-Then assess the set in ``partition``:
-- ``complete``: true only if the paper shows these arms are ALL the groups that
+Each set carries:
+- ``population_phrase``: the paper's own words for which people this set counts.
+- ``population_quote``: one contiguous verbatim passage CONTAINING those words.
+- ``timepoint_phrase`` / ``timepoint_quote``: the same, for when, if the paper
+  ties this set to a moment. Leave both empty if it does not.
+- ``population_type``: your own label for it, from randomized, allocated,
+  treated, safety, analysed, completed, other. This is for the record only; the
+  phrase and its passage are what count.
+- ``cohort_counts``: for each arm, ``arm_label``, ``count`` (a whole number),
+  and ``quote`` — one contiguous verbatim passage naming that arm and printing
+  that number.
+- ``partition``: what the paper says about how these arms divide THIS
+  population.
+
+In ``partition``:
+- ``complete``: JSON ``true`` or ``false`` — not the strings "true"/"false", not
+  0 or 1. True only if the paper shows these arms are ALL the groups that
   population was divided into. Not "it looks like all of them".
-- ``mutually_exclusive``: true only if the paper shows no person is in two of
-  them.
+- ``mutually_exclusive``: same, for whether the paper shows no person is in two
+  of them.
 - ``quote``: the contiguous verbatim passage that shows it — the randomisation
   sentence, the flow-diagram caption, the table header. **A true without a
   locatable quote counts as a false**, so if you have no passage, say false.
+- ``declared_arm_count``: how many groups THAT PASSAGE says there are ("randomly
+  assigned to one of three groups" → 3). Omit it if the passage does not say.
+- ``declared_arm_labels``: the names that passage gives them, if it names them.
 - ``reason``: what in that passage establishes it.
+
+``declared_arm_count`` and ``declared_arm_labels`` are what make ``complete``
+worth anything. Without one of them nobody can check that the arms you listed
+are the arms the paper meant, so the set will be refused however confident the
+booleans are. Take them from the passage, never from your own count of the arms
+you happened to find.
 
 If you are not sure, answer false. An honest false costs one refused claim; a
 hopeful true silently corrupts a number nobody will re-check.
@@ -162,12 +185,20 @@ _RULES = """
 """
 
 _AGGREGATION_FIELDS = """
-  "cohort_counts": [{"arm_label": "the paper's own name for this arm",
-    "count": 0, "quote": "one contiguous verbatim passage naming the arm and printing the number",
-    "population_phrase": "the paper's words for which people this counts"}],
-  "partition": {"complete": false, "mutually_exclusive": false,
-    "quote": "the contiguous verbatim passage that shows it, or empty",
-    "reason": "what in that passage establishes it"},"""
+  "aggregation_sets": [{
+    "population_type": "randomized | allocated | treated | safety | analysed | completed | other",
+    "population_phrase": "the paper's words for which people this set counts",
+    "population_quote": "one contiguous verbatim passage containing those words",
+    "timepoint_phrase": "the paper's words for when, or empty",
+    "timepoint_quote": "passage containing those words, or empty",
+    "cohort_counts": [{"arm_label": "the paper's own name for this arm",
+      "count": 0,
+      "quote": "one contiguous verbatim passage naming the arm and printing the number"}],
+    "partition": {"complete": false, "mutually_exclusive": false,
+      "quote": "the contiguous verbatim passage that shows it, or empty",
+      "declared_arm_count": 0,
+      "declared_arm_labels": ["the names that passage gives the groups"],
+      "reason": "what in that passage establishes it"}}],"""
 
 _READING_FIELDS = {
     ARM: '\n    "arm_label": "the paper\'s own name for this arm",',

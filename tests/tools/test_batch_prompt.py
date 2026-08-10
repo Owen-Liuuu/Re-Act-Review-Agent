@@ -139,6 +139,37 @@ def test_an_unanchored_partition_claim_is_named_as_worthless_in_the_prompt():
     assert "If you are not sure, answer false" in text
 
 
-def test_the_components_must_all_be_one_population():
+def test_each_population_is_asked_for_as_its_own_set():
+    """Mixing is prevented by the shape of the answer, not by an instruction."""
     text = _flat(_study("sample_size"))
-    assert "All components must be the same population" in text
+    assert "One set per population, per timepoint" in text
+    assert "aggregation_sets" in text and "NOT in ``readings``" in text
+    assert "three populations, return three sets" in text
+
+
+def test_the_arm_census_is_asked_for_and_its_purpose_stated():
+    """`complete` about a list the code cannot see is worth nothing without it."""
+    text = _flat(_study("sample_size"))
+    assert "declared_arm_count" in text and "declared_arm_labels" in text
+    assert "what make ``complete`` worth anything" in text
+    assert "never from your own count of the arms" in text
+
+
+def test_the_booleans_are_asked_for_as_booleans():
+    text = _flat(_study("sample_size"))
+    assert 'not the strings "true"/"false", not 0 or 1' in text
+
+
+def test_the_aggregation_skeleton_is_valid_json():
+    text = _study("sample_size")
+    body = text[text.index('{"readings"'):]
+    parsed = json.loads(body)
+    one = parsed["aggregation_sets"][0]
+    assert {"population_phrase", "population_quote", "timepoint_phrase",
+            "cohort_counts", "partition"} <= set(one)
+    assert {"complete", "mutually_exclusive", "quote", "declared_arm_count",
+            "declared_arm_labels"} <= set(one["partition"])
+    assert one["partition"]["complete"] is False
+    # A component names an arm and a number, and nothing about people: the set
+    # owns the population, so a component cannot contradict the set it is in.
+    assert set(one["cohort_counts"][0]) == {"arm_label", "count", "quote"}

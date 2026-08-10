@@ -36,12 +36,12 @@ from react_review.schemas.batch import (
     ARM,
     COMPARISON,
     STUDY,
-    BatchAggregationEvidence,
+    AggregationSet,
     BatchCohortCount,
     BatchEntry,
     EntryIdentity,
     EvidenceAnchor,
-    PartitionAssessment,
+    PartitionWitness,
 )
 from react_review.tools.evidence_binding import binding_verdict, bound
 from react_review.tools.target_assignment import _label_in_quote
@@ -57,22 +57,31 @@ class BatchReading(BaseModel):
     #: Entries dropped one by one, with the reason each was dropped.
     rejected: list[dict[str, Any]] = Field(default_factory=list)
     nothing_reported_reason: str = ""
-    #: Components offered toward a total, once each has been anchored. Present
-    #: only when every component survived: a partial set is not a partition.
-    aggregation_evidence: BatchAggregationEvidence | None = None
-    #: Why the components cannot be summed. Independent of ``rejected``: losing
-    #: the aggregation never costs an explicit total the same response carries.
+    #: One entry per population the response offered components for. A set is
+    #: present only when ALL of its components survived: a partial set is not a
+    #: partition of anything.
+    aggregation_sets: list[AggregationSet] = Field(default_factory=list)
+    #: Why a set could not be read. Independent of ``rejected``: losing the
+    #: aggregation never costs an explicit total the same response carries — but
+    #: it is never silently forgotten either, because a malformed set and an
+    #: absent one are different facts about the response, and reporting the first
+    #: as the second is how a broken answer comes to look like a missing one.
     aggregation_errors: list[str] = Field(default_factory=list)
 
     @property
     def usable(self) -> list[BatchEntry]:
         return [e for e in self.entries if e.usable]
 
+    @property
+    def aggregation_malformed(self) -> bool:
+        """Whether the aggregation block was BROKEN, as opposed to absent."""
+        return bool(self.aggregation_errors)
+
     def summary(self) -> str:
         return (f"{len(self.usable)} usable reading(s), "
                 f"{len(self.rejected)} rejected"
-                + (f"; {len(self.aggregation_evidence.cohort_counts)} component(s)"
-                   if self.aggregation_evidence else "")
+                + (f"; {len(self.aggregation_sets)} aggregation set(s)"
+                   if self.aggregation_sets else "")
                 + (f"; aggregation unusable: {self.aggregation_errors[0]}"
                    if self.aggregation_errors else "")
                 + (f"; batch failed: {self.batch_error}" if self.batch_error else ""))
@@ -99,57 +108,113 @@ def parse_batch(raw: object, document: str, *, target_shape: str = ARM,
         else:
             entries.append(entry)
 
-    evidence, errors = (parse_aggregation(raw, document) if aggregable
-                        else (None, []))
+    sets, errors = parse_aggregation(raw, document) if aggregable else ([], [])
     return BatchReading(
         entries=entries, rejected=rejected,
-        aggregation_evidence=evidence, aggregation_errors=errors,
+        aggregation_sets=sets, aggregation_errors=errors,
         nothing_reported_reason=str(raw.get("nothing_reported_reason") or "").strip())
 
 
 def parse_aggregation(raw: dict,
-                      document: str) -> tuple[BatchAggregationEvidence | None, list[str]]:
-    """Read the components of a total, all-or-nothing.
+                      document: str) -> tuple[list[AggregationSet], list[str]]:
+    """Read the sets of components, each population on its own terms.
 
-    Unlike a reading, a component has no value on its own: it is only ever an
-    addend. So the isolation that protects the readings is wrong here — dropping
-    one bad component and summing the rest would produce a total that is missing
-    an arm, which is a wrong answer rather than a lost one. One bad component
-    therefore costs the whole aggregation, and nothing else.
+    The isolation runs in two directions here, and they are opposite on purpose.
+    BETWEEN sets it is generous: who was randomised and who was analysed are
+    different questions, so a malformed answer to one costs only that one.
+    INSIDE a set it is absolute: dropping a bad component and summing the rest
+    would produce a total missing an arm, which is a wrong answer rather than a
+    lost one, and a wrong total is the failure this whole module exists to
+    prevent.
     """
-    counts_raw = raw.get("cohort_counts")
-    if counts_raw in (None, "", []):
-        return None, []
-    if not isinstance(counts_raw, list):
-        return None, ["`cohort_counts` is not a list"]
+    sets_raw = raw.get("aggregation_sets")
+    if sets_raw in (None, "", []):
+        return [], []
+    if not isinstance(sets_raw, list):
+        return [], ["`aggregation_sets` is not a list"]
 
-    counts: list[BatchCohortCount] = []
+    sets: list[AggregationSet] = []
     errors: list[str] = []
-    for index, item in enumerate(counts_raw):
-        count, reason = _parse_component(item, index, document)
-        if count is None:
+    for index, item in enumerate(sets_raw):
+        parsed, reason = _parse_set(item, index, document)
+        if parsed is None:
             errors.append(reason)
         else:
-            counts.append(count)
+            sets.append(parsed)
+    return sets, errors
+
+
+def _parse_set(item: object, index: int,
+               document: str) -> tuple[AggregationSet | None, str]:
+    """One population, its timepoint, its arms, and the witness tying them."""
+    where = f"aggregation set {index}"
+    if not isinstance(item, dict):
+        return None, f"{where} is not a structured object"
+
+    phrase = str(item.get("population_phrase") or "").strip()
+    if not phrase:
+        return None, f"{where} does not say which people it counts"
+    witness = str(item.get("population_quote") or "").strip()
+    if not witness or not normalised_contains(document, witness):
+        return None, (f"{where} counts {phrase!r} but gives no passage of the "
+                      "document saying so")
+    if not normalised_contains(witness, phrase):
+        return None, (f"{where} claims the population {phrase!r}, which its own "
+                      "witness passage does not contain")
+    scope = classify_population(phrase, source="same_quote")
+    if not scope.stated:
+        return None, (f"{where} counts {phrase!r}, which is not a population this "
+                      "contract recognises")
+
+    timepoint_phrase = str(item.get("timepoint_phrase") or "").strip()
+    timepoint_quote = ""
+    if timepoint_phrase:
+        timepoint_quote = str(item.get("timepoint_quote") or "").strip() or witness
+        if not normalised_contains(document, timepoint_quote):
+            return None, (f"{where} claims the timepoint {timepoint_phrase!r} with "
+                          "no passage of the document behind it")
+        if not normalised_contains(timepoint_quote, timepoint_phrase):
+            return None, (f"{where} claims the timepoint {timepoint_phrase!r}, "
+                          "which its own witness passage does not contain")
+
+    counts_raw = item.get("cohort_counts")
+    if not isinstance(counts_raw, list) or not counts_raw:
+        return None, f"{where} offers no arm counts"
+    counts: list[BatchCohortCount] = []
+    for position, entry in enumerate(counts_raw):
+        count, reason = _parse_component(entry, position, document)
+        if count is None:
+            return None, f"{where}: {reason}"     # all or nothing, see above
+        counts.append(count)
 
     seen: dict[tuple, int] = {}
     for count in counts:
         key = tuple(sorted(distinguishing_tokens(count.arm_label)))
         if key in seen and seen[key] != count.count:
-            errors.append(f"the arm {count.arm_label!r} is given two different "
-                          f"counts ({seen[key]} and {count.count}), so the "
-                          "paper's own account of it is not settled")
+            return None, (f"{where} gives the arm {count.arm_label!r} two different "
+                          f"counts ({seen[key]} and {count.count}), so the paper's "
+                          "own account of it is not settled")
         seen[key] = count.count
 
-    if errors:
-        return None, errors
-    return BatchAggregationEvidence(
-        cohort_counts=counts, partition=_parse_partition(raw, document)), []
+    partition, reason = _parse_partition(item.get("partition"), where, document)
+    if partition is None:
+        return None, reason
+
+    return AggregationSet(
+        population_type=str(item.get("population_type") or "").strip(),
+        population_phrase=phrase, population_quote=witness,
+        timepoint_phrase=timepoint_phrase, timepoint_quote=timepoint_quote,
+        cohort_counts=counts, partition=partition, population=scope,
+        source_index=index), ""
 
 
 def _parse_component(item: object, index: int,
                      document: str) -> tuple[BatchCohortCount | None, str]:
-    """One addend, anchored in the paper — value, arm name and population alike."""
+    """One addend, anchored in the paper — both its number and its arm's name.
+
+    It carries no population: the SET has the population, so a component cannot
+    disagree with the set it is in.
+    """
     if not isinstance(item, dict):
         return None, f"component {index} is not a structured object"
     label = str(item.get("arm_label") or "").strip()
@@ -167,41 +232,57 @@ def _parse_component(item: object, index: int,
         return None, f"the component counting {count} names no arm"
     if not _label_in_quote(label, quote):
         return None, f"the quote for {count} does not name the arm {label!r}"
-
-    phrase = str(item.get("population_phrase") or "").strip()
-    verdict, reason = binding_verdict(phrase, str(count), quote=quote,
-                                      document=document) if phrase else ("", "")
-    if not phrase or not bound(verdict):
-        return None, (f"the arm {label!r} does not say which people its {count} "
-                      "counts" if not phrase else
-                      f"the population {phrase!r} is not printed with the {count} "
-                      f"it is supposed to describe: {reason}")
-    scope = classify_population(phrase, source=verdict)
-    if not scope.stated:
-        return None, (f"{phrase!r} is not a population this contract recognises, "
-                      f"so what the {count} for {label!r} counts is unknown")
     return BatchCohortCount(arm_label=label, count=count, quote=quote,
-                            population_phrase=phrase, source_index=index,
-                            population=scope), ""
+                            source_index=index), ""
 
 
-def _parse_partition(raw: dict, document: str) -> PartitionAssessment:
-    """The claim that these arms cover the population once each — with its proof.
-
-    The flags are carried as given and the quote is checked. Nothing is decided
-    here: a ``True`` that turns out to be unanchored is refused later, by the
-    policy, which is the only place allowed to permit arithmetic.
-    """
-    body = raw.get("partition")
+def _parse_partition(body: object, where: str,
+                     document: str) -> tuple[PartitionWitness | None, str]:
+    """The claim that these arms partition this population, and its proof."""
     if not isinstance(body, dict):
-        return PartitionAssessment()
+        return None, (f"{where} makes no partition claim, so nothing licenses "
+                      "adding its arms together")
+    complete, reason = _strict_bool(body.get("complete"), "complete", where)
+    if complete is None:
+        return None, reason
+    exclusive, reason = _strict_bool(body.get("mutually_exclusive"),
+                                     "mutually_exclusive", where)
+    if exclusive is None:
+        return None, reason
+
+    declared = body.get("declared_arm_count")
+    arm_count = None
+    if declared not in (None, ""):
+        arm_count = _positive_integer(declared)
+        if arm_count is None:
+            return None, (f"{where} says the population was divided into "
+                          f"{declared!r} groups, which is not a whole number")
+    labels_raw = body.get("declared_arm_labels") or []
+    if not isinstance(labels_raw, list):
+        return None, f"{where} gives `declared_arm_labels` that are not a list"
+
     quote = str(body.get("quote") or "").strip()
-    return PartitionAssessment(
-        complete=bool(body.get("complete")),
-        mutually_exclusive=bool(body.get("mutually_exclusive")),
-        quote=quote, reason=str(body.get("reason") or "").strip(),
-        population_phrase=str(body.get("population_phrase") or "").strip(),
-        anchored=bool(quote) and normalised_contains(document, quote))
+    return PartitionWitness(
+        complete=complete, mutually_exclusive=exclusive, quote=quote,
+        reason=str(body.get("reason") or "").strip(),
+        declared_arm_count=arm_count,
+        declared_arm_labels=[str(x).strip() for x in labels_raw if str(x).strip()],
+        anchored=bool(quote) and normalised_contains(document, quote)), ""
+
+
+def _strict_bool(value: object, field: str, where: str) -> tuple[bool | None, str]:
+    """Only ``true`` and ``false`` are answers; anything else is malformed.
+
+    ``bool("false")`` is ``True`` in Python. A model that answered with the
+    string "false" would therefore have been read as asserting the opposite of
+    what it said — the one misreading that turns a refusal into a release, and
+    the reason this is not a coercion but a type check.
+    """
+    if type(value) is bool:
+        return value, ""
+    return None, (f"{where} answers {field} with {value!r}; only a JSON true or "
+                  "false says anything about the paper, and a string or a number "
+                  "cannot be read as either without guessing which was meant")
 
 
 def _positive_integer(value: object) -> int | None:

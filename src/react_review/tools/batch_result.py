@@ -46,12 +46,20 @@ def to_source_result(projection: Projection) -> SourceValueResult:
     """One claim's projection, as the evidence object the audit already speaks."""
     counts = [CohortCount(label=c.arm_label, count=c.count, quote=c.quote)
               for c in projection.cohort_counts]
+    # Everything the aggregation did travels on EVERY path, including the ones
+    # that never used it. A malformed set is a fact about the response, and a
+    # released printed total is not a reason to stop reporting it. An error the
+    # reason already states is not repeated: the aggregator names the errors it
+    # refused on, so most of the time these are the same words twice.
+    reason = projection.aggregation_reason
+    extra = [e for e in projection.aggregation_errors if e not in reason]
+    reason = "; ".join(x for x in [reason, *extra] if x)
     # The batch decides the arm globally and anchors every quote at parse time;
     # it never runs the single-target cohort guard, so that verdict stays blank
     # rather than inheriting a default nobody earned.
     common = dict(cohort_check="", cohort_counts=counts,
                   aggregation_status=projection.aggregation_status,
-                  aggregation_reason=projection.aggregation_reason)
+                  aggregation_reason=reason)
 
     if projection.status == DERIVED:
         return SourceValueResult(

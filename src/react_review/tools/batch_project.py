@@ -82,6 +82,13 @@ class Projection:
     cohort_counts: list[BatchCohortCount] = field(default_factory=list)
     verified_scope: PopulationScope | None = None
     partition_quote: str = ""
+    population_quote: str = ""
+    timepoint_quote: str = ""
+    #: Why a set could not be read at all. Survives every path: a released
+    #: printed total does not make a malformed aggregation block stop existing.
+    aggregation_errors: list[str] = field(default_factory=list)
+    policy_id: str = ""
+    policy_sha256: str = ""
 
     @property
     def ok(self) -> bool:
@@ -117,6 +124,7 @@ def project_claim(
     timepoint_label: str = "",
     population_contract: PopulationContract | None = None,
     aggregation_policy: AggregationPolicy | None = None,
+    field_type: str = "",
 ) -> Projection:
     """Answer ONE claim from a batched reading, or say why it cannot be."""
     if reading.batch_error:
@@ -127,7 +135,8 @@ def project_claim(
         return _project_study(
             reading, entries, requested_scope=requested_scope,
             required_axes=required_axes or [], timepoint_label=timepoint_label,
-            population_contract=population_contract, policy=aggregation_policy)
+            population_contract=population_contract, policy=aggregation_policy,
+            field_type=field_type)
 
     if not entries:
         return Projection(
@@ -156,9 +165,19 @@ def project_claim(
                    population_contract=population_contract, provenance=provenance)
 
 
+#: What a printed-total outcome permits the arithmetic to do afterwards.
+#:
+#: A sum may fill a silence. It may never settle an argument: where the paper's
+#: own printed totals disagree, or where two of them answer the claim equally
+#: well, offering a computed third number does not resolve that — it decides
+#: which of the paper's statements to ignore, and hides the discrepancy the audit
+#: exists to surface. Those two outcomes are final.
+_NEVER_DERIVE = (CONTRADICTORY, AMBIGUOUS)
+
+
 def _project_study(reading: BatchReading, entries: list[BatchEntry], *,
                    requested_scope, required_axes, timepoint_label: str,
-                   population_contract, policy) -> Projection:
+                   population_contract, policy, field_type: str) -> Projection:
     """A whole-study total: read it if the paper prints it, compute it if not.
 
     The order is not a preference, it is the difference between a fact and an
@@ -186,19 +205,35 @@ def _project_study(reading: BatchReading, entries: list[BatchEntry], *,
                            provenance=provenance)
 
     summed = derive_partitioned_total(
-        reading.aggregation_evidence, requested_scope,
-        required_axes=required_axes, policy=policy,
+        reading.aggregation_sets, requested_scope, target_shape=STUDY,
+        field_type=field_type, timepoint_label=timepoint_label,
+        parse_errors=reading.aggregation_errors, policy=policy,
         population_contract=population_contract)
+    provenance["policy"] = f"{summed.policy_id} ({summed.policy_sha256[:12]}…)"
+    if summed.chosen_set is not None:
+        provenance["aggregation_set"] = summed.chosen_set.describe()
+
+    # Whatever happens next, what the aggregation DID is recorded. A malformed
+    # set that is never used still has to be visible: it is a fact about the
+    # response, and a released explicit total does not make it go away.
+    def _carry(projection: Projection) -> Projection:
+        projection.aggregation_status = summed.status
+        projection.aggregation_reason = summed.reason
+        projection.cohort_counts = summed.components
+        projection.aggregation_errors = list(reading.aggregation_errors)
+        projection.policy_id = summed.policy_id
+        projection.policy_sha256 = summed.policy_sha256
+        projection.population_quote = summed.population_quote
+        projection.timepoint_quote = summed.timepoint_quote
+        projection.provenance = {**projection.provenance, **provenance}
+        return projection
 
     if explicit.ok:
-        explicit.aggregation_status = summed.status
-        explicit.aggregation_reason = summed.reason
-        explicit.cohort_counts = summed.components
+        explicit = _carry(explicit)
         if summed.derived:
             printed = _as_int(explicit.value)
-            explicit.provenance = {**explicit.provenance,
-                                   "cross_check": f"{summed.derivation} vs printed "
-                                                  f"{explicit.value}"}
+            explicit.provenance["cross_check"] = (
+                f"{summed.derivation} vs printed {explicit.value}")
             if printed is None:
                 # A total that is not one whole number is not something the arms
                 # could corroborate; the printed value stands on its own.
@@ -207,40 +242,55 @@ def _project_study(reading: BatchReading, entries: list[BatchEntry], *,
                     "the printed total is not a single whole number, so the arm "
                     "counts cannot confirm or contradict it")
             elif printed != summed.total:
-                return Projection(
+                return _carry(Projection(
                     status=CONTRADICTORY, candidates=study_entries,
-                    entry=explicit.entry, cohort_counts=summed.components,
-                    derivation=summed.derivation, verified_scope=summed.verified_scope,
-                    aggregation_status=summed.status, aggregation_reason=summed.reason,
+                    entry=explicit.entry, derivation=summed.derivation,
+                    verified_scope=summed.verified_scope,
+                    partition_quote=summed.partition_quote,
                     provenance=explicit.provenance,
                     reason=(f"the paper prints {printed} for this population and its "
                             f"own arms add to {summed.total} ({summed.derivation}); "
                             "the paper does not agree with itself here, and choosing "
-                            "one of them would hide that"))
+                            "one of them would hide that")))
             else:
                 explicit.aggregation_reason = (
                     f"the arms independently add to the same total "
                     f"({summed.derivation})")
         return explicit
 
+    # --- may the sum be reached at all? -----------------------------------
+    if explicit.status in _NEVER_DERIVE:
+        explicit = _carry(explicit)
+        explicit.reason = (
+            f"{explicit.reason}. Adding the arms up would not settle this: a "
+            "computed total cannot decide which of the paper's own printed "
+            "statements to believe")
+        return explicit
+    if explicit.status == SCOPE_UNRESOLVED and not summed.scope_matched_exactly:
+        # The printed totals were for other people. A set that also fails to
+        # match this claim's population exactly is for other people too.
+        explicit = _carry(explicit)
+        return explicit
+    if explicit.status == TIMEPOINT_UNRESOLVED and not summed.timepoint_verified:
+        explicit = _carry(explicit)
+        explicit.reason = (
+            f"{explicit.reason}; and the arm counts carry no timepoint of their "
+            "own, so they cannot answer at a timepoint the printed totals could "
+            "not")
+        return explicit
+
     if summed.derived:
-        return Projection(
+        return _carry(Projection(
             status=DERIVED, candidates=study_entries, derived_value=summed.total,
-            derivation=summed.derivation, aggregation_status=summed.status,
-            aggregation_reason=summed.reason, cohort_counts=summed.components,
-            verified_scope=summed.verified_scope,
-            partition_quote=summed.partition_quote,
-            reason=summed.reason,
+            derivation=summed.derivation, verified_scope=summed.verified_scope,
+            partition_quote=summed.partition_quote, reason=summed.reason,
             provenance={**provenance, "explicit_total": explicit.status,
-                        "explicit_reason": explicit.reason,
-                        "policy": f"{summed.policy_id} ({summed.policy_sha256[:12]}…)"})
+                        "explicit_reason": explicit.reason}))
 
     # Neither route worked. The refusal that explains the most is the one that
     # got furthest: if components were offered, say which condition stopped the
     # sum; otherwise say that the paper simply does not print the total.
-    explicit.aggregation_status = summed.status
-    explicit.aggregation_reason = summed.reason
-    explicit.cohort_counts = summed.components
+    explicit = _carry(explicit)
     if summed.status in (REJECTED, PROTOCOL_ERROR):
         explicit.reason = (f"{explicit.reason}; and the arm counts could not be "
                            f"added up because {summed.reason}")
@@ -248,7 +298,6 @@ def _project_study(reading: BatchReading, entries: list[BatchEntry], *,
         explicit.reason = (f"{explicit.reason}. A total the paper does not print is "
                            "not a total it reported, and no per-arm counts were "
                            "offered that could be shown to partition anything")
-    explicit.provenance = {**explicit.provenance, **provenance}
     return explicit
 
 

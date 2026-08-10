@@ -149,45 +149,89 @@ class BatchCohortCount(BaseModel):
     partition evidence holds. Letting it travel as an ordinary reading would put
     a per-arm number one selection away from being returned as a whole-study
     total, which is the confusion this separation exists to make impossible.
+
+    It carries no population of its own: it belongs to an
+    :class:`AggregationSet`, and the set is what has a population. A component
+    that could name its own population could be put in a set that contradicts
+    it, which is the mixing this structure exists to make unrepresentable.
     """
 
     arm_label: str = ""
     count: int = 0
     quote: str = ""
-    population_phrase: str = ""
     #: Position in the model's response, so a rejected component can be named.
     source_index: int = -1
-    #: Filled by the parser once the phrase has been shown to bind to the count.
-    population: PopulationScope | None = None
 
 
-class PartitionAssessment(BaseModel):
-    """The model's claim that these arms cover the population once each.
+class PartitionWitness(BaseModel):
+    """The claim that a set's arms cover its population once each, with proof.
 
     Both flags default to ``False``: an assessment the model did not make is not
-    a partition it established. The quote is what turns either flag from an
-    assertion into evidence — a ``True`` with nothing locatable behind it is
-    worth exactly as much as a ``False``.
+    a partition it established. But the flags are the weakest part of this — they
+    are the model's opinion about the paper. What makes them checkable is the
+    rest: a locatable passage, and how many arms (or which ones) that passage
+    says there are. Given those, deterministic code can confirm that the
+    components in hand really are the set the paper described, instead of
+    trusting ``complete: true`` about a list it cannot see.
     """
 
     complete: bool = False
     mutually_exclusive: bool = False
     quote: str = ""
     reason: str = ""
-    population_phrase: str = ""
+    #: How many arms the paper says the population was divided into ("three
+    #: groups"). The check that turns "complete" into something verifiable.
+    declared_arm_count: int | None = None
+    #: The paper's own names for them, when it lists them.
+    declared_arm_labels: list[str] = Field(default_factory=list)
     #: Set by the parser when ``quote`` was found in the document.
     anchored: bool = False
+
+
+class AggregationSet(BaseModel):
+    """One population, at one timepoint, and the arms that divide it.
+
+    A paper reports several of these — who was randomised, who was treated, who
+    was analysed — and they are different sets of people whose counts must never
+    meet. Making each its own set means mixing them is not a mistake the code has
+    to catch: there is no place to put a mixture.
+    """
+
+    #: The model's own label for this population. Kept verbatim for the record,
+    #: but never used for matching: the classified scope below is what decides,
+    #: because a second population vocabulary would eventually disagree with the
+    #: frozen one and nothing would say which was right.
+    population_type: str = ""
+    population_phrase: str = ""
+    population_quote: str = ""
+    timepoint_phrase: str = ""
+    timepoint_quote: str = ""
+    cohort_counts: list[BatchCohortCount] = Field(default_factory=list)
+    partition: PartitionWitness | None = None
+    #: Classified from the phrase by the frozen population contract, once the
+    #: phrase has been shown to be anchored.
+    population: PopulationScope | None = None
+    source_index: int = -1
+
+    def scope_key(self) -> tuple[str, str, str]:
+        """What a claim matches against: BOTH population axes, and the timepoint."""
+        scope = self.population or PopulationScope()
+        return (scope.basis, scope.analysis_set, self.timepoint_phrase)
+
+    def describe(self) -> str:
+        scope = self.population or PopulationScope()
+        return (f"{scope.describe()}"
+                + (f" at {self.timepoint_phrase}" if self.timepoint_phrase else ""))
 
 
 class BatchAggregationEvidence(BaseModel):
     """Everything a batch offers toward computing a total it could not read."""
 
-    cohort_counts: list[BatchCohortCount] = Field(default_factory=list)
-    partition: PartitionAssessment | None = None
+    sets: list[AggregationSet] = Field(default_factory=list)
 
     @property
     def present(self) -> bool:
-        return bool(self.cohort_counts)
+        return bool(self.sets)
 
 
 class ClaimGroupKey(BaseModel):
