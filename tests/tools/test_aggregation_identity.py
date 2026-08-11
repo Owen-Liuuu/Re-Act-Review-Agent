@@ -2,7 +2,7 @@
 
 A policy hash was never enough. Every wrong total in this phase came from rules
 that read correctly and code that did not enforce them, so an artifact naming
-only `safe_sum_v4` claims a reproducibility it does not have: two commits of the
+only `safe_sum_v5` claims a reproducibility it does not have: two commits of the
 evaluator, one policy, different answers, and nothing to say which ran.
 
 These tests are mostly about the ways an identity can be untrue while looking
@@ -26,13 +26,8 @@ from react_review.tools.aggregation_identity import (
     load_evaluator_manifest,
 )
 
-VERSION = "1.4.0"
-POLICY = "safe_sum_v4"
-
-
-def _policy_hash() -> str:
-    from react_review.tools.safe_aggregation import load_aggregation_policy
-    return load_aggregation_policy().sha256
+VERSION = "1.5.0"
+POLICY = "safe_sum_v5"
 
 
 # --- the hash means what it says ------------------------------------------
@@ -115,7 +110,7 @@ def test_a_manifest_nobody_updated_fails_readiness(tmp_path):
     path.write_text(json.dumps(body), encoding="utf-8")
     try:
         with pytest.raises(ContractError, match="without the version"):
-            evaluator_readiness("0.0.2", policy_id=POLICY, policy_hash="x")
+            evaluator_readiness("0.0.2", policy_id=POLICY)
     finally:
         path.unlink()
 
@@ -123,8 +118,7 @@ def test_a_manifest_nobody_updated_fails_readiness(tmp_path):
 # --- what a run may do with it --------------------------------------------
 
 def test_a_clean_checkout_of_a_registered_pair_is_release_eligible():
-    identity = evaluator_readiness(VERSION, policy_id=POLICY,
-                                   policy_hash=_policy_hash())
+    identity = evaluator_readiness(VERSION, policy_id=POLICY)
     assert identity.status in (REGISTERED, UNREGISTERED)
     if identity.status == REGISTERED:
         assert identity.release_eligible
@@ -134,7 +128,10 @@ def test_a_clean_checkout_of_a_registered_pair_is_release_eligible():
         # Working copy differs from HEAD — the development case, which must run
         # and must not be publishable.
         assert not identity.release_eligible
-        assert "development only" in identity.reason or "registry" in identity.reason
+        # The development states: files edited since HEAD, or not yet tracked
+        # at all. Both must run and neither may publish.
+        assert any(x in identity.reason for x in
+                   ("development only", "registry", "not tracked"))
 
 
 def test_an_unrelated_dirty_file_does_not_make_the_evaluator_unregistered():
@@ -142,19 +139,17 @@ def test_an_unrelated_dirty_file_does_not_make_the_evaluator_unregistered():
     scratch = repo_root() / "unrelated_scratch_file.txt"
     scratch.write_text("not evaluator source\n", encoding="utf-8")
     try:
-        after = evaluator_readiness(VERSION, policy_id=POLICY,
-                                    policy_hash=_policy_hash())
+        after = evaluator_readiness(VERSION, policy_id=POLICY)
         assert "unrelated_scratch_file" not in after.reason
     finally:
         scratch.unlink()
 
 
 def test_a_policy_the_registry_does_not_pair_with_this_evaluator_is_unregistered():
-    identity = evaluator_readiness(VERSION, policy_id="safe_sum_v1",
-                                   policy_hash="whatever")
+    identity = evaluator_readiness(VERSION, policy_id="safe_sum_v1")
     assert identity.status == UNREGISTERED
     assert not identity.release_eligible
-    assert "meant to be used together" in identity.reason
+    assert "may not produce a publishable result" in identity.reason
 
 
 @pytest.mark.parametrize("missing", ["evaluator_version", "evaluator_hash",
@@ -192,3 +187,75 @@ def test_the_boundary_excludes_the_prompt():
 
 def test_the_manifest_declares_the_algorithm_it_used():
     assert load_evaluator_manifest(VERSION).hash_algorithm == HASH_ALGORITHM
+
+
+# --- the checker does its own checking ------------------------------------
+
+def test_readiness_computes_the_policy_hash_instead_of_believing_a_caller():
+    """It used to take one as a parameter, and "not-a-hash" passed.
+
+    The one function whose job is to establish identity cannot take the most
+    important part of that identity on trust.
+    """
+    import inspect
+
+    from react_review.tools.safe_aggregation import load_aggregation_policy
+
+    assert "policy_hash" not in inspect.signature(evaluator_readiness).parameters
+    identity = evaluator_readiness(VERSION, policy_id=POLICY)
+    assert identity.policy_hash == load_aggregation_policy().sha256
+    assert len(identity.policy_hash) == 64
+
+
+def test_a_policy_the_registry_marks_unpublishable_cannot_publish():
+    identity = evaluator_readiness(VERSION, policy_id="safe_sum_v4")
+    assert identity.status == UNREGISTERED and not identity.release_eligible
+    assert "may not produce a publishable result" in identity.reason
+
+
+def test_a_policy_whose_bytes_no_longer_match_the_registry_stops_the_run(tmp_path):
+    """A frozen policy that moved is not a warning."""
+    import json
+    import shutil
+
+    from react_review.tools.aggregation_identity import REGISTRY, _registry
+
+    scratch = tmp_path / "repo"
+    shutil.copytree(repo_root() / "configs", scratch / "configs")
+    shutil.copytree(repo_root() / "src", scratch / "src")
+    policy = scratch / "configs/aggregation/safe_sum_v5.json"
+    body = json.loads(policy.read_text(encoding="utf-8"))
+    body["written_on"] = "1999-01-01"
+    policy.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8",
+                      newline="\n")
+    _registry.cache_clear()
+    try:
+        with pytest.raises(ContractError, match="edited"):
+            evaluator_readiness(VERSION, policy_id=POLICY, root=scratch)
+    finally:
+        _registry.cache_clear()
+
+
+def test_the_clean_check_covers_the_files_that_decide_publishability():
+    """Not only the evaluator's sources.
+
+    The registry says which pairs may publish and this module decides what
+    "clean" means; a change to either is a change to the identity, and while
+    they sat outside the check they could move without anyone noticing.
+    """
+    from react_review.tools.aggregation_identity import CONTROL_PLANE
+
+    assert "configs/aggregation/registry_v2.json" in CONTROL_PLANE
+    assert "src/react_review/tools/aggregation_identity.py" in CONTROL_PLANE
+
+
+def test_a_dirty_control_plane_file_makes_the_run_unpublishable():
+    registry = repo_root() / "configs/aggregation/registry_v2.json"
+    original = registry.read_bytes()
+    try:
+        registry.write_bytes(original + b"\n")
+        identity = evaluator_readiness(VERSION, policy_id=POLICY)
+        assert not identity.release_eligible
+        assert identity.status == UNREGISTERED
+    finally:
+        registry.write_bytes(original)

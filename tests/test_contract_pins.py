@@ -32,6 +32,10 @@ PINNED = {
     "configs/aggregation/safe_sum_v3.json": "93E381F2ED633E06",
     "configs/aggregation/safe_sum_v4.json": "FE1B925C28FA7558",
     "configs/aggregation/registry.json": "0F16E3F1228BC4E9",
+    "configs/aggregation/safe_sum_v5.json": "DAEB6715F812E88E",
+    "configs/aggregation/registry_v2.json": "3F593BB1097A3CA0",
+    "configs/aggregation/evaluators/safe_aggregation_1.4.0.json": "3B4912D2A0596CEF",
+    "configs/aggregation/evaluators/safe_aggregation_1.5.0.json": "0C5274C554AF1813",
 }
 
 
@@ -67,7 +71,7 @@ def test_a_policy_may_not_declare_a_rule_that_nothing_reads(tmp_path):
     from react_review.contracts import ContractError
     from react_review.tools.safe_aggregation import load_aggregation_policy
 
-    body = json.loads((repo_root() / "configs/aggregation/safe_sum_v4.json"
+    body = json.loads((repo_root() / "configs/aggregation/safe_sum_v5.json"
                        ).read_text(encoding="utf-8"))
     body["requirements"]["require_something_nobody_implements"] = True
     path = tmp_path / "invented.json"
@@ -82,7 +86,7 @@ def test_an_invariant_may_not_be_switched_off(tmp_path):
     from react_review.contracts import ContractError
     from react_review.tools.safe_aggregation import load_aggregation_policy
 
-    body = json.loads((repo_root() / "configs/aggregation/safe_sum_v4.json"
+    body = json.loads((repo_root() / "configs/aggregation/safe_sum_v5.json"
                        ).read_text(encoding="utf-8"))
     body["invariants"]["match_on_both_population_axes"] = False
     path = tmp_path / "disabled.json"

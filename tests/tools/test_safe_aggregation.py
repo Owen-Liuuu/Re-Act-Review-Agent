@@ -146,7 +146,7 @@ def test_a_derived_total_never_carries_a_quote_that_prints_it():
 
 def test_the_policy_that_permitted_it_is_recorded_with_its_hash():
     projection = _project(_batch(sets=[_set()]))
-    assert projection.policy_id == "safe_sum_v4"
+    assert projection.policy_id == "safe_sum_v5"
     assert len(projection.policy_sha256) == 64
 
 
@@ -603,7 +603,7 @@ def test_nothing_is_derived_when_no_components_were_offered():
 
 def test_the_policy_is_hashed_so_a_run_can_say_which_one_it_applied():
     policy = load_aggregation_policy()
-    assert len(policy.sha256) == 64 and policy.policy_id == "safe_sum_v4"
+    assert len(policy.sha256) == 64 and policy.policy_id == "safe_sum_v5"
 
 
 # --- T11 again: a timepoint is checked even with only one candidate -------
@@ -670,7 +670,7 @@ def test_a_derived_total_carries_its_policy_and_all_four_kinds_of_anchor():
     projection = _project(_batch(sets=[_set()]))
     result = to_source_result(projection)
     provenance = result.aggregation_provenance
-    assert provenance.policy_id == "safe_sum_v4"
+    assert provenance.policy_id == "safe_sum_v5"
     assert len(provenance.policy_sha256) == 64
     assert provenance.aggregation_set.startswith("allocated")
     assert provenance.population_quote == ALLOCATION
@@ -697,7 +697,7 @@ def test_a_released_printed_total_still_carries_the_broken_sets():
         _total("945", "A total of 945 patients underwent randomization")],
         sets=[_set(counts=[{**ALLOCATED_ARMS[0], "count": "not a number"}])])
     provenance = to_source_result(_project(reading)).aggregation_provenance
-    assert provenance.errors and provenance.policy_id == "safe_sum_v4"
+    assert provenance.errors and provenance.policy_id == "safe_sum_v5"
 
 
 # --- round 3: the sentence that licenses the sum must be about these people ---
@@ -869,19 +869,33 @@ def test_b2_week_12_counts_are_not_completed_by_a_baseline_partition():
 
 
 def test_b3_a_dose_is_not_a_census():
-    """A number two words from a noun is not a count of groups."""
-    dosed = ("Patients received 3 mg treatment in one of two groups, alfa and "
-             "beta, with no patient in both.")
+    """A number two words from a noun is not a count of groups.
+
+    THREE valid components and a declared census of three, so the only thing
+    that can refuse this is the grammar: the sole 3 in the partition passage is
+    a dose. An earlier version of this test offered two components against a
+    census of three and would have stayed green even if "3 mg treatment" were
+    read as three groups, because the count check would have caught it instead.
+    """
+    dosed = ("Patients received 3 mg treatment, with no patient in more than "
+             "one of them.")
     reading = _batch(sets=[{
         "population_phrase": "underwent randomization",
-        "population_quote": ALLOCATION, "cohort_counts": ALLOCATED_ARMS[:2],
+        "population_quote": ALLOCATION, "cohort_counts": ALLOCATED_ARMS,
         "partition": {"complete": True, "mutually_exclusive": True,
                       "quote": dosed, "declared_arm_count": 3}}],
         # Beside the allocation sentence, so the population axis is satisfied
-        # and the CENSUS is the thing under test.
+        # and the CENSUS is the only thing left to refuse it.
         document=ALLOCATION + " " + dosed + "\n\n" + PARTITION)
+    assert dosed.count("3") == 1 and "3 mg" in dosed
     assert reading.aggregation_sets == []
     assert any("does not state" in e for e in reading.aggregation_errors)
+
+
+def test_b3_the_same_three_components_derive_with_a_real_census():
+    """The counterpart: nothing else about that set was wrong."""
+    projection = _project(_batch(sets=[_set()]))
+    assert projection.status == DERIVED and projection.derived_value == 945
 
 
 def test_b4_a_profile_requiring_an_analysis_set_refuses_components_without_one():
@@ -933,8 +947,7 @@ def test_b6_a_broken_set_nobody_can_place_still_blocks():
 
 def _identity():
     from react_review.tools.aggregation_identity import evaluator_readiness
-    return evaluator_readiness("1.4.0", policy_id="safe_sum_v4",
-                               policy_hash=load_aggregation_policy().sha256)
+    return evaluator_readiness("1.5.0", policy_id="safe_sum_v5")
 
 
 @pytest.mark.parametrize("sets,scope,expected", [
@@ -951,9 +964,9 @@ def test_every_aggregation_outcome_names_the_code_that_decided(sets, scope, expe
     assert projection.status == expected
     provenance = to_source_result(projection).aggregation_provenance
     assert provenance.evaluator_id == "safe_aggregation"
-    assert provenance.evaluator_version == "1.4.0"
+    assert provenance.evaluator_version == "1.5.0"
     assert provenance.evaluator_hash.startswith("sha256:")
-    assert provenance.policy_id == "safe_sum_v4"
+    assert provenance.policy_id == "safe_sum_v5"
 
 
 def test_a_printed_total_that_won_still_names_the_evaluator_that_checked_it():
@@ -964,7 +977,7 @@ def test_a_printed_total_that_won_still_names_the_evaluator_that_checked_it():
                                field_type="sample_size", evaluator=_identity())
     assert projection.status == OK
     provenance = to_source_result(projection).aggregation_provenance
-    assert provenance.evaluator_version == "1.4.0"
+    assert provenance.evaluator_version == "1.5.0"
 
 
 def test_without_an_identity_nothing_is_release_eligible():
@@ -972,3 +985,48 @@ def test_without_an_identity_nothing_is_release_eligible():
         _project(_batch(sets=[_set()]))).aggregation_provenance
     assert provenance.release_eligible is False
     assert provenance.evaluator_status == "unavailable"
+
+
+# --- round 5 (C2): one set of axes, both routes ---------------------------
+
+ITT_ONLY = PopulationScope(basis="analysed", analysis_set="itt")
+
+
+def _printed_analysis_total():
+    row = ("Table 9. Analysis population: alfa (N = 11), beta (N = 22), 33 in "
+           "total.")
+    return parse_batch({"readings": [{
+        "scope_label": "analysis population", "value": "33", "quote": row,
+        "population_phrase": "Analysis population"}]}, row,
+        target_shape=STUDY, aggregable=True)
+
+
+def test_a_printed_total_is_held_to_the_axes_the_result_claims_to_have_used():
+    """The claim names ITT; the paper's total names no analysis set.
+
+    This was released as `ok` while the provenance recorded that analysis_set
+    had been among the axes — an answer carrying an attestation to a check that
+    never ran, which is worse than an answer that is merely wrong.
+    """
+    projection = project_claim(
+        _printed_analysis_total(), target_shape=STUDY, requested_scope=ITT_ONLY,
+        required_axes=["population_basis"], field_type="sample_size")
+    assert projection.status == SCOPE_UNRESOLVED
+    assert to_source_result(projection).found is False
+    assert "analysis_set" in projection.required_axes
+
+
+def test_the_axes_a_result_records_are_the_axes_that_were_applied():
+    projection = project_claim(
+        _printed_analysis_total(), target_shape=STUDY, requested_scope=ANALYSED,
+        required_axes=["population_basis"], field_type="sample_size")
+    assert projection.status == OK and projection.value == "33"
+    assert projection.required_axes == ["population_basis"]
+
+
+def test_a_field_nobody_may_sum_does_not_inherit_the_aggregation_floor():
+    """The policy floor is the policy's business only where the policy applies."""
+    projection = project_claim(
+        _printed_analysis_total(), target_shape=STUDY, requested_scope=None,
+        required_axes=[], field_type="progression_free_survival")
+    assert projection.required_axes == []

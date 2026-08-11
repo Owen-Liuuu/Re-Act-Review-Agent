@@ -15,8 +15,12 @@ matching fails the suite instead of sitting in a document nobody recomputes.
 | v1 | `configs/aggregation/safe_sum_v1.json` | `1C99DCE79E4FDD3A` | superseded; never applied to a result |
 | v2 | `configs/aggregation/safe_sum_v2.json` | `5FED9271920DF0A4` | superseded; never applied to a result |
 | v3 | `configs/aggregation/safe_sum_v3.json` | `93E381F2ED633E06` | superseded; never applied to a result |
-| v4 | `configs/aggregation/safe_sum_v4.json` | `FE1B925C28FA7558` | current |
-| — | `configs/aggregation/registry.json` | `0F16E3F1228BC4E9` | which policy/evaluator pairs may produce a formal result |
+| v4 | `configs/aggregation/safe_sum_v4.json` | `FE1B925C28FA7558` | superseded; never applied to a result |
+| v5 | `configs/aggregation/safe_sum_v5.json` | `DAEB6715F812E88E` | current |
+| v1 | `configs/aggregation/registry.json` | `0F16E3F1228BC4E9` | superseded; could not grow without breaking its own pin |
+| v2 | `configs/aggregation/registry_v2.json` | `3F593BB1097A3CA0` | current; records each policy's file and bytes |
+| 1.4.0 | `configs/aggregation/evaluators/safe_aggregation_1.4.0.json` | `3B4912D2A0596CEF` | superseded |
+| 1.5.0 | `configs/aggregation/evaluators/safe_aggregation_1.5.0.json` | `0C5274C554AF1813` | current evaluator |
 
 ## A policy version is not enough — the code that applies it also has an identity
 
@@ -34,6 +38,14 @@ result. A run resolves both once at startup and records
 whose evaluator files differ from HEAD still runs, and is marked not
 release-eligible. Unrelated files in the working copy — slide decks, scratch
 output — are not consulted, because they say nothing about which code decided.
+
+The registry is versioned too. It is pinned by hash, so a single file could
+never gain a policy or an evaluator pair without breaking its own immutability
+rule — and changing which pairs may publish is a change to what a result means,
+which ought to cost a version. `registry_v2.json` also records each policy's
+file and bytes, so readiness computes the policy hash itself rather than
+accepting one from its caller; handed the string "not-a-hash", the previous
+version reported a registered, release-eligible run.
 
 Versioning is semantic and the rule is about OUTCOMES, not about how large the
 change felt: anything that can move a claim between `derived`, `rejected`,

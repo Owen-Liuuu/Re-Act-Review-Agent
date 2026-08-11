@@ -59,7 +59,7 @@ REJECTED = "rejected"
 PROTOCOL_ERROR = "protocol_error"
 NOT_APPLICABLE = "not_applicable"
 
-DEFAULT_POLICY = "configs/aggregation/safe_sum_v4.json"
+DEFAULT_POLICY = "configs/aggregation/safe_sum_v5.json"
 
 
 @dataclass(frozen=True)
@@ -89,6 +89,20 @@ class AggregationPolicy:
 
     def applies_to(self, target_shape: str, field_type: str) -> bool:
         return target_shape in self.target_shapes and field_type in self.field_types
+
+    def effective_axes(self, required_axes: list[str] | None,
+                       claim: PopulationScope | None, *, target_shape: str,
+                       field_type: str) -> list[str]:
+        """The axes BOTH routes are held to — computed once, by the caller.
+
+        The floor is only this policy's business where this policy applies. A
+        study-level field nobody may sum has no reason to inherit an aggregation
+        rule, so forcing ``population_basis`` onto every whole-study claim would
+        be this module deciding something outside its remit.
+        """
+        if not self.applies_to(target_shape, field_type):
+            return sorted(set(required_axes or []))
+        return self.axes_for(required_axes, claim)
 
     def axes_for(self, required_axes: list[str] | None,
                  claim: PopulationScope | None = None) -> list[str]:
@@ -152,33 +166,41 @@ def load_aggregation_policy(path: str | Path = DEFAULT_POLICY) -> AggregationPol
                 "JSON true or false says anything here: 0, 1 and the strings "
                 '"true"/"false" all read as true under coercion, which would turn '
                 "a rule its author switched off into one they switched on")
-    unread = set(required) - _READ_REQUIREMENTS
-    if unread:
+    if set(required) != _READ_REQUIREMENTS:
+        unread = sorted(set(required) - _READ_REQUIREMENTS)
+        absent = sorted(_READ_REQUIREMENTS - set(required))
         raise ContractError(
-            f"{resolved} declares requirement(s) {sorted(unread)} that nothing "
-            "reads. A rule the loader ignores is documentation pretending to be a "
-            "contract: setting it to false would load cleanly and change nothing. "
-            "Move it to `invariants` if the code always enforces it, or read it")
+            f"{resolved} does not state this evaluator's rules: "
+            + (f"declares {unread} that nothing reads" if unread else "")
+            + ("; " if unread and absent else "")
+            + (f"omits {absent}" if absent else "")
+            + ". A rule the loader ignores is documentation pretending to be a "
+              "contract; a rule the file omits is one that silently takes a "
+              "default, and a default nobody wrote down is not a decision")
+    count = required.get("min_components")
+    if type(count) is not int or type(count) is bool or count < 2:
+        raise ContractError(
+            f"{resolved} sets min_components to {count!r}. It must be a whole "
+            "number of at least two: `true` reads as 1 under Python's integer "
+            "rules, and one arm is not a partition of anything")
     return AggregationPolicy(
         policy_id=str(body.get("policy_id") or resolved.stem),
         sha256=sha256_file(resolved),
         field_types=frozenset(applies["field_types"]),
         target_shapes=frozenset(applies["target_shapes"]),
-        min_components=int(required.get("min_components", 2)),
-        require_partition_anchor=bool(required.get("require_partition_anchor", True)),
-        require_complete=bool(required.get("require_complete", True)),
-        require_mutually_exclusive=bool(
-            required.get("require_mutually_exclusive", True)),
-        require_arm_census=bool(required.get("require_arm_census", True)),
-        require_distinct_arms=bool(required.get("require_distinct_arms", True)),
-        honour_run_contract_axes=bool(
-            required.get("honour_run_contract_axes", True)),
-        require_axes_the_claim_states=bool(
-            required.get("require_axes_the_claim_states", True)),
-        population_must_match_claim=bool(
-            required.get("population_must_match_claim", True)),
-        timepoint_must_match_claim=bool(
-            required.get("timepoint_must_match_claim", True)),
+        # No defaults: the completeness check above has already established that
+        # every key is present, so a missing one is an error rather than a
+        # silent `True` nobody chose.
+        min_components=count,
+        require_partition_anchor=required["require_partition_anchor"],
+        require_complete=required["require_complete"],
+        require_mutually_exclusive=required["require_mutually_exclusive"],
+        require_arm_census=required["require_arm_census"],
+        require_distinct_arms=required["require_distinct_arms"],
+        honour_run_contract_axes=required["honour_run_contract_axes"],
+        require_axes_the_claim_states=required["require_axes_the_claim_states"],
+        population_must_match_claim=required["population_must_match_claim"],
+        timepoint_must_match_claim=required["timepoint_must_match_claim"],
         minimum_axes=tuple(body.get("minimum_axes") or ["population_basis"]),
         on_unknown=one_of(str(body.get("on_unknown", "reject")),
                           ("reject",), field="on_unknown"),
@@ -194,7 +216,6 @@ _READ_REQUIREMENTS = {
     "min_components", "require_partition_anchor", "require_complete",
     "require_mutually_exclusive", "require_arm_census", "require_distinct_arms",
     "population_must_match_claim", "timepoint_must_match_claim",
-    "require_partition_axis_binding", "require_explicit_census_grammar",
     "honour_run_contract_axes", "require_axes_the_claim_states",
 }
 
@@ -211,6 +232,9 @@ _INVARIANTS = {
     "census_number_must_qualify_a_group_noun", "partition_bound_per_axis",
     "census_matches_explicit_grammar", "aggregation_uses_run_contract_axes",
     "rejected_set_cleared_only_by_definite_mismatch",
+    "partition_axis_binding_enforced_in_parser",
+    "census_grammar_enforced_in_parser",
+    "same_axes_for_printed_and_derived_totals",
 }
 
 
@@ -261,6 +285,7 @@ def derive_partitioned_total(
     field_type: str = "",
     timepoint_label: str = "",
     required_axes: list[str] | None = None,
+    axes_already_effective: bool = False,
     rejected_sets: list[RejectedAggregationSet] | None = None,
     evaluator: EvaluatorIdentity | None = None,
     policy: AggregationPolicy | None = None,
@@ -273,7 +298,12 @@ def derive_partitioned_total(
     that these three arms are all of them" is.
     """
     rules = policy or load_aggregation_policy()
-    axes = rules.axes_for(required_axes, requested_scope)
+    # The caller computes these now, so the printed and the computed total are
+    # held to one standard. The old behaviour survives for direct callers.
+    axes = (list(required_axes or []) if axes_already_effective
+            else rules.effective_axes(required_axes, requested_scope,
+                                      target_shape=target_shape,
+                                      field_type=field_type))
     out = AggregationOutcome(policy_id=rules.policy_id, policy_sha256=rules.sha256,
                              required_axes=list(axes), evaluator=evaluator)
 

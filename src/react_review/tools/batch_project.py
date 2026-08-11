@@ -41,6 +41,7 @@ from react_review.tools.batch_parse import BatchReading
 from react_review.tools.aggregation_identity import EvaluatorIdentity
 from react_review.tools.safe_aggregation import (
     NOT_APPLICABLE,
+    load_aggregation_policy,
     PROTOCOL_ERROR,
     REJECTED,
     AggregationPolicy,
@@ -212,13 +213,23 @@ def _project_study(reading: BatchReading, entries: list[BatchEntry], *,
     if reading.aggregation_errors:
         provenance["aggregation_errors"] = list(reading.aggregation_errors)
 
+    # ONE set of axes, decided here, before either route runs. They used to be
+    # computed inside the sum, so a printed total was selected against the run
+    # contract's axes alone while the result recorded the wider set the sum would
+    # have used — an answer carrying an attestation to a check that never
+    # happened, which is worse than an answer that is merely wrong.
+    rules = policy or load_aggregation_policy()
+    axes = rules.effective_axes(required_axes, requested_scope,
+                                target_shape=STUDY, field_type=field_type)
+    provenance["required_axes"] = list(axes)
+
     explicit = Projection(
         status=NOT_REPORTED, candidates=study_entries,
         reason=(reading.nothing_reported_reason
                 or "the batch reports no whole-study value"))
     if study_entries:
         explicit = _select(study_entries, requested_scope=requested_scope,
-                           required_axes=required_axes,
+                           required_axes=axes,
                            timepoint_label=timepoint_label,
                            population_contract=population_contract,
                            provenance=provenance)
@@ -226,10 +237,9 @@ def _project_study(reading: BatchReading, entries: list[BatchEntry], *,
     summed = derive_partitioned_total(
         reading.aggregation_sets, requested_scope, target_shape=STUDY,
         field_type=field_type, timepoint_label=timepoint_label,
-        # The run contract's axes, so a computed total is held to exactly the
-        # standard a printed one is held to in the same run.
-        required_axes=required_axes,
-        rejected_sets=reading.rejected_sets, policy=policy,
+        # The very same axes the printed total was selected against.
+        required_axes=axes, axes_already_effective=True,
+        rejected_sets=reading.rejected_sets, policy=rules,
         population_contract=population_contract, evaluator=evaluator)
     provenance["policy"] = f"{summed.policy_id} ({summed.policy_sha256[:12]}…)"
     if summed.chosen_set is not None:

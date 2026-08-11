@@ -26,12 +26,28 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
-from react_review.contracts import ContractError, read_json_object, repo_root
+from react_review.contracts import (
+    ContractError,
+    read_json_object,
+    repo_root,
+    sha256_file,
+)
 
 #: Named so a future scheme cannot be mistaken for this one in an old artifact.
 HASH_ALGORITHM = "sha256-path-lf-v1"
 
 EVALUATOR_DIR = "configs/aggregation/evaluators"
+#: The registry is versioned like everything else it governs. It is pinned by
+#: hash, so it could never gain a policy or an evaluator pair without breaking
+#: its own immutability rule — and changing which pairs may publish is exactly
+#: the kind of change that should require a version anyway.
+REGISTRY = "configs/aggregation/registry_v2.json"
+
+#: Files that decide WHETHER a result may be published, as opposed to what it
+#: says. A change to any of them is a change to the identity itself, so they are
+#: covered by the clean check alongside the evaluator's own sources.
+CONTROL_PLANE = ("configs/aggregation/registry_v2.json",
+                 "src/react_review/tools/aggregation_identity.py")
 
 #: What a run may do with the evaluator it is running.
 REGISTERED = "registered"          # matches a published manifest at a clean HEAD
@@ -134,9 +150,15 @@ def load_evaluator_manifest(version: str) -> EvaluatorManifest:
         evaluator_hash=str(body.get("evaluator_hash") or ""), path=path)
 
 
-def evaluator_readiness(version: str, *, policy_id: str, policy_hash: str,
+def evaluator_readiness(version: str, *, policy_id: str,
                         root: Path | None = None) -> EvaluatorIdentity:
     """Decide once, at startup, what this run is allowed to produce.
+
+    The policy hash is COMPUTED here, not accepted from the caller. It used to be
+    a parameter, which meant the one function whose job is to establish identity
+    took the most important part of that identity on trust: handed the string
+    "not-a-hash" it reported a registered, release-eligible run. A checker that
+    believes what it is told is not a checker.
 
     Deliberately not per claim. It shells out to git, and a check that runs
     thousands of times is a check somebody eventually removes for being slow.
@@ -144,12 +166,36 @@ def evaluator_readiness(version: str, *, policy_id: str, policy_hash: str,
     base = root or repo_root()
     manifest = load_evaluator_manifest(version)
     computed, per_file = hash_sources(list(manifest.source_files), base)
+    entry = _registry(base).get(policy_id) or {}
+    policy_file = str(entry.get("file") or "")
+    policy_hash = (sha256_file(base / policy_file) if policy_file
+                   and (base / policy_file).exists() else "")
 
     def refuse(status: str, reason: str) -> EvaluatorIdentity:
         return EvaluatorIdentity(
             evaluator_id=manifest.evaluator_id, evaluator_version=version,
             evaluator_hash=computed, policy_id=policy_id, policy_hash=policy_hash,
             status=status, reason=reason)
+
+    if not entry:
+        return refuse(UNREGISTERED,
+                      f"the registry does not list {policy_id!r} at all, so nothing "
+                      "says what it is or whether it may be applied")
+    if not policy_hash:
+        return refuse(UNREGISTERED,
+                      f"the registry points {policy_id!r} at {policy_file!r}, which "
+                      "is not there")
+    if policy_hash != str(entry.get("sha256") or ""):
+        raise ContractError(
+            f"{policy_file} hashes to {policy_hash[:16]}… and the registry records "
+            f"{str(entry.get('sha256') or '')[:16]}…. A frozen policy has been "
+            "edited, or the registry was written by hand")
+    if entry.get("status") != "active" or entry.get("formal_results") is not True:
+        return refuse(UNREGISTERED,
+                      f"the registry records {policy_id} as "
+                      f"{entry.get('status')!r} with formal_results="
+                      f"{entry.get('formal_results')!r}, so it may be replayed but "
+                      "may not produce a publishable result")
 
     if computed != manifest.evaluator_hash:
         # Not a warning. The manifest is the published claim about what this
@@ -164,13 +210,17 @@ def evaluator_readiness(version: str, *, policy_id: str, policy_hash: str,
                 f"{relative} does not match the hash published for evaluator "
                 f"{version}")
 
-    if not _registry().get(policy_id, {}).get("evaluators", []).__contains__(version):
+    if version not in (entry.get("evaluators") or []):
         return refuse(UNREGISTERED,
                       f"the registry does not record {policy_id} being applied by "
                       f"evaluator {version}, so nothing says the two were meant "
                       "to be used together")
 
-    paths = sorted(manifest.source_files)
+    # The evaluator's own sources AND everything that decides whether its
+    # verdicts may be published. Without the second group, changing which pairs
+    # are authorised — or changing this function — left the run looking clean.
+    paths = sorted({*manifest.source_files, *CONTROL_PLANE, policy_file,
+                    str(manifest.path.relative_to(base)).replace("\\", "/")})
     tracked, error = _git(["ls-files", "--error-unmatch", *paths], base)
     if tracked is None:
         return refuse(UNAVAILABLE,
@@ -205,9 +255,9 @@ def evaluator_readiness(version: str, *, policy_id: str, policy_hash: str,
         git_commit=commit, git_commit_matches_evaluator=True, status=REGISTERED)
 
 
-@lru_cache(maxsize=1)
-def _registry() -> dict:
-    path = repo_root() / "configs/aggregation/registry.json"
+@lru_cache(maxsize=4)
+def _registry(root: Path | None = None) -> dict:
+    path = (root or repo_root()) / REGISTRY
     body = read_json_object(path, kind="aggregation registry")
     return {str(k): v for k, v in (body.get("policies") or {}).items()}
 
