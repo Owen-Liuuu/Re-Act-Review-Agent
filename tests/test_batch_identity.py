@@ -14,7 +14,10 @@ from react_review.schemas.batch import (
     COMPARISON,
     STUDY,
     BatchEntry,
-    BatchRequestId,
+    BatchExecutionId,
+    BatchQuestionId,
+    ClaimBinding,
+    ProjectionContract,
     ClaimGroupKey,
     EntryIdentity,
     EvidenceAnchor,
@@ -98,33 +101,106 @@ def test_shapes_are_asked_separately():
     assert len({arms.key(), comparisons.key(), totals.key()}) == 3
 
 
-# --- what was actually asked ---------------------------------------------
+# --- what was asked, and what read the answer ----------------------------
 
-def _request(**kw) -> BatchRequestId:
-    body = dict(group=ClaimGroupKey(study_id="larkin", field_type="cohort_n"),
-                claim_targets=["combo", "ipilimumab"],
-                requested_scopes=["allocated"], extraction_profile="targeted_v5_batch",
-                research_context="melanoma trials", document_sha256="ABC")
+def _question(**kw) -> BatchQuestionId:
+    body = dict(study_id="larkin", target_shape=ARM, field_type="cohort_n",
+                raw_field_name="Intervention arm, n", concept="cohort size",
+                concept_variants=("n", "number of patients"), unit_hint="count",
+                research_context="melanoma trials", document_sha256="ABC",
+                knowledge_fingerprint="KB1", prompt_version="v5",
+                prompt_sha256="P1")
     body.update(kw)
-    return BatchRequestId(**body)
+    return BatchQuestionId(**body)
 
 
-def test_the_same_group_with_different_members_is_a_different_request():
-    """A key that stayed the same while its membership changed would hide this."""
-    two = _request()
-    three = _request(claim_targets=["combo", "ipilimumab", "nivolumab"])
-    assert two.group.key() == three.group.key()
+def _binding(claim_id, target, scope="allocated", axes=("population_basis",)):
+    return ClaimBinding(claim_id=claim_id, target=target, requested_scope=scope,
+                        route="targeted_v5_batch", required_axes=tuple(axes))
+
+
+def _execution(*bindings, question=None, **projection) -> BatchExecutionId:
+    body = dict(run_profile_sha256="RP", population_contract_sha256="PC",
+                cohort_fingerprint="CF", aggregation_policy_id="safe_sum_v5",
+                aggregation_policy_sha256="AP", evaluator_id="safe_aggregation",
+                evaluator_version="1.6.0", evaluator_hash="EH")
+    body.update(projection)
+    return BatchExecutionId(question=question or _question(),
+                            bindings=list(bindings),
+                            projection=ProjectionContract(**body))
+
+
+def test_more_claims_do_not_change_the_question_the_model_was_asked():
+    """v5 asks for EVERY arm, so two consumers and three ask the same thing.
+
+    Folding the members into the question identity would record one prompt
+    twice and call a change of downstream consumer a change of question.
+    """
+    assert _question().identity() == _question().identity()
+    two = _execution(_binding("c1", "combo"), _binding("c2", "ipi"))
+    three = _execution(_binding("c1", "combo"), _binding("c2", "ipi"),
+                       _binding("c3", "nivo"))
+    assert two.question.identity() == three.question.identity()
     assert two.identity() != three.identity()
 
 
-def test_request_identity_ignores_the_order_members_arrive_in():
-    assert _request(claim_targets=["a", "b"]).identity() == \
-        _request(claim_targets=["b", "a"]).identity()
+def test_everything_that_reaches_the_prompt_changes_the_question():
+    base = _question().identity()
+    for field, value in (("raw_field_name", "N randomised"),
+                         ("concept", "sample size"),
+                         ("concept_variants", ("n",)),
+                         ("unit_hint", "patients"),
+                         ("timepoint_label", "at 5 years"),
+                         ("aggregable", True),
+                         ("research_context", "diabetes"),
+                         ("document_sha256", "DEF"),
+                         ("knowledge_fingerprint", "KB2"),
+                         ("prompt_sha256", "P2"),
+                         ("target_shape", COMPARISON)):
+        assert _question(**{field: value}).identity() != base, field
 
 
-def test_a_different_document_or_contract_is_a_different_request():
-    assert _request().identity() != _request(document_sha256="DEF").identity()
-    assert _request().identity() != _request(extraction_profile="targeted_v4").identity()
+def test_the_order_the_claims_arrive_in_does_not_change_the_execution():
+    assert _execution(_binding("a", "x"), _binding("b", "y")).identity() ==         _execution(_binding("b", "y"), _binding("a", "x")).identity()
+
+
+def test_a_target_and_a_scope_stay_paired():
+    """Parallel lists would say WHICH targets and WHICH scopes, not which went
+    with which — and swapping them is a different set of answers."""
+    straight = _execution(_binding("a", "combo", "allocated"),
+                          _binding("b", "ipi", "analysed"))
+    crossed = _execution(_binding("a", "combo", "analysed"),
+                         _binding("b", "ipi", "allocated"))
+    assert straight.identity() != crossed.identity()
+
+
+def test_reading_one_response_under_different_rules_is_a_different_execution():
+    """The same recording, projected under other axes, is other answers."""
+    question = _question()
+    loose = _execution(_binding("a", "combo", axes=("population_basis",)),
+                       question=question)
+    strict = _execution(
+        _binding("a", "combo", axes=("population_basis", "analysis_set")),
+        question=question)
+    assert loose.question.identity() == strict.question.identity()
+    assert loose.identity() != strict.identity()
+
+
+def test_a_different_evaluator_or_policy_is_a_different_execution():
+    binding = _binding("a", "combo")
+    base = _execution(binding).identity()
+    for field, value in (("evaluator_version", "1.7.0"),
+                         ("evaluator_hash", "OTHER"),
+                         ("aggregation_policy_sha256", "OTHER"),
+                         ("run_profile_sha256", "OTHER"),
+                         ("population_contract_sha256", "OTHER"),
+                         ("cohort_fingerprint", "OTHER")):
+        assert _execution(binding, **{field: value}).identity() != base, field
+
+
+def test_the_execution_can_name_the_claims_it_answered():
+    execution = _execution(_binding("c2", "ipi"), _binding("c1", "combo"))
+    assert execution.claim_ids() == ["c1", "c2"]
 
 
 # --- evidence binding -----------------------------------------------------

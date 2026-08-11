@@ -25,6 +25,9 @@ PROMPT_VERSIONS = {
     "targeted_v4": TARGETED_V4,
     "targeted_v5_batch": BATCH_V5,
 }
+#: The profile name a batch request runs under, so the batch tool need not
+#: repeat the string that keys its own recordings.
+BATCH_PROFILE_NAME = "targeted_v5_batch"
 DEFAULT_PROFILE = "legacy_v3"
 
 

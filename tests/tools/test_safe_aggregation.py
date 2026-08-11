@@ -946,9 +946,22 @@ def test_b6_a_broken_set_nobody_can_place_still_blocks():
 # --- the evaluator travels with every outcome ----------------------------
 
 def _runtime():
+    """A runtime with a real policy and a SYNTHETIC identity.
+
+    These tests ask whether provenance carries the identity, not whether this
+    checkout happens to be a frozen evaluator. Resolving a real one would make
+    them fail for a reason that has nothing to do with what they assert — and
+    make them pass or fail depending on the phase of the repository.
+    """
+    from react_review.tools.aggregation_identity import REGISTERED, EvaluatorIdentity
     from react_review.tools.safe_aggregation import AggregationRuntime
-    return AggregationRuntime.resolve(policy_id="safe_sum_v5",
-                                      evaluator_version="1.6.0")
+
+    policy = load_aggregation_policy()
+    return AggregationRuntime(policy=policy, evaluator=EvaluatorIdentity(
+        evaluator_id="safe_aggregation", evaluator_version="1.6.0",
+        evaluator_hash="sha256:" + "a" * 64, policy_id=policy.policy_id,
+        policy_hash=policy.sha256, git_commit="c" * 40,
+        git_commit_matches_evaluator=True, status=REGISTERED))
 
 
 @pytest.mark.parametrize("sets,scope,expected", [

@@ -271,15 +271,28 @@ class ClaimGroupKey(BaseModel):
 
     study_id: str
     field_type: str
-    column_header: str = ""                 # the review's own words for the field
+    #: The review's OWN column label. It reaches the prompt, so two claims whose
+    #: columns are worded differently are different questions however alike
+    #: their field_type makes them look.
+    raw_field_name: str = ""
+    #: Display only. Deliberately NOT in the question identity: it never reaches
+    #: the prompt, and letting it split a group would ask one paper the same
+    #: thing twice because a header was punctuated differently.
+    column_header: str = ""
     timepoint: str = UNSPECIFIED
     timepoint_label: str = ""               # the review's own words
     target_shape: str = ARM
     target_kind: str = "value"
     unit_signature: str = ""                # unit / effect family, when declared
 
+    #: Carried for a reader, never for the key. See ``column_header``.
+    _DISPLAY_ONLY = ("column_header",)
+
     def key(self) -> str:
-        return _digest(self.model_dump(mode="json"))
+        body = self.model_dump(mode="json")
+        for name in self._DISPLAY_ONLY:
+            body.pop(name, None)
+        return _digest(body)
 
     def describe(self) -> str:
         return (f"{self.study_id}/{self.field_type}"
@@ -287,27 +300,103 @@ class ClaimGroupKey(BaseModel):
                 f"[{self.target_shape}/{self.target_kind}]")
 
 
-class BatchRequestId(BaseModel):
-    """What was ACTUALLY asked — group, members, contract and document.
+class BatchQuestionId(BaseModel):
+    """What the MODEL was asked — and nothing about who consumes the answer.
 
-    A group key with A and B one day and A, B and C the next is the same key and
-    a different question. This records the difference, so a recorded response is
-    never replayed for a request it does not answer.
+    Every field here reaches the prompt. Nothing else may: the v5 contract asks
+    for EVERY arm and EVERY population the paper reports, so a group covering
+    two claims and a group covering three put the identical question to the
+    identical document. Folding the members in would record the same prompt
+    twice and call a change of downstream consumer a change of question.
+
+    The concept and its variants come from the knowledge base, so its
+    fingerprint is in here too — otherwise a new ontology rewrites the prompt
+    while the identity insists nothing moved.
     """
 
-    group: ClaimGroupKey
-    claim_targets: list[str] = Field(default_factory=list)
-    requested_scopes: list[str] = Field(default_factory=list)
-    extraction_profile: str = ""
+    study_id: str = ""
+    target_shape: str = ARM
+    field_type: str = ""
+    raw_field_name: str = ""              # the review's own column label
+    concept: str = ""                     # the KB's canonical name
+    concept_variants: tuple[str, ...] = ()
+    unit_hint: str = ""
+    timepoint_label: str = ""             # the review's own words for when
+    aggregable: bool = False              # whether components were asked for
     research_context: str = ""
     document_sha256: str = ""
+    knowledge_fingerprint: str = ""
+    prompt_version: str = ""
+    prompt_sha256: str = ""
+
+    def identity(self) -> str:
+        return _digest(self.model_dump(mode="json"))
+
+
+class ClaimBinding(BaseModel):
+    """One claim's share of a batch, kept as a unit.
+
+    Target, scope, route and axes travel together. Recorded as parallel lists
+    they would say which targets and which scopes appeared, and not which went
+    with which — and "the ITT total for arm A" and "the allocated total for arm
+    B" are indistinguishable from their mirror image once the pairing is gone.
+    """
+
+    claim_id: str
+    target: str = ""                      # the review's cohort key, or a pair
+    requested_scope: str = ""             # "" | basis | basis/analysis_set
+    route: str = ""                       # the extraction profile that read it
+    required_axes: tuple[str, ...] = ()   # the axes THIS claim was held to
+    timepoint_label: str = ""
+
+    def key(self) -> tuple:
+        return (self.claim_id, self.target, self.requested_scope, self.route,
+                tuple(self.required_axes), self.timepoint_label)
+
+
+class ProjectionContract(BaseModel):
+    """The rules by which one response is turned into answers.
+
+    A batched response is read twice: once by the model, once by the projection.
+    The second reading depends on things the first never saw — which axes the
+    run requires, how populations are classified, how the review's labels map to
+    the paper's, which aggregation policy and which evaluator. Leave them out
+    and one execution id can describe two different sets of answers.
+    """
+
+    run_profile_sha256: str = ""
+    population_contract_sha256: str = ""
+    cohort_fingerprint: str = ""          # the review-label mapping in force
+    aggregation_policy_id: str = ""
+    aggregation_policy_sha256: str = ""
+    evaluator_id: str = ""
+    evaluator_version: str = ""
+    evaluator_hash: str = ""
+
+    def identity(self) -> str:
+        return _digest(self.model_dump(mode="json"))
+
+
+class BatchExecutionId(BaseModel):
+    """What was asked, who it was asked for, and how the answer was read.
+
+    Distinct from :class:`BatchQuestionId` on purpose. The question identifies a
+    cache entry — a recording may be reused whenever the same words were sent to
+    the same model. This identifies an ANSWER: the same recording, read under
+    different axes or a different evaluator, is a different set of answers and
+    must not share provenance with them.
+    """
+
+    question: BatchQuestionId
+    bindings: list[ClaimBinding] = Field(default_factory=list)
+    projection: ProjectionContract = Field(default_factory=ProjectionContract)
 
     def identity(self) -> str:
         return _digest({
-            "group": self.group.key(),
-            "targets": sorted(self.claim_targets),
-            "scopes": sorted(self.requested_scopes),
-            "profile": self.extraction_profile,
-            "context": self.research_context,
-            "document": self.document_sha256,
+            "question": self.question.identity(),
+            "bindings": sorted(list(b.key()) for b in self.bindings),
+            "projection": self.projection.identity(),
         })
+
+    def claim_ids(self) -> list[str]:
+        return sorted(b.claim_id for b in self.bindings)
