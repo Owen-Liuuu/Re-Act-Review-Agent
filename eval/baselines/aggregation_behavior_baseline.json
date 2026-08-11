@@ -1,0 +1,580 @@
+{
+  "schema_version": 1,
+  "behavior_vector_version": 1,
+  "baseline_commit": "f2adc5ea1fd5384ce97716a0d282b74651557b8f",
+  "generator_id": "aggregation_behavior",
+  "generator_sha256": "2C0A4D855DD5E11B2104C40EB159D953DDF2D6A3C20308B44001E9FE3EB33438",
+  "corpus_id": "aggregation_behavior_corpus",
+  "corpus_sha256": "220AC3E0686D44F4AC7414D11DBFA421A6ED086CA98C0FADFCFB8A75D9A58614",
+  "case_count": 26,
+  "case_ids": [
+    "analysed_set_cannot_answer_allocated",
+    "analysed_total_derived",
+    "arm_never_reported",
+    "batch_is_not_json",
+    "census_in_words",
+    "comparison_direction_matters",
+    "explicit_totals_disagree",
+    "field_outside_the_whitelist",
+    "ma002_derived_total",
+    "ma004_allocated_not_analysed",
+    "no_partition_at_all",
+    "printed_total_wins",
+    "r2_analysed_count_in_allocated_set",
+    "r2_baseline_set_answers_week_12",
+    "r2_broken_set_blocks_unrelated_claim",
+    "r2_census_declared_two_passage_says_three",
+    "r2_same_arm_twice_same_count",
+    "r3_broken_unspecified_beside_itt",
+    "r3_census_from_a_ratio",
+    "r3_claim_names_no_population",
+    "r3_partition_about_the_analysed",
+    "r4_dose_is_not_a_census",
+    "r4_printed_total_without_an_analysis_set",
+    "string_false_is_not_a_boolean",
+    "timed_set_matching_timepoint",
+    "unanchored_partition_claim"
+  ],
+  "cases": {
+    "ma002_derived_total": {
+      "projection_status": "derived",
+      "released": true,
+      "value": "945",
+      "selected_entry": "",
+      "aggregation_set": "allocated",
+      "aggregation_status": "derived",
+      "verified_scope": "allocated/unspecified",
+      "required_axes": [
+        "population_basis"
+      ],
+      "cohort_counts": [
+        [
+          "nivolumab group",
+          316
+        ],
+        [
+          "nivolumab-plus-ipilimumab group",
+          314
+        ],
+        [
+          "ipilimumab group",
+          315
+        ]
+      ],
+      "n_candidates": 0,
+      "n_parse_errors": 0,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": ""
+    },
+    "printed_total_wins": {
+      "projection_status": "ok",
+      "released": true,
+      "value": "945",
+      "selected_entry": "A total of 945 patients underwent randomization",
+      "aggregation_set": "allocated",
+      "aggregation_status": "derived",
+      "verified_scope": "",
+      "required_axes": [
+        "population_basis"
+      ],
+      "cohort_counts": [
+        [
+          "nivolumab group",
+          316
+        ],
+        [
+          "nivolumab-plus-ipilimumab group",
+          314
+        ],
+        [
+          "ipilimumab group",
+          315
+        ]
+      ],
+      "n_candidates": 1,
+      "n_parse_errors": 0,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": ""
+    },
+    "analysed_total_derived": {
+      "projection_status": "derived",
+      "released": true,
+      "value": "936",
+      "selected_entry": "",
+      "aggregation_set": "analysed",
+      "aggregation_status": "derived",
+      "verified_scope": "analysed/unspecified",
+      "required_axes": [
+        "population_basis"
+      ],
+      "cohort_counts": [
+        [
+          "Nivolumab",
+          311
+        ],
+        [
+          "Nivolumab plus Ipilimumab",
+          313
+        ],
+        [
+          "Ipilimumab",
+          312
+        ]
+      ],
+      "n_candidates": 0,
+      "n_parse_errors": 0,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": ""
+    },
+    "census_in_words": {
+      "projection_status": "derived",
+      "released": true,
+      "value": "945",
+      "selected_entry": "",
+      "aggregation_set": "allocated",
+      "aggregation_status": "derived",
+      "verified_scope": "allocated/unspecified",
+      "required_axes": [
+        "population_basis"
+      ],
+      "cohort_counts": [
+        [
+          "nivolumab group",
+          316
+        ],
+        [
+          "nivolumab-plus-ipilimumab group",
+          314
+        ],
+        [
+          "ipilimumab group",
+          315
+        ]
+      ],
+      "n_candidates": 0,
+      "n_parse_errors": 0,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": ""
+    },
+    "timed_set_matching_timepoint": {
+      "projection_status": "derived",
+      "released": true,
+      "value": "945",
+      "selected_entry": "",
+      "aggregation_set": "allocated at At baseline",
+      "aggregation_status": "derived",
+      "verified_scope": "allocated/unspecified",
+      "required_axes": [
+        "population_basis"
+      ],
+      "cohort_counts": [
+        [
+          "nivolumab group",
+          316
+        ],
+        [
+          "nivolumab-plus-ipilimumab group",
+          314
+        ],
+        [
+          "ipilimumab group",
+          315
+        ]
+      ],
+      "n_candidates": 0,
+      "n_parse_errors": 0,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": ""
+    },
+    "r2_analysed_count_in_allocated_set": {
+      "projection_status": "not_reported",
+      "released": false,
+      "value": null,
+      "selected_entry": "",
+      "aggregation_set": "",
+      "aggregation_status": "protocol_error",
+      "verified_scope": "",
+      "required_axes": [
+        "population_basis"
+      ],
+      "cohort_counts": [],
+      "n_candidates": 0,
+      "n_parse_errors": 1,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": "parse"
+    },
+    "r2_census_declared_two_passage_says_three": {
+      "projection_status": "not_reported",
+      "released": false,
+      "value": null,
+      "selected_entry": "",
+      "aggregation_set": "",
+      "aggregation_status": "protocol_error",
+      "verified_scope": "",
+      "required_axes": [
+        "population_basis"
+      ],
+      "cohort_counts": [],
+      "n_candidates": 0,
+      "n_parse_errors": 1,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": "parse"
+    },
+    "r2_baseline_set_answers_week_12": {
+      "projection_status": "not_reported",
+      "released": false,
+      "value": null,
+      "selected_entry": "",
+      "aggregation_set": "",
+      "aggregation_status": "rejected",
+      "verified_scope": "",
+      "required_axes": [
+        "population_basis"
+      ],
+      "cohort_counts": [],
+      "n_candidates": 0,
+      "n_parse_errors": 0,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": "not_reported"
+    },
+    "r2_same_arm_twice_same_count": {
+      "projection_status": "not_reported",
+      "released": false,
+      "value": null,
+      "selected_entry": "",
+      "aggregation_set": "",
+      "aggregation_status": "protocol_error",
+      "verified_scope": "",
+      "required_axes": [
+        "population_basis"
+      ],
+      "cohort_counts": [],
+      "n_candidates": 0,
+      "n_parse_errors": 1,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": "parse"
+    },
+    "r2_broken_set_blocks_unrelated_claim": {
+      "projection_status": "derived",
+      "released": true,
+      "value": "936",
+      "selected_entry": "",
+      "aggregation_set": "analysed",
+      "aggregation_status": "derived",
+      "verified_scope": "analysed/unspecified",
+      "required_axes": [
+        "population_basis"
+      ],
+      "cohort_counts": [
+        [
+          "Nivolumab",
+          311
+        ],
+        [
+          "Nivolumab plus Ipilimumab",
+          313
+        ],
+        [
+          "Ipilimumab",
+          312
+        ]
+      ],
+      "n_candidates": 0,
+      "n_parse_errors": 1,
+      "n_unrelated_rejections": 1,
+      "refusal_stage": ""
+    },
+    "r3_partition_about_the_analysed": {
+      "projection_status": "not_reported",
+      "released": false,
+      "value": null,
+      "selected_entry": "",
+      "aggregation_set": "",
+      "aggregation_status": "protocol_error",
+      "verified_scope": "",
+      "required_axes": [
+        "population_basis"
+      ],
+      "cohort_counts": [],
+      "n_candidates": 0,
+      "n_parse_errors": 1,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": "parse"
+    },
+    "r3_census_from_a_ratio": {
+      "projection_status": "not_reported",
+      "released": false,
+      "value": null,
+      "selected_entry": "",
+      "aggregation_set": "",
+      "aggregation_status": "protocol_error",
+      "verified_scope": "",
+      "required_axes": [
+        "population_basis"
+      ],
+      "cohort_counts": [],
+      "n_candidates": 0,
+      "n_parse_errors": 1,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": "parse"
+    },
+    "r3_broken_unspecified_beside_itt": {
+      "projection_status": "not_reported",
+      "released": false,
+      "value": null,
+      "selected_entry": "",
+      "aggregation_set": "",
+      "aggregation_status": "protocol_error",
+      "verified_scope": "",
+      "required_axes": [
+        "analysis_set",
+        "population_basis"
+      ],
+      "cohort_counts": [],
+      "n_candidates": 0,
+      "n_parse_errors": 2,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": "parse"
+    },
+    "r3_claim_names_no_population": {
+      "projection_status": "not_reported",
+      "released": false,
+      "value": null,
+      "selected_entry": "",
+      "aggregation_set": "",
+      "aggregation_status": "rejected",
+      "verified_scope": "",
+      "required_axes": [
+        "population_basis"
+      ],
+      "cohort_counts": [],
+      "n_candidates": 0,
+      "n_parse_errors": 0,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": "not_reported"
+    },
+    "r4_dose_is_not_a_census": {
+      "projection_status": "not_reported",
+      "released": false,
+      "value": null,
+      "selected_entry": "",
+      "aggregation_set": "",
+      "aggregation_status": "protocol_error",
+      "verified_scope": "",
+      "required_axes": [
+        "population_basis"
+      ],
+      "cohort_counts": [],
+      "n_candidates": 0,
+      "n_parse_errors": 1,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": "parse"
+    },
+    "r4_printed_total_without_an_analysis_set": {
+      "projection_status": "scope_unresolved",
+      "released": false,
+      "value": null,
+      "selected_entry": "",
+      "aggregation_set": "",
+      "aggregation_status": "not_applicable",
+      "verified_scope": "",
+      "required_axes": [
+        "analysis_set",
+        "population_basis"
+      ],
+      "cohort_counts": [],
+      "n_candidates": 1,
+      "n_parse_errors": 0,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": "scope"
+    },
+    "string_false_is_not_a_boolean": {
+      "projection_status": "not_reported",
+      "released": false,
+      "value": null,
+      "selected_entry": "",
+      "aggregation_set": "",
+      "aggregation_status": "protocol_error",
+      "verified_scope": "",
+      "required_axes": [
+        "population_basis"
+      ],
+      "cohort_counts": [],
+      "n_candidates": 0,
+      "n_parse_errors": 1,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": "parse"
+    },
+    "unanchored_partition_claim": {
+      "projection_status": "not_reported",
+      "released": false,
+      "value": null,
+      "selected_entry": "",
+      "aggregation_set": "allocated",
+      "aggregation_status": "rejected",
+      "verified_scope": "",
+      "required_axes": [
+        "population_basis"
+      ],
+      "cohort_counts": [
+        [
+          "nivolumab group",
+          316
+        ],
+        [
+          "nivolumab-plus-ipilimumab group",
+          314
+        ],
+        [
+          "ipilimumab group",
+          315
+        ]
+      ],
+      "n_candidates": 0,
+      "n_parse_errors": 0,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": "not_reported"
+    },
+    "no_partition_at_all": {
+      "projection_status": "not_reported",
+      "released": false,
+      "value": null,
+      "selected_entry": "",
+      "aggregation_set": "",
+      "aggregation_status": "protocol_error",
+      "verified_scope": "",
+      "required_axes": [
+        "population_basis"
+      ],
+      "cohort_counts": [],
+      "n_candidates": 0,
+      "n_parse_errors": 1,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": "parse"
+    },
+    "explicit_totals_disagree": {
+      "projection_status": "contradictory",
+      "released": false,
+      "value": "944",
+      "selected_entry": "A total of 944 patients underwent randomization: 316 patient",
+      "aggregation_set": "allocated",
+      "aggregation_status": "derived",
+      "verified_scope": "allocated/unspecified",
+      "required_axes": [
+        "population_basis"
+      ],
+      "cohort_counts": [
+        [
+          "nivolumab group",
+          316
+        ],
+        [
+          "nivolumab-plus-ipilimumab group",
+          314
+        ],
+        [
+          "ipilimumab group",
+          315
+        ]
+      ],
+      "n_candidates": 1,
+      "n_parse_errors": 0,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": "contradiction"
+    },
+    "analysed_set_cannot_answer_allocated": {
+      "projection_status": "not_reported",
+      "released": false,
+      "value": null,
+      "selected_entry": "",
+      "aggregation_set": "",
+      "aggregation_status": "rejected",
+      "verified_scope": "",
+      "required_axes": [
+        "population_basis"
+      ],
+      "cohort_counts": [],
+      "n_candidates": 0,
+      "n_parse_errors": 0,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": "not_reported"
+    },
+    "field_outside_the_whitelist": {
+      "projection_status": "not_reported",
+      "released": false,
+      "value": null,
+      "selected_entry": "",
+      "aggregation_set": "",
+      "aggregation_status": "not_applicable",
+      "verified_scope": "",
+      "required_axes": [
+        "population_basis"
+      ],
+      "cohort_counts": [],
+      "n_candidates": 0,
+      "n_parse_errors": 0,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": "not_reported"
+    },
+    "batch_is_not_json": {
+      "projection_status": "batch_failed",
+      "released": false,
+      "value": null,
+      "selected_entry": "",
+      "aggregation_set": "",
+      "aggregation_status": "not_applicable",
+      "verified_scope": "",
+      "required_axes": [],
+      "cohort_counts": [],
+      "n_candidates": 0,
+      "n_parse_errors": 0,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": "response"
+    },
+    "ma004_allocated_not_analysed": {
+      "projection_status": "ok",
+      "released": true,
+      "value": "314",
+      "selected_entry": "A total of 945 patients underwent randomization: 316 patient",
+      "aggregation_set": "",
+      "aggregation_status": "not_applicable",
+      "verified_scope": "",
+      "required_axes": [],
+      "cohort_counts": [],
+      "n_candidates": 2,
+      "n_parse_errors": 0,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": ""
+    },
+    "arm_never_reported": {
+      "projection_status": "ambiguous",
+      "released": false,
+      "value": null,
+      "selected_entry": "",
+      "aggregation_set": "",
+      "aggregation_status": "not_applicable",
+      "verified_scope": "",
+      "required_axes": [],
+      "cohort_counts": [],
+      "n_candidates": 1,
+      "n_parse_errors": 0,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": "ambiguity"
+    },
+    "comparison_direction_matters": {
+      "projection_status": "unsupported",
+      "released": false,
+      "value": null,
+      "selected_entry": "",
+      "aggregation_set": "",
+      "aggregation_status": "not_applicable",
+      "verified_scope": "",
+      "required_axes": [],
+      "cohort_counts": [],
+      "n_candidates": 1,
+      "n_parse_errors": 0,
+      "n_unrelated_rejections": 0,
+      "refusal_stage": "unsupported"
+    }
+  }
+}

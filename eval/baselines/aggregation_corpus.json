@@ -1,0 +1,1407 @@
+{
+  "corpus_id": "aggregation_behavior_corpus",
+  "schema_version": 1,
+  "written_on": "2026-08-11",
+  "purpose": "The cases a version decision is made against. Every one is a path review reproduced, or a positive those refusals must not break. Frozen as data rather than read out of the test suite, so that rewriting a test cannot quietly change what a behaviour comparison is comparing.",
+  "case_count": 26,
+  "cases": [
+    {
+      "case_id": "ma002_derived_total",
+      "why": "MA002: 945 is recoverable from three anchored arms",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.",
+      "response": {
+        "readings": [],
+        "aggregation_sets": [
+          {
+            "population_type": "allocated",
+            "population_phrase": "underwent randomization",
+            "population_quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.",
+            "cohort_counts": [
+              {
+                "arm_label": "nivolumab group",
+                "count": 316,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "nivolumab-plus-ipilimumab group",
+                "count": 314,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "ipilimumab group",
+                "count": 315,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              }
+            ],
+            "partition": {
+              "complete": true,
+              "mutually_exclusive": true,
+              "quote": "Patients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.",
+              "declared_arm_count": 3,
+              "reason": "randomised 1:1:1 to one of three groups"
+            }
+          }
+        ]
+      },
+      "target_shape": "study",
+      "aggregable": true,
+      "field_type": "sample_size",
+      "expect": {
+        "released": true,
+        "projection_status": "derived",
+        "value": "945"
+      },
+      "claim": {
+        "requested_scope": "allocated",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "",
+        "review_labels": {},
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "printed_total_wins",
+      "why": "a printed total is a fact; the sum only corroborates it",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.",
+      "response": {
+        "readings": [
+          {
+            "scope_label": "all randomised patients",
+            "value": "945",
+            "quote": "A total of 945 patients underwent randomization",
+            "population_phrase": "underwent randomization"
+          }
+        ],
+        "aggregation_sets": [
+          {
+            "population_type": "allocated",
+            "population_phrase": "underwent randomization",
+            "population_quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.",
+            "cohort_counts": [
+              {
+                "arm_label": "nivolumab group",
+                "count": 316,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "nivolumab-plus-ipilimumab group",
+                "count": 314,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "ipilimumab group",
+                "count": 315,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              }
+            ],
+            "partition": {
+              "complete": true,
+              "mutually_exclusive": true,
+              "quote": "Patients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.",
+              "declared_arm_count": 3,
+              "reason": "randomised 1:1:1 to one of three groups"
+            }
+          }
+        ]
+      },
+      "target_shape": "study",
+      "aggregable": true,
+      "field_type": "sample_size",
+      "expect": {
+        "released": true,
+        "projection_status": "ok",
+        "value": "945",
+        "aggregation_status": "derived"
+      },
+      "claim": {
+        "requested_scope": "allocated",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "",
+        "review_labels": {},
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "analysed_total_derived",
+      "why": "the analysed population sums to 936",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.",
+      "response": {
+        "readings": [],
+        "aggregation_sets": [
+          {
+            "population_type": "analysed",
+            "population_phrase": "Analysis population",
+            "population_quote": "Table 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)",
+            "cohort_counts": [
+              {
+                "arm_label": "Nivolumab",
+                "count": 311,
+                "quote": "Table 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)"
+              },
+              {
+                "arm_label": "Nivolumab plus Ipilimumab",
+                "count": 313,
+                "quote": "Table 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)"
+              },
+              {
+                "arm_label": "Ipilimumab",
+                "count": 312,
+                "quote": "Table 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)"
+              }
+            ],
+            "partition": {
+              "complete": true,
+              "mutually_exclusive": true,
+              "quote": "The analysis population comprised the three treatment groups, each patient counted once.",
+              "declared_arm_count": 3,
+              "reason": "three groups, each counted once"
+            }
+          }
+        ]
+      },
+      "target_shape": "study",
+      "aggregable": true,
+      "field_type": "sample_size",
+      "expect": {
+        "released": true,
+        "projection_status": "derived",
+        "value": "936"
+      },
+      "claim": {
+        "requested_scope": "analysed",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "",
+        "review_labels": {},
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "census_in_words",
+      "why": "papers write 'three groups', not '3 groups'",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group. Patients were randomised in a 2:1:1 ratio to one of three groups, nivolumab, nivolumab-plus-ipilimumab and ipilimumab.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.",
+      "response": {
+        "readings": [],
+        "aggregation_sets": [
+          {
+            "population_type": "allocated",
+            "population_phrase": "underwent randomization",
+            "population_quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.",
+            "cohort_counts": [
+              {
+                "arm_label": "nivolumab group",
+                "count": 316,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "nivolumab-plus-ipilimumab group",
+                "count": 314,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "ipilimumab group",
+                "count": 315,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              }
+            ],
+            "partition": {
+              "complete": true,
+              "mutually_exclusive": true,
+              "quote": "Patients were randomised in a 2:1:1 ratio to one of three groups, nivolumab, nivolumab-plus-ipilimumab and ipilimumab.",
+              "declared_arm_count": 3,
+              "reason": "randomised 1:1:1 to one of three groups"
+            }
+          }
+        ]
+      },
+      "target_shape": "study",
+      "aggregable": true,
+      "field_type": "sample_size",
+      "expect": {
+        "released": true,
+        "projection_status": "derived"
+      },
+      "claim": {
+        "requested_scope": "allocated",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "",
+        "review_labels": {},
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "timed_set_matching_timepoint",
+      "why": "the claim's timepoint is the set's",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.\n\nAt baseline, among those who underwent randomization, 316 patients were in the nivolumab group, 314 in the nivolumab-plus-ipilimumab group and 315 in the ipilimumab group, one of three groups.",
+      "response": {
+        "readings": [],
+        "aggregation_sets": [
+          {
+            "population_phrase": "underwent randomization",
+            "population_quote": "At baseline, among those who underwent randomization, 316 patients were in the nivolumab group, 314 in the nivolumab-plus-ipilimumab group and 315 in the ipilimumab group, one of three groups.",
+            "timepoint_phrase": "At baseline",
+            "timepoint_quote": "At baseline, among those who underwent randomization, 316 patients were in the nivolumab group, 314 in the nivolumab-plus-ipilimumab group and 315 in the ipilimumab group, one of three groups.",
+            "cohort_counts": [
+              {
+                "arm_label": "nivolumab group",
+                "count": 316,
+                "quote": "At baseline, among those who underwent randomization, 316 patients were in the nivolumab group, 314 in the nivolumab-plus-ipilimumab group and 315 in the ipilimumab group, one of three groups."
+              },
+              {
+                "arm_label": "nivolumab-plus-ipilimumab group",
+                "count": 314,
+                "quote": "At baseline, among those who underwent randomization, 316 patients were in the nivolumab group, 314 in the nivolumab-plus-ipilimumab group and 315 in the ipilimumab group, one of three groups."
+              },
+              {
+                "arm_label": "ipilimumab group",
+                "count": 315,
+                "quote": "At baseline, among those who underwent randomization, 316 patients were in the nivolumab group, 314 in the nivolumab-plus-ipilimumab group and 315 in the ipilimumab group, one of three groups."
+              }
+            ],
+            "partition": {
+              "complete": true,
+              "mutually_exclusive": true,
+              "quote": "At baseline, among those who underwent randomization, 316 patients were in the nivolumab group, 314 in the nivolumab-plus-ipilimumab group and 315 in the ipilimumab group, one of three groups.",
+              "declared_arm_count": 3,
+              "reason": "randomised 1:1:1 to one of three groups"
+            }
+          }
+        ]
+      },
+      "target_shape": "study",
+      "aggregable": true,
+      "field_type": "sample_size",
+      "expect": {
+        "released": true,
+        "projection_status": "derived"
+      },
+      "claim": {
+        "requested_scope": "allocated",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "At baseline",
+        "cohort_key": "",
+        "review_labels": {},
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "r2_analysed_count_in_allocated_set",
+      "why": "316 + 313 + 315 = 944, for a group of people who never met",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.",
+      "response": {
+        "readings": [],
+        "aggregation_sets": [
+          {
+            "population_type": "allocated",
+            "population_phrase": "underwent randomization",
+            "population_quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.",
+            "cohort_counts": [
+              {
+                "arm_label": "nivolumab group",
+                "count": 316,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "Nivolumab plus Ipilimumab",
+                "count": 313,
+                "quote": "Table 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)"
+              },
+              {
+                "arm_label": "ipilimumab group",
+                "count": 315,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              }
+            ],
+            "partition": {
+              "complete": true,
+              "mutually_exclusive": true,
+              "quote": "Patients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.",
+              "declared_arm_count": 3,
+              "reason": "randomised 1:1:1 to one of three groups"
+            }
+          }
+        ]
+      },
+      "target_shape": "study",
+      "aggregable": true,
+      "field_type": "sample_size",
+      "expect": {
+        "released": false,
+        "refusal_stage": "parse"
+      },
+      "claim": {
+        "requested_scope": "allocated",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "",
+        "review_labels": {},
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "r2_census_declared_two_passage_says_three",
+      "why": "the passage says three groups and the model declared two",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.",
+      "response": {
+        "readings": [],
+        "aggregation_sets": [
+          {
+            "population_type": "allocated",
+            "population_phrase": "underwent randomization",
+            "population_quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.",
+            "cohort_counts": [
+              {
+                "arm_label": "nivolumab group",
+                "count": 316,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "nivolumab-plus-ipilimumab group",
+                "count": 314,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              }
+            ],
+            "partition": {
+              "complete": true,
+              "mutually_exclusive": true,
+              "quote": "Patients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.",
+              "declared_arm_count": 2,
+              "reason": "randomised 1:1:1 to one of three groups"
+            }
+          }
+        ]
+      },
+      "target_shape": "study",
+      "aggregable": true,
+      "field_type": "sample_size",
+      "expect": {
+        "released": false,
+        "refusal_stage": "parse"
+      },
+      "claim": {
+        "requested_scope": "allocated",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "",
+        "review_labels": {},
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "r2_baseline_set_answers_week_12",
+      "why": "being the only candidate is not evidence of being the right one",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.\n\nAt baseline, among those who underwent randomization, 316 patients were in the nivolumab group, 314 in the nivolumab-plus-ipilimumab group and 315 in the ipilimumab group, one of three groups.",
+      "response": {
+        "readings": [],
+        "aggregation_sets": [
+          {
+            "population_phrase": "underwent randomization",
+            "population_quote": "At baseline, among those who underwent randomization, 316 patients were in the nivolumab group, 314 in the nivolumab-plus-ipilimumab group and 315 in the ipilimumab group, one of three groups.",
+            "timepoint_phrase": "At baseline",
+            "timepoint_quote": "At baseline, among those who underwent randomization, 316 patients were in the nivolumab group, 314 in the nivolumab-plus-ipilimumab group and 315 in the ipilimumab group, one of three groups.",
+            "cohort_counts": [
+              {
+                "arm_label": "nivolumab group",
+                "count": 316,
+                "quote": "At baseline, among those who underwent randomization, 316 patients were in the nivolumab group, 314 in the nivolumab-plus-ipilimumab group and 315 in the ipilimumab group, one of three groups."
+              },
+              {
+                "arm_label": "nivolumab-plus-ipilimumab group",
+                "count": 314,
+                "quote": "At baseline, among those who underwent randomization, 316 patients were in the nivolumab group, 314 in the nivolumab-plus-ipilimumab group and 315 in the ipilimumab group, one of three groups."
+              },
+              {
+                "arm_label": "ipilimumab group",
+                "count": 315,
+                "quote": "At baseline, among those who underwent randomization, 316 patients were in the nivolumab group, 314 in the nivolumab-plus-ipilimumab group and 315 in the ipilimumab group, one of three groups."
+              }
+            ],
+            "partition": {
+              "complete": true,
+              "mutually_exclusive": true,
+              "quote": "At baseline, among those who underwent randomization, 316 patients were in the nivolumab group, 314 in the nivolumab-plus-ipilimumab group and 315 in the ipilimumab group, one of three groups.",
+              "declared_arm_count": 3,
+              "reason": "randomised 1:1:1 to one of three groups"
+            }
+          }
+        ]
+      },
+      "target_shape": "study",
+      "aggregable": true,
+      "field_type": "sample_size",
+      "expect": {
+        "released": false
+      },
+      "claim": {
+        "requested_scope": "allocated",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "week 12",
+        "cohort_key": "",
+        "review_labels": {},
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "r2_same_arm_twice_same_count",
+      "why": "316 + 316 is a study of 632 people that never existed",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.",
+      "response": {
+        "readings": [],
+        "aggregation_sets": [
+          {
+            "population_type": "allocated",
+            "population_phrase": "underwent randomization",
+            "population_quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.",
+            "cohort_counts": [
+              {
+                "arm_label": "nivolumab group",
+                "count": 316,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "nivolumab group",
+                "count": 316,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              }
+            ],
+            "partition": {
+              "complete": true,
+              "mutually_exclusive": true,
+              "quote": "Patients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.",
+              "declared_arm_count": 2,
+              "reason": "randomised 1:1:1 to one of three groups"
+            }
+          }
+        ]
+      },
+      "target_shape": "study",
+      "aggregable": true,
+      "field_type": "sample_size",
+      "expect": {
+        "released": false,
+        "refusal_stage": "parse"
+      },
+      "claim": {
+        "requested_scope": "allocated",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "",
+        "review_labels": {},
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "r2_broken_set_blocks_unrelated_claim",
+      "why": "a broken allocated set beside a valid analysed one",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.",
+      "response": {
+        "readings": [],
+        "aggregation_sets": [
+          {
+            "population_type": "allocated",
+            "population_phrase": "underwent randomization",
+            "population_quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.",
+            "cohort_counts": [
+              {
+                "arm_label": "nivolumab group",
+                "count": -1,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              }
+            ],
+            "partition": {
+              "complete": true,
+              "mutually_exclusive": true,
+              "quote": "Patients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.",
+              "declared_arm_count": 3,
+              "reason": "randomised 1:1:1 to one of three groups"
+            }
+          },
+          {
+            "population_type": "analysed",
+            "population_phrase": "Analysis population",
+            "population_quote": "Table 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)",
+            "cohort_counts": [
+              {
+                "arm_label": "Nivolumab",
+                "count": 311,
+                "quote": "Table 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)"
+              },
+              {
+                "arm_label": "Nivolumab plus Ipilimumab",
+                "count": 313,
+                "quote": "Table 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)"
+              },
+              {
+                "arm_label": "Ipilimumab",
+                "count": 312,
+                "quote": "Table 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)"
+              }
+            ],
+            "partition": {
+              "complete": true,
+              "mutually_exclusive": true,
+              "quote": "The analysis population comprised the three treatment groups, each patient counted once.",
+              "declared_arm_count": 3,
+              "reason": "three groups, each counted once"
+            }
+          }
+        ]
+      },
+      "target_shape": "study",
+      "aggregable": true,
+      "field_type": "sample_size",
+      "expect": {
+        "released": true,
+        "projection_status": "derived",
+        "value": "936"
+      },
+      "claim": {
+        "requested_scope": "analysed",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "",
+        "review_labels": {},
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "r3_partition_about_the_analysed",
+      "why": "a sentence about the analysed population licensing allocated counts",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.\n\nThe analysis population comprised two treatment groups, each patient counted once.",
+      "response": {
+        "readings": [],
+        "aggregation_sets": [
+          {
+            "population_type": "allocated",
+            "population_phrase": "underwent randomization",
+            "population_quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.",
+            "cohort_counts": [
+              {
+                "arm_label": "nivolumab group",
+                "count": 316,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "nivolumab-plus-ipilimumab group",
+                "count": 314,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              }
+            ],
+            "partition": {
+              "complete": true,
+              "mutually_exclusive": true,
+              "quote": "The analysis population comprised two treatment groups, each patient counted once.",
+              "declared_arm_count": 2
+            }
+          }
+        ]
+      },
+      "target_shape": "study",
+      "aggregable": true,
+      "field_type": "sample_size",
+      "expect": {
+        "released": false,
+        "refusal_stage": "parse"
+      },
+      "claim": {
+        "requested_scope": "allocated",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "",
+        "review_labels": {},
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "r3_census_from_a_ratio",
+      "why": "'2:1:1' contains a 2 and declares three groups",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group. Patients were randomised in a 2:1:1 ratio to one of three groups, nivolumab, nivolumab-plus-ipilimumab and ipilimumab.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.",
+      "response": {
+        "readings": [],
+        "aggregation_sets": [
+          {
+            "population_type": "allocated",
+            "population_phrase": "underwent randomization",
+            "population_quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.",
+            "cohort_counts": [
+              {
+                "arm_label": "nivolumab group",
+                "count": 316,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "nivolumab-plus-ipilimumab group",
+                "count": 314,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              }
+            ],
+            "partition": {
+              "complete": true,
+              "mutually_exclusive": true,
+              "quote": "Patients were randomised in a 2:1:1 ratio to one of three groups, nivolumab, nivolumab-plus-ipilimumab and ipilimumab.",
+              "declared_arm_count": 2,
+              "reason": "randomised 1:1:1 to one of three groups"
+            }
+          }
+        ]
+      },
+      "target_shape": "study",
+      "aggregable": true,
+      "field_type": "sample_size",
+      "expect": {
+        "released": false,
+        "refusal_stage": "parse"
+      },
+      "claim": {
+        "requested_scope": "allocated",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "",
+        "review_labels": {},
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "r3_broken_unspecified_beside_itt",
+      "why": "unresolved is not 'about other people'",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.\n\nTable 4. ITT analysis population: Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)",
+      "response": {
+        "readings": [],
+        "aggregation_sets": [
+          {
+            "population_type": "analysed",
+            "population_phrase": "Analysis population",
+            "population_quote": "Table 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)",
+            "cohort_counts": [
+              {
+                "arm_label": "Nivolumab",
+                "count": -1,
+                "quote": "Table 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)"
+              },
+              {
+                "arm_label": "Nivolumab plus Ipilimumab",
+                "count": 313,
+                "quote": "Table 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)"
+              },
+              {
+                "arm_label": "Ipilimumab",
+                "count": 312,
+                "quote": "Table 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)"
+              }
+            ],
+            "partition": {
+              "complete": true,
+              "mutually_exclusive": true,
+              "quote": "The analysis population comprised the three treatment groups, each patient counted once.",
+              "declared_arm_count": 3,
+              "reason": "three groups, each counted once"
+            }
+          },
+          {
+            "population_phrase": "ITT analysis population",
+            "population_quote": "Table 4. ITT analysis population: Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)",
+            "cohort_counts": [
+              {
+                "arm_label": "Nivolumab",
+                "count": 311,
+                "quote": "Table 4. ITT analysis population: Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)"
+              },
+              {
+                "arm_label": "Nivolumab plus Ipilimumab",
+                "count": 313,
+                "quote": "Table 4. ITT analysis population: Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)"
+              },
+              {
+                "arm_label": "Ipilimumab",
+                "count": 312,
+                "quote": "Table 4. ITT analysis population: Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)"
+              }
+            ],
+            "partition": {
+              "complete": true,
+              "mutually_exclusive": true,
+              "quote": "The analysis population comprised the three treatment groups, each patient counted once.",
+              "declared_arm_count": 3,
+              "reason": "three groups, each counted once"
+            }
+          }
+        ]
+      },
+      "target_shape": "study",
+      "aggregable": true,
+      "field_type": "sample_size",
+      "expect": {
+        "released": false,
+        "aggregation_status": "protocol_error"
+      },
+      "claim": {
+        "requested_scope": "analysed/itt",
+        "required_axes": [
+          "population_basis",
+          "analysis_set"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "",
+        "review_labels": {},
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "r3_claim_names_no_population",
+      "why": "on_unknown: reject, applied to the claim's own side",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.",
+      "response": {
+        "readings": [],
+        "aggregation_sets": [
+          {
+            "population_type": "allocated",
+            "population_phrase": "underwent randomization",
+            "population_quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.",
+            "cohort_counts": [
+              {
+                "arm_label": "nivolumab group",
+                "count": 316,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "nivolumab-plus-ipilimumab group",
+                "count": 314,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "ipilimumab group",
+                "count": 315,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              }
+            ],
+            "partition": {
+              "complete": true,
+              "mutually_exclusive": true,
+              "quote": "Patients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.",
+              "declared_arm_count": 3,
+              "reason": "randomised 1:1:1 to one of three groups"
+            }
+          }
+        ]
+      },
+      "target_shape": "study",
+      "aggregable": true,
+      "field_type": "sample_size",
+      "expect": {
+        "released": false,
+        "aggregation_status": "rejected"
+      },
+      "claim": {
+        "requested_scope": "",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "",
+        "review_labels": {},
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "r4_dose_is_not_a_census",
+      "why": "'3 mg treatment' is a dose; three valid components make it the only test",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group. Patients received 3 mg treatment, with no patient in more than one of them.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.",
+      "response": {
+        "readings": [],
+        "aggregation_sets": [
+          {
+            "population_type": "allocated",
+            "population_phrase": "underwent randomization",
+            "population_quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.",
+            "cohort_counts": [
+              {
+                "arm_label": "nivolumab group",
+                "count": 316,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "nivolumab-plus-ipilimumab group",
+                "count": 314,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "ipilimumab group",
+                "count": 315,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              }
+            ],
+            "partition": {
+              "complete": true,
+              "mutually_exclusive": true,
+              "quote": "Patients received 3 mg treatment, with no patient in more than one of them.",
+              "declared_arm_count": 3
+            }
+          }
+        ]
+      },
+      "target_shape": "study",
+      "aggregable": true,
+      "field_type": "sample_size",
+      "expect": {
+        "released": false,
+        "refusal_stage": "parse"
+      },
+      "claim": {
+        "requested_scope": "allocated",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "",
+        "review_labels": {},
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "r4_printed_total_without_an_analysis_set",
+      "why": "an ITT claim answered by a total whose analysis set nobody checked",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.\n\nTable 4. ITT analysis population: Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nTable 5. Analysis population: 936 patients in total.",
+      "response": {
+        "readings": [
+          {
+            "scope_label": "analysis population",
+            "value": "936",
+            "quote": "Table 5. Analysis population: 936 patients in total.",
+            "population_phrase": "Analysis population"
+          }
+        ],
+        "aggregation_sets": []
+      },
+      "target_shape": "study",
+      "aggregable": true,
+      "field_type": "sample_size",
+      "expect": {
+        "released": false,
+        "projection_status": "scope_unresolved"
+      },
+      "claim": {
+        "requested_scope": "analysed/itt",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "",
+        "review_labels": {},
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "string_false_is_not_a_boolean",
+      "why": "bool('false') is True in Python",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.",
+      "response": {
+        "readings": [],
+        "aggregation_sets": [
+          {
+            "population_type": "allocated",
+            "population_phrase": "underwent randomization",
+            "population_quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.",
+            "cohort_counts": [
+              {
+                "arm_label": "nivolumab group",
+                "count": 316,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "nivolumab-plus-ipilimumab group",
+                "count": 314,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "ipilimumab group",
+                "count": 315,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              }
+            ],
+            "partition": {
+              "complete": "false",
+              "mutually_exclusive": true,
+              "quote": "Patients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.",
+              "declared_arm_count": 3,
+              "reason": "randomised 1:1:1 to one of three groups"
+            }
+          }
+        ]
+      },
+      "target_shape": "study",
+      "aggregable": true,
+      "field_type": "sample_size",
+      "expect": {
+        "released": false,
+        "refusal_stage": "parse"
+      },
+      "claim": {
+        "requested_scope": "allocated",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "",
+        "review_labels": {},
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "unanchored_partition_claim",
+      "why": "a true with nothing locatable behind it",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.",
+      "response": {
+        "readings": [],
+        "aggregation_sets": [
+          {
+            "population_type": "allocated",
+            "population_phrase": "underwent randomization",
+            "population_quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.",
+            "cohort_counts": [
+              {
+                "arm_label": "nivolumab group",
+                "count": 316,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "nivolumab-plus-ipilimumab group",
+                "count": 314,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "ipilimumab group",
+                "count": 315,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              }
+            ],
+            "partition": {
+              "complete": true,
+              "mutually_exclusive": true,
+              "quote": "The three groups together comprised the whole trial population.",
+              "declared_arm_count": 3
+            }
+          }
+        ]
+      },
+      "target_shape": "study",
+      "aggregable": true,
+      "field_type": "sample_size",
+      "expect": {
+        "released": false,
+        "aggregation_status": "rejected"
+      },
+      "claim": {
+        "requested_scope": "allocated",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "",
+        "review_labels": {},
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "no_partition_at_all",
+      "why": "nothing licenses adding them",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.",
+      "response": {
+        "readings": [],
+        "aggregation_sets": [
+          {
+            "population_phrase": "underwent randomization",
+            "population_quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.",
+            "cohort_counts": [
+              {
+                "arm_label": "nivolumab group",
+                "count": 316,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "nivolumab-plus-ipilimumab group",
+                "count": 314,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "ipilimumab group",
+                "count": 315,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              }
+            ]
+          }
+        ]
+      },
+      "target_shape": "study",
+      "aggregable": true,
+      "field_type": "sample_size",
+      "expect": {
+        "released": false,
+        "refusal_stage": "parse"
+      },
+      "claim": {
+        "requested_scope": "allocated",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "",
+        "review_labels": {},
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "explicit_totals_disagree",
+      "why": "the paper does not agree with itself; a sum may not settle it",
+      "document": "A total of 944 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.",
+      "response": {
+        "readings": [
+          {
+            "scope_label": "all randomised",
+            "value": "944",
+            "quote": "A total of 944 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.",
+            "population_phrase": "underwent randomization"
+          }
+        ],
+        "aggregation_sets": [
+          {
+            "population_type": "allocated",
+            "population_phrase": "underwent randomization",
+            "population_quote": "A total of 944 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.",
+            "cohort_counts": [
+              {
+                "arm_label": "nivolumab group",
+                "count": 316,
+                "quote": "A total of 944 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "nivolumab-plus-ipilimumab group",
+                "count": 314,
+                "quote": "A total of 944 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "ipilimumab group",
+                "count": 315,
+                "quote": "A total of 944 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              }
+            ],
+            "partition": {
+              "complete": true,
+              "mutually_exclusive": true,
+              "quote": "Patients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.",
+              "declared_arm_count": 3,
+              "reason": "randomised 1:1:1 to one of three groups"
+            }
+          }
+        ]
+      },
+      "target_shape": "study",
+      "aggregable": true,
+      "field_type": "sample_size",
+      "expect": {
+        "released": false,
+        "projection_status": "contradictory"
+      },
+      "claim": {
+        "requested_scope": "allocated",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "",
+        "review_labels": {},
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "analysed_set_cannot_answer_allocated",
+      "why": "different people, so not this claim's answer",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.",
+      "response": {
+        "readings": [],
+        "aggregation_sets": [
+          {
+            "population_type": "analysed",
+            "population_phrase": "Analysis population",
+            "population_quote": "Table 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)",
+            "cohort_counts": [
+              {
+                "arm_label": "Nivolumab",
+                "count": 311,
+                "quote": "Table 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)"
+              },
+              {
+                "arm_label": "Nivolumab plus Ipilimumab",
+                "count": 313,
+                "quote": "Table 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)"
+              },
+              {
+                "arm_label": "Ipilimumab",
+                "count": 312,
+                "quote": "Table 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)"
+              }
+            ],
+            "partition": {
+              "complete": true,
+              "mutually_exclusive": true,
+              "quote": "The analysis population comprised the three treatment groups, each patient counted once.",
+              "declared_arm_count": 3,
+              "reason": "three groups, each counted once"
+            }
+          }
+        ]
+      },
+      "target_shape": "study",
+      "aggregable": true,
+      "field_type": "sample_size",
+      "expect": {
+        "released": false,
+        "aggregation_status": "rejected"
+      },
+      "claim": {
+        "requested_scope": "allocated",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "",
+        "review_labels": {},
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "field_outside_the_whitelist",
+      "why": "the policy, not the prompt, is the permission",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.",
+      "response": {
+        "readings": [],
+        "aggregation_sets": [
+          {
+            "population_type": "allocated",
+            "population_phrase": "underwent randomization",
+            "population_quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.",
+            "cohort_counts": [
+              {
+                "arm_label": "nivolumab group",
+                "count": 316,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "nivolumab-plus-ipilimumab group",
+                "count": 314,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              },
+              {
+                "arm_label": "ipilimumab group",
+                "count": 315,
+                "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group."
+              }
+            ],
+            "partition": {
+              "complete": true,
+              "mutually_exclusive": true,
+              "quote": "Patients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.",
+              "declared_arm_count": 3,
+              "reason": "randomised 1:1:1 to one of three groups"
+            }
+          }
+        ]
+      },
+      "target_shape": "study",
+      "aggregable": true,
+      "field_type": "progression_free_survival",
+      "expect": {
+        "released": false,
+        "aggregation_status": "not_applicable"
+      },
+      "claim": {
+        "requested_scope": "allocated",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "",
+        "review_labels": {},
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "batch_is_not_json",
+      "why": "nothing can be read",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.",
+      "response": {
+        "nope": 1
+      },
+      "target_shape": "study",
+      "aggregable": true,
+      "field_type": "sample_size",
+      "expect": {
+        "released": false,
+        "projection_status": "batch_failed",
+        "refusal_stage": "response"
+      },
+      "claim": {
+        "requested_scope": "allocated",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "",
+        "review_labels": {},
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "ma004_allocated_not_analysed",
+      "why": "314 allocated and 313 analysed are two readings of ONE arm",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.",
+      "response": {
+        "readings": [
+          {
+            "arm_label": "nivolumab group",
+            "value": "316",
+            "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.",
+            "population_phrase": "underwent randomization"
+          },
+          {
+            "arm_label": "nivolumab-plus-ipilimumab group",
+            "value": "314",
+            "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.",
+            "population_phrase": "underwent randomization"
+          },
+          {
+            "arm_label": "ipilimumab group",
+            "value": "315",
+            "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.",
+            "population_phrase": "underwent randomization"
+          },
+          {
+            "arm_label": "Nivolumab plus Ipilimumab",
+            "value": "313",
+            "quote": "Nivolumab plus Ipilimumab (N = 313)",
+            "population_phrase": "Analysis population"
+          }
+        ]
+      },
+      "target_shape": "arm",
+      "aggregable": false,
+      "field_type": "cohort_n",
+      "expect": {
+        "released": true,
+        "projection_status": "ok",
+        "value": "314"
+      },
+      "claim": {
+        "requested_scope": "allocated",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "nivolumab_plus_ipilimumab",
+        "review_labels": {
+          "nivolumab_plus_ipilimumab": "Nivolumab (1 mg/kg) + ipilimumab (3 mg/kg)",
+          "ipilimumab_plus_placebo": "Ipilimumab (3 mg/kg) + placebo",
+          "nivolumab_plus_placebo": "Nivolumab (3 mg/kg) + placebo"
+        },
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "arm_never_reported",
+      "why": "an arm the batch never reported is not answered by another",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.",
+      "response": {
+        "readings": [
+          {
+            "arm_label": "nivolumab group",
+            "value": "316",
+            "quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.",
+            "population_phrase": "underwent randomization"
+          }
+        ]
+      },
+      "target_shape": "arm",
+      "aggregable": false,
+      "field_type": "cohort_n",
+      "expect": {
+        "released": false
+      },
+      "claim": {
+        "requested_scope": "allocated",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "ipilimumab_plus_placebo",
+        "review_labels": {
+          "nivolumab_plus_ipilimumab": "Nivolumab (1 mg/kg) + ipilimumab (3 mg/kg)",
+          "ipilimumab_plus_placebo": "Ipilimumab (3 mg/kg) + placebo",
+          "nivolumab_plus_placebo": "Nivolumab (3 mg/kg) + placebo"
+        },
+        "comparison": ""
+      }
+    },
+    {
+      "case_id": "comparison_direction_matters",
+      "why": "A versus B and B versus A are different numbers",
+      "document": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group.\n\nPatients were randomly assigned in a 1:1:1 ratio to one of three groups, and no patient received more than one assigned regimen.\n\nTable 3. Analysis population. Nivolumab (N = 311), Nivolumab plus Ipilimumab (N = 313), Ipilimumab (N = 312)\n\nThe analysis population comprised the three treatment groups, each patient counted once.\n\nThe hazard ratio for the comparison between the nivolumab-plus-ipilimumab group and the nivolumab group was 0.74 (95% CI, 0.60 to 0.92).",
+      "response": {
+        "readings": [
+          {
+            "left_label": "nivolumab-plus-ipilimumab group",
+            "right_label": "nivolumab group",
+            "value": "0.74 (95% CI, 0.60 to 0.92)",
+            "quote": "The hazard ratio for the comparison between the nivolumab-plus-ipilimumab group and the nivolumab group was 0.74 (95% CI, 0.60 to 0.92)."
+          }
+        ]
+      },
+      "target_shape": "comparison",
+      "aggregable": false,
+      "field_type": "hazard_ratio",
+      "expect": {
+        "released": false,
+        "projection_status": "unsupported"
+      },
+      "claim": {
+        "requested_scope": "allocated",
+        "required_axes": [
+          "population_basis"
+        ],
+        "timepoint_label": "",
+        "cohort_key": "",
+        "review_labels": {
+          "nivolumab_plus_ipilimumab": "Nivolumab (1 mg/kg) + ipilimumab (3 mg/kg)",
+          "ipilimumab_plus_placebo": "Ipilimumab (3 mg/kg) + placebo",
+          "nivolumab_plus_placebo": "Nivolumab (3 mg/kg) + placebo"
+        },
+        "comparison": "nivolumab_plus_placebo_vs_nivolumab_plus_ipilimumab"
+      }
+    }
+  ]
+}

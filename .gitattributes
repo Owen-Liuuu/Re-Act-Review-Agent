@@ -9,3 +9,5 @@
 configs/gates/*.json text eol=lf
 configs/aggregation/*.json text eol=lf
 configs/aggregation/evaluators/*.json text eol=lf
+eval/baselines/*.json text eol=lf
+eval/aggregation_behavior.py text eol=lf
