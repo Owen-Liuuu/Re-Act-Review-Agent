@@ -144,7 +144,7 @@ def test_a_derived_total_never_carries_a_quote_that_prints_it():
 
 def test_the_policy_that_permitted_it_is_recorded_with_its_hash():
     projection = _project(_batch(sets=[_set()]))
-    assert projection.policy_id == "safe_sum_v2"
+    assert projection.policy_id == "safe_sum_v3"
     assert len(projection.policy_sha256) == 64
 
 
@@ -601,7 +601,7 @@ def test_nothing_is_derived_when_no_components_were_offered():
 
 def test_the_policy_is_hashed_so_a_run_can_say_which_one_it_applied():
     policy = load_aggregation_policy()
-    assert len(policy.sha256) == 64 and policy.policy_id == "safe_sum_v2"
+    assert len(policy.sha256) == 64 and policy.policy_id == "safe_sum_v3"
 
 
 # --- T11 again: a timepoint is checked even with only one candidate -------
@@ -668,7 +668,7 @@ def test_a_derived_total_carries_its_policy_and_all_four_kinds_of_anchor():
     projection = _project(_batch(sets=[_set()]))
     result = to_source_result(projection)
     provenance = result.aggregation_provenance
-    assert provenance.policy_id == "safe_sum_v2"
+    assert provenance.policy_id == "safe_sum_v3"
     assert len(provenance.policy_sha256) == 64
     assert provenance.aggregation_set.startswith("allocated")
     assert provenance.population_quote == ALLOCATION
@@ -695,4 +695,113 @@ def test_a_released_printed_total_still_carries_the_broken_sets():
         _total("945", "A total of 945 patients underwent randomization")],
         sets=[_set(counts=[{**ALLOCATED_ARMS[0], "count": "not a number"}])])
     provenance = to_source_result(_project(reading)).aggregation_provenance
-    assert provenance.errors and provenance.policy_id == "safe_sum_v2"
+    assert provenance.errors and provenance.policy_id == "safe_sum_v3"
+
+
+# --- round 3: the sentence that licenses the sum must be about these people ---
+
+TWO_GROUP_ANALYSIS = ("The analysis population comprised two treatment groups, "
+                      "each patient counted once.")
+RATIO_PARTITION = ("Patients were randomised in a 2:1:1 ratio to one of three "
+                   "groups, nivolumab, nivolumab-plus-ipilimumab and ipilimumab.")
+#: The ratio sentence sits WITH the allocation sentence, as it does in a paper.
+#: A randomisation sentence names no population of its own, so it is accepted
+#: only where the paper puts it beside the counts it divides — parked at the end
+#: of the document it is refused, which is the same-block rule working.
+ROUND3_PAPER = "\n\n".join([ALLOCATION + " " + RATIO_PARTITION, PARTITION,
+                            ANALYSIS_ROW, ANALYSIS_PARTITION, TWO_GROUP_ANALYSIS])
+
+
+def test_a_partition_about_the_analysed_cannot_license_allocated_counts():
+    """"the analysis population comprised two groups" says nothing about who
+    was randomised, and 316 + 314 is not the trial."""
+    reading = _batch(sets=[_set(counts=ALLOCATED_ARMS[:2],
+                                partition={"complete": True,
+                                           "mutually_exclusive": True,
+                                           "quote": TWO_GROUP_ANALYSIS,
+                                           "declared_arm_count": 2})],
+                     document=ROUND3_PAPER)
+    assert reading.aggregation_sets == []
+    assert any("describes the analysed" in e for e in reading.aggregation_errors)
+    assert _project(reading).status != DERIVED
+
+
+def test_a_census_may_not_be_read_out_of_a_randomisation_ratio():
+    """"2:1:1" contains a 2 and declares three groups, not two."""
+    reading = _batch(sets=[_set(counts=ALLOCATED_ARMS[:2],
+                                partition={"complete": True,
+                                           "mutually_exclusive": True,
+                                           "quote": RATIO_PARTITION,
+                                           "declared_arm_count": 2})],
+                     document=ROUND3_PAPER)
+    assert reading.aggregation_sets == []
+    assert any("does not state" in e for e in reading.aggregation_errors)
+
+
+def test_the_same_ratio_passage_does_support_its_real_census_of_three():
+    projection = _project(_batch(sets=[_set(partition={
+        "complete": True, "mutually_exclusive": True,
+        "quote": RATIO_PARTITION, "declared_arm_count": 3})],
+        document=ROUND3_PAPER))
+    assert projection.status == DERIVED and projection.derived_value == 945
+
+
+ITT_ROW = ("Table 4. ITT analysis population: Nivolumab (N = 311), Nivolumab "
+           "plus Ipilimumab (N = 313), Ipilimumab (N = 312)")
+ITT_PAPER = PAPER + "\n\n" + ITT_ROW
+ITT = PopulationScope(basis="analysed", analysis_set="itt")
+BOTH_AXES = ["population_basis", "analysis_set"]
+
+
+def test_a_broken_set_whose_analysis_set_is_unstated_still_blocks_an_itt_claim():
+    """Unresolved is not "confirmed to be about other people".
+
+    An analysed set that never names its analysis set may well have been the ITT
+    one; treating it as unrelated assumes the answer to the question nobody
+    could answer.
+    """
+    broken = _set(counts=[{**ANALYSED_ARMS[0], "count": -1}, *ANALYSED_ARMS[1:]],
+                  phrase="Analysis population", witness=ANALYSIS_ROW,
+                  partition={**GOOD_PARTITION, "quote": ANALYSIS_PARTITION})
+    good = _set(counts=[_count("Nivolumab", 311, ITT_ROW),
+                        _count("Nivolumab plus Ipilimumab", 313, ITT_ROW),
+                        _count("Ipilimumab", 312, ITT_ROW)],
+                phrase="ITT analysis population", witness=ITT_ROW,
+                partition={**GOOD_PARTITION, "quote": ANALYSIS_PARTITION})
+    reading = _batch(sets=[broken, good], document=ITT_PAPER)
+    projection = project_claim(reading, target_shape=STUDY, requested_scope=ITT,
+                               required_axes=BOTH_AXES, field_type="sample_size")
+    assert projection.status != DERIVED
+    assert projection.aggregation_status == PROTOCOL_ERROR
+
+
+def test_a_claim_that_names_no_population_is_not_answered_by_the_only_set():
+    """on_unknown: reject, applied to the claim's own side.
+
+    A derived total is the kind of answer nobody can re-check against a printed
+    number, so which population it counts has to have been asked for — not
+    inferred from there being nothing else on offer.
+    """
+    projection = _project(_batch(sets=[_set()]), scope=None)
+    assert projection.status != DERIVED
+    assert projection.aggregation_status == REJECTED
+    assert "does not say which population" in projection.aggregation_reason
+
+
+def test_an_unknown_claim_population_is_refused_just_as_a_missing_one_is():
+    projection = _project(_batch(sets=[_set()]), scope=PopulationScope())
+    assert projection.status != DERIVED
+    assert projection.aggregation_status == REJECTED
+
+
+# --- an arm projection never pretends a sum was considered ----------------
+
+def test_an_arm_projection_carries_no_aggregation_provenance_at_all():
+    """Empty fields would say a sum left no trace. None says it never arose."""
+    from react_review.normalize.cohorts import parse_comparison   # noqa: F401
+    reading = parse_batch({"readings": [
+        {"arm_label": "nivolumab group", "value": "316", "quote": ALLOCATION,
+         "population_phrase": "underwent randomization"}]}, PAPER)
+    projection = project_claim(
+        reading, review_labels={"a": "Nivolumab (3 mg/kg)"}, cohort_key="a")
+    assert to_source_result(projection).aggregation_provenance is None

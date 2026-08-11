@@ -42,6 +42,28 @@ _TARGET_CHECK = {
 }
 
 
+def _provenance(projection: Projection) -> AggregationProvenance | None:
+    """The account of a sum — or nothing at all, where no sum was ever in play.
+
+    An arm or comparison projection never reaches the aggregation policy. Giving
+    it an empty provenance record would say that a sum was considered and left
+    no trace, which is a different claim from the true one: that the question
+    never arose.
+    """
+    if projection.policy_id or projection.aggregation_errors:
+        return AggregationProvenance(
+            policy_id=projection.policy_id,
+            policy_sha256=projection.policy_sha256,
+            aggregation_set=projection.aggregation_set,
+            population_quote=projection.population_quote,
+            timepoint_quote=projection.timepoint_quote,
+            partition_quote=projection.partition_quote,
+            component_quotes=[c.quote for c in projection.cohort_counts if c.quote],
+            errors=list(projection.aggregation_errors),
+            unrelated_rejections=list(projection.unrelated_rejections))
+    return None
+
+
 def to_source_result(projection: Projection) -> SourceValueResult:
     """One claim's projection, as the evidence object the audit already speaks."""
     counts = [CohortCount(label=c.arm_label, count=c.count, quote=c.quote)
@@ -60,17 +82,7 @@ def to_source_result(projection: Projection) -> SourceValueResult:
     common = dict(cohort_check="", cohort_counts=counts,
                   aggregation_status=projection.aggregation_status,
                   aggregation_reason=reason,
-                  aggregation_provenance=AggregationProvenance(
-                      policy_id=projection.policy_id,
-                      policy_sha256=projection.policy_sha256,
-                      aggregation_set=projection.aggregation_set,
-                      population_quote=projection.population_quote,
-                      timepoint_quote=projection.timepoint_quote,
-                      partition_quote=projection.partition_quote,
-                      component_quotes=[c.quote for c in projection.cohort_counts
-                                        if c.quote],
-                      errors=list(projection.aggregation_errors),
-                      unrelated_rejections=list(projection.unrelated_rejections)))
+                  aggregation_provenance=_provenance(projection))
 
     if projection.status == DERIVED:
         return SourceValueResult(

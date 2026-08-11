@@ -29,6 +29,7 @@ PINNED = {
     "configs/gates/cross_domain_v2.json": "E29CF4F803BA0F8A",
     "configs/aggregation/safe_sum_v1.json": "1C99DCE79E4FDD3A",
     "configs/aggregation/safe_sum_v2.json": "5FED9271920DF0A4",
+    "configs/aggregation/safe_sum_v3.json": "93E381F2ED633E06",
 }
 
 

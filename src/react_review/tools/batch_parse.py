@@ -236,6 +236,10 @@ def _parse_set(item: object, index: int, document: str
     partition, reason = _parse_partition(item.get("partition"), where, document)
     if partition is None:
         return fail(reason)
+    reason = _partition_describes_this_set(partition, scope, witness,
+                                           timepoint_phrase, where, document)
+    if reason:
+        return fail(reason)
     reason = _census_is_read_not_asserted(partition, counts, where)
     if reason:
         return fail(reason)
@@ -291,10 +295,65 @@ def _component_belongs(count: BatchCohortCount, population_phrase: str,
     return ""
 
 
+def _partition_describes_this_set(partition: PartitionWitness,
+                                  scope: PopulationScope, population_quote: str,
+                                  timepoint_phrase: str, where: str,
+                                  document: str) -> str:
+    """Whether the sentence licensing the sum is about THESE people, at this time.
+
+    Everything else in a set is now tied to its population, and this was not: a
+    sentence saying the ANALYSED population fell into two groups could license
+    adding up two ALLOCATED counts. It is the same substitution as before, made
+    at the one place that decides whether adding is allowed at all — so a
+    partition that names a different population is refused, and one that names
+    none is accepted only where the paper puts it beside this set's own
+    population words, which is the weakest link a reader could still follow.
+    """
+    if not partition.anchored:
+        # No locatable passage at all. The policy refuses that, in those words;
+        # this check is about WHOM a passage describes, so it has nothing to add.
+        return ""
+    stated = classify_population(partition.quote, source="same_quote")
+    if stated.stated:
+        if stated.basis != scope.basis:
+            return (f"{where} counts the {scope.describe()} population but its "
+                    f"partition passage describes the {stated.describe()} one, "
+                    "which is a statement about different people")
+        if (stated.axis_stated("analysis_set") and scope.axis_stated("analysis_set")
+                and stated.analysis_set != scope.analysis_set):
+            return (f"{where} counts the {scope.describe()} population and its "
+                    f"partition passage describes {stated.describe()}")
+    elif not _same_block(partition.quote, population_quote, document):
+        return (f"{where} gives a partition passage that names no population and "
+                "does not sit beside the one it is supposed to divide, so nothing "
+                "connects it to these counts")
+    if timepoint_phrase and not normalised_contains(partition.quote, timepoint_phrase):
+        # A partition established at one moment is not a partition at another:
+        # groups complete at randomisation need not be complete at follow-up.
+        if not _same_block(partition.quote, population_quote, document):
+            return (f"{where} counts at {timepoint_phrase!r} but its partition "
+                    "passage neither states that timepoint nor sits with the "
+                    "counts it divides")
+    return ""
+
+
+def _same_block(one: str, other: str, document: str) -> str | bool:
+    """Whether two passages sit close enough to be about the same thing."""
+    verdict, _ = binding_verdict(one, "", quote=other, document=document)
+    return bound(verdict)
+
+
 _NUMBER_WORDS = {
     "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
     "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
 }
+
+#: What a number has to be NEXT TO before it counts as a number of arms. Without
+#: this, "randomised in a 2:1:1 ratio to one of three groups" supports a declared
+#: census of two, because a 2 does appear in it — and two of the three arms are
+#: then summed into a study total.
+_GROUP_NOUNS = ("group", "groups", "arm", "arms", "cohort", "cohorts",
+                "treatment", "treatments", "regimen", "regimens")
 
 
 def _census_is_read_not_asserted(partition: PartitionWitness,
@@ -318,8 +377,7 @@ def _census_is_read_not_asserted(partition: PartitionWitness,
 
     if partition.declared_arm_count is not None:
         n = partition.declared_arm_count
-        word = next((w for w, v in _NUMBER_WORDS.items() if v == n), "")
-        if not _has_token(quote, str(n)) and not (word and _has_token(quote, word)):
+        if not _states_group_count(quote, n):
             return (f"{where} says the population was divided into {n} groups, "
                     "which its own partition passage does not state")
         if n != len(counts):
@@ -350,8 +408,24 @@ def _census_is_read_not_asserted(partition: PartitionWitness,
     return ""
 
 
-def _has_token(normalised_quote: str, needle: str) -> bool:
-    return needle.lower() in normalised_quote.split()
+def _states_group_count(normalised_quote: str, n: int) -> bool:
+    """Whether the passage says there are N GROUPS, not merely that N occurs in it.
+
+    A ratio, a dose, a year and a page number are all numbers a passage can
+    contain without saying anything about how many arms there are. The number
+    has to be attached to a word that means "arm": "one of three groups",
+    "3 treatment arms", "divided into two cohorts".
+    """
+    tokens = normalised_quote.split()
+    word = next((w for w, v in _NUMBER_WORDS.items() if v == n), "")
+    wanted = {str(n), word} - {""}
+    for index, token in enumerate(tokens):
+        if token in wanted:
+            # The noun follows the count, allowing one qualifier between them
+            # ("three treatment groups", "3 parallel arms").
+            if any(t in _GROUP_NOUNS for t in tokens[index + 1:index + 3]):
+                return True
+    return False
 
 
 def _normalise(text: str) -> str:

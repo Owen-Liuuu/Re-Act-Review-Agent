@@ -12,8 +12,9 @@ matching fails the suite instead of sitting in a document nobody recomputes.
 | --- | --- | --- | --- |
 | v1 | `configs/gates/cross_domain_v1.json` | `AE182D0097A67A18` | superseded; results withdrawn |
 | v2 | `configs/gates/cross_domain_v2.json` | `E29CF4F803BA0F8A` | current; **provisional** |
-| v1 | `configs/aggregation/safe_sum_v1.json` | `1C99DCE79E4FDD3A` | superseded by v2; never applied to a published result |
-| v2 | `configs/aggregation/safe_sum_v2.json` | `5FED9271920DF0A4` | current |
+| v1 | `configs/aggregation/safe_sum_v1.json` | `1C99DCE79E4FDD3A` | superseded; never applied to a result |
+| v2 | `configs/aggregation/safe_sum_v2.json` | `5FED9271920DF0A4` | superseded; never applied to a result |
+| v3 | `configs/aggregation/safe_sum_v3.json` | `93E381F2ED633E06` | current |
 
 ## The v2 pin was wrong, and the pins were not reproducible
 
@@ -31,6 +32,15 @@ It happened again while this section was being written: the `safe_sum_v2` row
 was first filled in with a hash that had never been computed from anything. The
 test below caught it within the minute, which is the whole argument for having
 the test rather than the rule.
+
+And once more in the next review round, where the reflex was to edit `v2` in
+place because the commit publishing it had just been sent back for rework. That
+reasoning is exactly the exception the rule exists to refuse — a version is not
+provisional because its author is still unhappy with it. v2 is restored to its
+`8b21e68` bytes and the corrections are `safe_sum_v3`. Three versions in two
+days is not version inflation; it is three genuinely different sets of rules,
+and the numbers are the only honest record of which one a total was derived
+under.
 
 The reason nobody noticed the first time is the second fault: no test compared
 the pin to the file, and the file's hash was not reproducible anyway. The repository had no

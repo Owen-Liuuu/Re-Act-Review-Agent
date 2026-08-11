@@ -58,7 +58,7 @@ REJECTED = "rejected"
 PROTOCOL_ERROR = "protocol_error"
 NOT_APPLICABLE = "not_applicable"
 
-DEFAULT_POLICY = "configs/aggregation/safe_sum_v2.json"
+DEFAULT_POLICY = "configs/aggregation/safe_sum_v3.json"
 
 
 @dataclass(frozen=True)
@@ -113,7 +113,8 @@ def load_aggregation_policy(path: str | Path = DEFAULT_POLICY) -> AggregationPol
         raise ContractError(
             f"{resolved} declares requirement(s) {sorted(unread)} that nothing "
             "reads. A rule the loader ignores is documentation pretending to be a "
-            "contract; move it to `notes` or implement it")
+            "contract: setting it to false would load cleanly and change nothing. "
+            "Move it to `invariants` if the code always enforces it, or read it")
     return AggregationPolicy(
         policy_id=str(body.get("policy_id") or resolved.stem),
         sha256=sha256_file(resolved),
@@ -144,10 +145,6 @@ _READ_REQUIREMENTS = {
     "min_components", "require_partition_anchor", "require_complete",
     "require_mutually_exclusive", "require_arm_census", "require_distinct_arms",
     "population_must_match_claim", "timepoint_must_match_claim",
-    # Enforced in the parser, which has no policy object; declared here so the
-    # file can describe them and the loader can confirm nothing else appears.
-    "require_census_in_quote", "require_census_exact",
-    "require_component_population_binding", "require_component_timepoint_binding",
 }
 
 
@@ -223,7 +220,7 @@ def derive_partitioned_total(
     # and then no surviving set can be shown to be the only candidate, which is
     # the whole basis on which a set is allowed to answer.
     blocking, aside = _split_rejected(rejected_sets or [], requested_scope,
-                                      rules, population_contract)
+                                      rules, population_contract, timepoint_label)
     out.unrelated_rejections = [r.describe() for r in aside]
     if blocking:
         # A malformed aggregation is a broken answer, not a missing one. Calling
@@ -235,6 +232,19 @@ def derive_partitioned_total(
     if not sets:
         out.status = NOT_APPLICABLE
         out.reason = "the response offered no per-arm counts to add up"
+        return out
+
+    # `on_unknown: reject`, applied to the claim's own side. Being the only set
+    # on offer is not a statement that it counts the people the review reports —
+    # and a derived total is exactly the kind of answer nobody can re-check by
+    # looking at one printed number, so the population it belongs to has to have
+    # been asked for rather than inferred from a lack of alternatives.
+    if rules.population_must_match_claim and (
+            requested_scope is None or not requested_scope.stated):
+        out.status = REJECTED
+        out.reason = ("the claim does not say which population it reports, and "
+                      f"this policy ({rules.on_unknown} on unknown) will not let "
+                      "a computed total stand in for a population nobody named")
         return out
 
     chosen, reason, exact = _select_set(sets, requested_scope, timepoint_label,
@@ -347,14 +357,14 @@ def _normalise_timepoint(text: str) -> str:
 
 def _split_rejected(rejected: list[RejectedAggregationSet],
                     requested: PopulationScope | None, rules: AggregationPolicy,
-                    contract: PopulationContract | None
+                    contract: PopulationContract | None, timepoint_label: str = ""
                     ) -> tuple[list[RejectedAggregationSet],
                                list[RejectedAggregationSet]]:
     """Which broken sets could have held this claim's answer, and which could not."""
     if requested is None or not rules.population_must_match_claim:
         return list(rejected), []       # nothing distinguishes them; all block
 
-    from react_review.audit.scope import scope_verdict
+    from react_review.audit.scope import MISMATCH, scope_verdict
 
     axes = ["population_basis"]
     if requested.axis_stated("analysis_set"):
@@ -366,7 +376,17 @@ def _split_rejected(rejected: list[RejectedAggregationSet],
             continue
         verdict = scope_verdict(requested, bad.population, required_axes=axes,
                                 contract=contract)
-        (aside if verdict.status != "ok" else blocking).append(bad)
+        # Only a DEMONSTRATED mismatch clears a broken set. "Unresolved" means
+        # nobody could tell whether it was about these people — an analysed set
+        # with no analysis set named may well have been the ITT one the claim
+        # wants — and treating that as unrelated is assuming the answer to the
+        # question that could not be answered.
+        mismatched = verdict.status == MISMATCH
+        if mismatched and timepoint_label and bad.timepoint_phrase:
+            mismatched = not _same_timepoint(bad.timepoint_phrase, timepoint_label)
+        elif mismatched and timepoint_label and not bad.timepoint_phrase:
+            mismatched = False          # unknown moment: might be this one
+        (aside if mismatched else blocking).append(bad)
     return blocking, aside
 
 

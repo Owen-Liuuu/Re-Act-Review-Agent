@@ -173,3 +173,22 @@ def test_the_aggregation_skeleton_is_valid_json():
     # A component names an arm and a number, and nothing about people: the set
     # owns the population, so a component cannot contradict the set it is in.
     assert set(one["cohort_counts"][0]) == {"arm_label", "count", "quote"}
+
+
+def test_the_prompt_states_the_binding_the_parser_enforces():
+    """A prompt that omits a rule the parser applies buys nothing but refusals."""
+    text = _flat(_study("sample_size"))
+    assert "must itself carry this set's population words" in text
+    assert "cannot go in a set whose population is" in text
+
+
+def test_the_prompt_says_a_ratio_is_not_a_count_of_groups():
+    text = _flat(_study("sample_size"))
+    assert "2:1:1 ratio to one of three groups" in text
+    assert "declares three, not two" in text
+    assert "not a number that merely appears in it" in text
+
+
+def test_the_prompt_requires_the_partition_to_be_about_this_population():
+    text = _flat(_study("sample_size"))
+    assert "establishes nothing about the randomised one" in text

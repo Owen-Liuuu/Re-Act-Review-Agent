@@ -115,7 +115,14 @@ Each set carries:
   phrase and its passage are what count.
 - ``cohort_counts``: for each arm, ``arm_label``, ``count`` (a whole number),
   and ``quote`` — one contiguous verbatim passage naming that arm and printing
-  that number.
+  that number. **Each count's own quote must itself carry this set's population
+  words, and its timepoint words if the set has any.** A number read out of a
+  table headed "Analysis population" cannot go in a set whose population is
+  "underwent randomization", however plainly it seems to correspond: the paper
+  has to say so where the number is printed. Usually one passage carries the
+  population, the timepoint and every arm together, and that is the passage to
+  use for all of them. Where it does not, leave the count out rather than
+  placing it by inference.
 - ``partition``: what the paper says about how these arms divide THIS
   population.
 
@@ -128,9 +135,18 @@ In ``partition``:
 - ``quote``: the contiguous verbatim passage that shows it — the randomisation
   sentence, the flow-diagram caption, the table header. **A true without a
   locatable quote counts as a false**, so if you have no passage, say false.
+  It must be about THIS set's population: a sentence describing how the analysis
+  population divides establishes nothing about the randomised one, so a set of
+  allocated counts needs an allocation sentence behind it.
 - ``declared_arm_count``: how many groups THAT PASSAGE says there are ("randomly
-  assigned to one of three groups" → 3). Omit it if the passage does not say.
+  assigned to one of three groups" → 3). It must be the number of GROUPS the
+  passage states, not a number that merely appears in it: "randomised in a 2:1:1
+  ratio to one of three groups" declares three, not two. Omit it if the passage
+  does not say.
 - ``declared_arm_labels``: the names that passage gives them, if it names them.
+  Every name you list must appear in that passage, and together they must be
+  exactly the arms you counted — not a subset, and with nothing counted that the
+  passage does not name.
 - ``reason``: what in that passage establishes it.
 
 ``declared_arm_count`` and ``declared_arm_labels`` are what make ``complete``
