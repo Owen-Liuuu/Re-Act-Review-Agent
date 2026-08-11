@@ -81,11 +81,50 @@ def _same_number(one: str, other: str) -> bool:
 
 
 def flatten(text: str) -> str:
-    """Whitespace collapsed, case folded, positions otherwise preserved.
+    """Whitespace collapsed and case folded, keeping every character's ORDER.
 
-    Used where an OFFSET matters (how far a number is from an arm label), so
-    unlike :func:`normalise` it must not drop or reorder characters.
+    Used where an offset matters (how far a number is from an arm label). Note
+    that offsets are preserved in order but NOT in value: a run of whitespace
+    becomes one space, so a flattened position is shorter than the raw one it
+    came from. Anything that needs to look back at the original text must use
+    :func:`flatten_with_offsets`, which says where each character came from.
     """
+    return _fold(text)[0]
+
+
+def flatten_with_offsets(text: str) -> tuple[str, list[int], str]:
+    """Flattened text, where each character came from, and the folded source.
+
+    The map exists because a flattened offset is not an offset into anything
+    else. Using one to index the original document reads a window a few
+    characters off — invisibly at first, and further out the longer the document
+    gets, which is exactly the failure mode that hides in small fixtures and
+    appears in real papers.
+
+    Returns ``(flat, offsets, folded)`` where ``offsets[i]`` is the index in
+    ``folded`` that ``flat[i]`` came from, and ``folded`` is the case-folded
+    text with its line breaks intact — the only form in which block boundaries
+    still exist.
+    """
+    return _fold(text)
+
+
+def _fold(text: str) -> tuple[str, list[int], str]:
     folded = unicodedata.normalize("NFKD", text or "").lower()
     folded = re.sub(r"(?<=[a-z])[-­]\s*\n\s*(?=[a-z])", "-", folded)
-    return re.sub(r"\s+", " ", folded)
+    out: list[str] = []
+    offsets: list[int] = []
+    index, size = 0, len(folded)
+    while index < size:
+        if folded[index].isspace():
+            run = index
+            while run < size and folded[run].isspace():
+                run += 1
+            out.append(" ")
+            offsets.append(index)
+            index = run
+        else:
+            out.append(folded[index])
+            offsets.append(index)
+            index += 1
+    return "".join(out), offsets, folded

@@ -51,9 +51,21 @@ def _provenance(projection: Projection) -> AggregationProvenance | None:
     never arose.
     """
     if projection.policy_id or projection.aggregation_errors:
+        who = projection.evaluator
         return AggregationProvenance(
             policy_id=projection.policy_id,
             policy_sha256=projection.policy_sha256,
+            evaluator_id=who.evaluator_id if who else "",
+            evaluator_version=who.evaluator_version if who else "",
+            evaluator_hash=who.evaluator_hash if who else "",
+            git_commit=who.git_commit if who else "",
+            git_commit_matches_evaluator=bool(
+                who and who.git_commit_matches_evaluator),
+            evaluator_status=who.status if who else "unavailable",
+            # An identity nobody established is not release-eligible, and the
+            # absence of one is exactly the case that must not read as a pass.
+            release_eligible=bool(who and who.release_eligible),
+            required_axes=list(projection.required_axes),
             aggregation_set=projection.aggregation_set,
             population_quote=projection.population_quote,
             timepoint_quote=projection.timepoint_quote,

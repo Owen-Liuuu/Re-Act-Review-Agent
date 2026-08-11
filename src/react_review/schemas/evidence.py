@@ -40,7 +40,18 @@ class AggregationProvenance(BaseModel):
 
     policy_id: str = ""
     policy_sha256: str = ""
+    # WHICH CODE applied those rules. A policy hash alone says what the
+    # conditions were, not what enforced them, and every wrong total in this
+    # phase came from rules that read correctly and code that did not keep them.
+    evaluator_id: str = ""
+    evaluator_version: str = ""
+    evaluator_hash: str = ""
+    git_commit: str = ""                    # full 40 characters, or empty
+    git_commit_matches_evaluator: bool = False
+    evaluator_status: str = ""              # registered | unregistered | unavailable
+    release_eligible: bool = False
     aggregation_set: str = ""               # which population/timepoint won
+    required_axes: list[str] = Field(default_factory=list)
     population_quote: str = ""
     timepoint_quote: str = ""
     partition_quote: str = ""

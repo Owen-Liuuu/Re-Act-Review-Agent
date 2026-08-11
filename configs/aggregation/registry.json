@@ -1,0 +1,37 @@
+{
+  "registry_id": "aggregation_policies",
+  "written_on": "2026-08-11",
+  "purpose": "Which aggregation policies exist, which evaluator versions were meant to apply them, and which of those combinations a formal result may be attributed to. A policy file alone cannot say this: it does not know what code read it.",
+  "statuses": {
+    "active": "the combination a run selects by default; formal results allowed",
+    "superseded": "retired by a later version; kept byte-identical for the record",
+    "record_only": "kept so that anything recorded under it stays interpretable. No formal result was ever produced under it, and none may be"
+  },
+  "policies": {
+    "safe_sum_v1": {
+      "status": "record_only",
+      "formal_results": false,
+      "evaluators": [],
+      "note": "superseded before any run reached it"
+    },
+    "safe_sum_v2": {
+      "status": "record_only",
+      "formal_results": false,
+      "evaluators": [],
+      "note": "superseded before any run reached it"
+    },
+    "safe_sum_v3": {
+      "status": "superseded",
+      "formal_results": false,
+      "evaluators": [],
+      "note": "four release paths found in review; see why_v4"
+    },
+    "safe_sum_v4": {
+      "status": "active",
+      "formal_results": true,
+      "evaluators": [
+        "1.4.0"
+      ]
+    }
+  }
+}

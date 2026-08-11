@@ -14,7 +14,31 @@ matching fails the suite instead of sitting in a document nobody recomputes.
 | v2 | `configs/gates/cross_domain_v2.json` | `E29CF4F803BA0F8A` | current; **provisional** |
 | v1 | `configs/aggregation/safe_sum_v1.json` | `1C99DCE79E4FDD3A` | superseded; never applied to a result |
 | v2 | `configs/aggregation/safe_sum_v2.json` | `5FED9271920DF0A4` | superseded; never applied to a result |
-| v3 | `configs/aggregation/safe_sum_v3.json` | `93E381F2ED633E06` | current |
+| v3 | `configs/aggregation/safe_sum_v3.json` | `93E381F2ED633E06` | superseded; never applied to a result |
+| v4 | `configs/aggregation/safe_sum_v4.json` | `FE1B925C28FA7558` | current |
+| — | `configs/aggregation/registry.json` | `0F16E3F1228BC4E9` | which policy/evaluator pairs may produce a formal result |
+
+## A policy version is not enough — the code that applies it also has an identity
+
+Every wrong total found in this phase came from a policy that read correctly and
+code that did not enforce it. A result recording only `safe_sum_v3` therefore
+claims a reproducibility it does not have: the same policy under two commits of
+the evaluator gave different answers, and nothing in the artifact said which one
+ran.
+
+From `safe_sum_v4` the evaluator is versioned separately, in
+`configs/aggregation/evaluators/`, with a hash over the files whose behaviour it
+is. `configs/aggregation/registry.json` records which pairs may produce a formal
+result. A run resolves both once at startup and records
+`policy_hash`, `evaluator_hash` and the full 40-character commit; a working copy
+whose evaluator files differ from HEAD still runs, and is marked not
+release-eligible. Unrelated files in the working copy — slide decks, scratch
+output — are not consulted, because they say nothing about which code decided.
+
+Versioning is semantic and the rule is about OUTCOMES, not about how large the
+change felt: anything that can move a claim between `derived`, `rejected`,
+`protocol_error` and `not_applicable` is at least a MINOR, even when the author
+is confident it is only a bug fix.
 
 ## The v2 pin was wrong, and the pins were not reproducible
 

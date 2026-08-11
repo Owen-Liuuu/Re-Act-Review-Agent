@@ -1,0 +1,83 @@
+{
+  "policy_id": "safe_sum_v4",
+  "version": 4,
+  "status": "active",
+  "written_on": "2026-08-11",
+  "supersedes": "safe_sum_v3",
+  "purpose": "When a whole-study total may be computed from the arms instead of read from the paper. Written as a contract rather than as code branches so that the conditions cannot be relaxed one call site at a time, and so that a run can record which version of them it applied.",
+  "doctrine": "The model reports what the paper says; this policy decides whether that is enough to permit arithmetic. The model is never permitted to add anything up, to choose which population answers a claim, or to assert a partition the paper does not itself describe.",
+  "why_v2": "v1 let four wrong totals through. A component could sit in a population set its own quote did not support; the arm census was believed rather than read out of the passage behind it; one arm offered twice with the same count was summed twice; and a timepoint was only ever used to choose between sets, never to refuse the only one. Each is now a condition below.",
+  "applies_to": {
+    "field_types": [
+      "sample_size"
+    ],
+    "target_shapes": [
+      "study"
+    ],
+    "why_narrow": "Counts of people partition; almost nothing else does. Summing arm-level means, medians, rates or hazard ratios is wrong even when every component is anchored, so the permission is granted by an explicit list rather than withheld by one."
+  },
+  "requirements": {
+    "min_components": 2,
+    "require_complete": true,
+    "require_mutually_exclusive": true,
+    "require_partition_anchor": true,
+    "require_arm_census": true,
+    "require_distinct_arms": true,
+    "population_must_match_claim": true,
+    "timepoint_must_match_claim": true,
+    "require_partition_axis_binding": true,
+    "require_explicit_census_grammar": true,
+    "honour_run_contract_axes": true,
+    "require_axes_the_claim_states": true
+  },
+  "invariants": {
+    "_note": "Not switches. These are always enforced; they are written down so the file describes the behaviour completely, and the loader refuses a policy that claims to disable one.",
+    "component_value_anchored": true,
+    "component_label_anchored": true,
+    "set_population_anchored": true,
+    "set_timepoint_anchored": true,
+    "match_on_both_population_axes": true,
+    "never_derive_over_explicit_contradiction": true,
+    "model_never_computes": true,
+    "census_read_from_partition_passage": true,
+    "census_matches_components_exactly": true,
+    "component_bound_to_set_population": true,
+    "component_bound_to_set_timepoint": true,
+    "partition_describes_the_sets_population": true,
+    "census_number_must_qualify_a_group_noun": true,
+    "partition_bound_per_axis": true,
+    "census_matches_explicit_grammar": true,
+    "aggregation_uses_run_contract_axes": true,
+    "rejected_set_cleared_only_by_definite_mismatch": true
+  },
+  "on_unknown": "reject",
+  "timepoint_matching": "normalised_exact",
+  "statuses": {
+    "derived": "every requirement was met and the components were added by deterministic code",
+    "rejected": "the paper's own evidence does not establish that the components are complete, mutually exclusive, and one population at one time",
+    "protocol_error": "the response was malformed: a non-integer count, an unanchored quote, an arm offered twice, or a census the partition passage does not support",
+    "not_applicable": "no arithmetic was attempted, because the paper prints the total itself or the field is not one this policy permits summing"
+  },
+  "notes": [
+    "A boolean is not evidence. `complete: true` with no locatable quote is treated exactly as `complete: false`.",
+    "A boolean about a list the code cannot see is unfalsifiable, so `complete` alone is never enough: the partition passage must itself say how many groups there are, or name them, and the components in hand must match that exactly — not merely fail to be missing one.",
+    "Belonging to a set does not make a count belong to that set's population. Each component's own quote must be shown to carry the set's population phrase, and its timepoint phrase where there is one; otherwise an analysed count can be added to allocated ones by being listed beside them.",
+    "One arm offered twice is a protocol error whether or not the two counts agree. Agreeing counts are the more dangerous case, because the sum still looks plausible.",
+    "A timepoint the claim declares must be matched even when only one set is on offer. Being the only candidate is not evidence of being the right one.",
+    "Populations are matched on BOTH axes. analysed/ITT and analysed/per-protocol are different people; an unspecified analysis set is unknown rather than compatible, and unknown is refused when the review named one.",
+    "An explicit total that disagrees with a valid sum is not resolved by preferring either one. Both are reported and the claim is refused.",
+    "Where the printed totals contradict each other, no sum may be offered instead. Arithmetic that resolves a paper's self-disagreement is not a reading of the paper; it is a decision about which of its statements to ignore.",
+    "A number in the partition passage is only a count of arms when it qualifies a word meaning one: a 2:1:1 randomisation ratio contains a 2 and says nothing about how many groups there are.",
+    "The passage that licenses the sum must be about the same people as the counts it licenses. A sentence describing how the ANALYSED population divides does not establish that the ALLOCATED counts are complete.",
+    "Agreement on the population basis is not agreement. A partition passage that says nothing about the analysis set does not establish that ITT counts are complete, and one stated at baseline says nothing about week 12. Each axis the set declares must be met by the partition on that axis: stated and equal, or bound to that axis's own witness passage.",
+    "A number is a count of arms only in the grammar of counting arms: 'three groups', '3 treatment arms', 'one of three groups', 'divided into 3 cohorts'. Proximity is not grammar — '3 mg treatment' puts a number two words from a noun and means a dose.",
+    "The axes a sum must satisfy are this policy's minimum UNION the run contract's required_axes. A profile may demand more than the policy; it may never demand less, and a derived total may never be held to a weaker standard than a printed one in the same run.",
+    "A broken set is cleared only where some relevant axis is DEFINITELY different. Any axis that cannot be resolved leaves it possibly relevant, and a possibly-relevant broken set means no surviving set can be shown to be the only candidate.",
+    "The axes are the union of three things, not two: this policy's floor, the run contract's required_axes, and every axis the CLAIM itself states. A review that reports the ITT population has named an axis, and a set that does not say which analysis set it counts is unknown on it — whether or not the profile happened to list it. Dropping this was a regression: it let analysed/unspecified components answer an ITT claim."
+  ],
+  "why_v3": "v2 let four more totals through. The partition passage was never checked against the population it was supposed to divide; a census number was accepted from anywhere in that passage, so a 2:1:1 ratio licensed a two-arm census; a broken set whose population could not be resolved was treated as unrelated to the claim rather than as possibly being it; and a claim that named no population at all was answered from whichever set happened to be the only one. It also declared four requirements the loader never read.",
+  "why_v4": "v3 was correct about which sentence licenses a sum and vague about which AXES that sentence has to agree on. It compared the partition to the set on population basis and, where both stated one, analysis set — but a partition that stated neither passed on proximity alone, and a timepoint was never compared at all. It also read a census by looking for a number followed within two words by a noun, which '3 mg treatment' satisfies. And the run contract's required_axes, which decide what an explicit total must match, never reached the sum: a claim requiring an analysis set could be answered by components that named none. Each is an axis-by-axis condition below.",
+  "minimum_axes": [
+    "population_basis"
+  ]
+}

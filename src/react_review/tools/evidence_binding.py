@@ -24,7 +24,11 @@ from __future__ import annotations
 
 import re
 
-from react_review.normalize.anchors import flatten, normalised_contains
+from react_review.normalize.anchors import (
+    flatten,
+    flatten_with_offsets,
+    normalised_contains,
+)
 
 #: How far apart a phrase and its value may sit and still be one statement.
 #: A sentence is tens of characters; a paragraph a few hundred. Beyond that the
@@ -35,9 +39,11 @@ SAME_QUOTE = "same_quote"
 SAME_BLOCK = "same_block"
 UNBOUND = "unbound"
 
-#: What separates one block from the next in flattened source text: a blank
-#: line, or the excerpt marker the extractor inserts when it selects regions.
-_BLOCK_BREAK = re.compile(r"\n\s*\n|\[SOURCE EXCERPT \d+:\d+\]")
+#: What separates one block from the next: a blank line, or the excerpt marker
+#: the extractor inserts when it selects regions. Matched case-insensitively
+#: because it runs against the case-folded text, which is the only form that
+#: still has the line breaks in it.
+_BLOCK_BREAK = re.compile(r"\n\s*\n|\[source excerpt \d+:\d+\]", re.IGNORECASE)
 
 
 def binding_verdict(phrase: str, value: str, *, quote: str,
@@ -54,7 +60,7 @@ def binding_verdict(phrase: str, value: str, *, quote: str,
             f"{phrase!r} is not inside the quote that supports {value!r}, and "
             "there is no document to place them in")
 
-    flat = flatten(document)
+    flat, offsets, folded = flatten_with_offsets(document)
     phrase_at = _positions(flat, phrase)
     value_at = _positions(flat, value if not quote else quote)
     if not phrase_at:
@@ -69,7 +75,14 @@ def binding_verdict(phrase: str, value: str, *, quote: str,
         return UNBOUND, (
             f"{phrase!r} is {distance} characters from the evidence for "
             f"{value!r}; occurring in the same paper is not a relationship")
-    if _BLOCK_BREAK.search(document, *sorted((phrase_pos, value_pos))):
+    # Block boundaries only exist in the FOLDED text — flattening turns every
+    # blank line into a space. The positions above are flattened ones, so they
+    # are mapped back before anything looks between them. Searching the raw
+    # document with a flattened offset reads a window several characters off,
+    # which made this verdict depend on how much whitespace happened to precede
+    # the passage rather than on what lay between the two.
+    span = sorted((offsets[phrase_pos], offsets[value_pos]))
+    if _BLOCK_BREAK.search(folded, *span):
         return UNBOUND, (
             f"{phrase!r} and the evidence for {value!r} are in different blocks "
             "of the document")

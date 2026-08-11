@@ -43,6 +43,7 @@ from react_review.contracts import (
     sha256_file,
 )
 from react_review.normalize.cohorts import distinguishing_tokens
+from react_review.tools.aggregation_identity import EvaluatorIdentity
 from react_review.normalize.population import PopulationContract, PopulationScope
 from react_review.schemas.batch import (
     STUDY,
@@ -58,7 +59,7 @@ REJECTED = "rejected"
 PROTOCOL_ERROR = "protocol_error"
 NOT_APPLICABLE = "not_applicable"
 
-DEFAULT_POLICY = "configs/aggregation/safe_sum_v3.json"
+DEFAULT_POLICY = "configs/aggregation/safe_sum_v4.json"
 
 
 @dataclass(frozen=True)
@@ -75,13 +76,36 @@ class AggregationPolicy:
     require_mutually_exclusive: bool
     require_arm_census: bool
     require_distinct_arms: bool
+    honour_run_contract_axes: bool
+    require_axes_the_claim_states: bool
     population_must_match_claim: bool
     timepoint_must_match_claim: bool
+    #: The weakest set of axes this policy will ever accept. A run profile may
+    #: add to it; nothing may take from it, so a derived total is never held to
+    #: a looser standard than a printed one in the same run.
+    minimum_axes: tuple[str, ...]
     on_unknown: str
     timepoint_matching: str
 
     def applies_to(self, target_shape: str, field_type: str) -> bool:
         return target_shape in self.target_shapes and field_type in self.field_types
+
+    def axes_for(self, required_axes: list[str] | None,
+                 claim: PopulationScope | None = None) -> list[str]:
+        """This policy's floor, raised by the run contract AND by the claim.
+
+        The claim is the third source and the easily forgotten one. A review
+        reporting the ITT population has named an axis; a set that never says
+        which analysis set it counts is unknown on that axis, and unknown is
+        refused — whether or not the profile happened to list it.
+        """
+        axes = set(self.minimum_axes)
+        if self.honour_run_contract_axes:
+            axes |= set(required_axes or [])
+        if self.require_axes_the_claim_states and claim is not None:
+            axes |= {name for name in ("population_basis", "analysis_set")
+                     if claim.axis_stated(name)}
+        return sorted(axes)
 
 
 @lru_cache(maxsize=8)
@@ -101,13 +125,33 @@ def load_aggregation_policy(path: str | Path = DEFAULT_POLICY) -> AggregationPol
     # a policy that claims to turn one off is refused rather than quietly
     # ignored — a file that appears to control behaviour it does not control is
     # worse than a file that says nothing.
-    for name, value in (body.get("invariants") or {}).items():
-        if not name.startswith("_") and value is not True:
+    declared = {k: v for k, v in (body.get("invariants") or {}).items()
+                if not k.startswith("_")}
+    for name, value in declared.items():
+        if value is not True:
             raise ContractError(
                 f"{resolved} sets the invariant {name!r} to {value!r}. It is not a "
                 "switch: the code enforces it unconditionally, and a policy that "
                 "reads as though it could disable it would be describing behaviour "
                 "nobody implements")
+    if set(declared) != _INVARIANTS:
+        missing = sorted(_INVARIANTS - set(declared))
+        invented = sorted(set(declared) - _INVARIANTS)
+        raise ContractError(
+            f"{resolved} does not describe this evaluator: "
+            + (f"missing {missing}" if missing else "")
+            + ("; " if missing and invented else "")
+            + (f"invented {invented}" if invented else "")
+            + ". The invariant list is the file's account of what the code always "
+              "does, so a name nobody implements is a promise nobody keeps, and an "
+              "omission hides one that is being kept")
+    for name, value in required.items():
+        if name != "min_components" and type(value) is not bool:
+            raise ContractError(
+                f"{resolved} sets the requirement {name!r} to {value!r}. Only a "
+                "JSON true or false says anything here: 0, 1 and the strings "
+                '"true"/"false" all read as true under coercion, which would turn '
+                "a rule its author switched off into one they switched on")
     unread = set(required) - _READ_REQUIREMENTS
     if unread:
         raise ContractError(
@@ -127,10 +171,15 @@ def load_aggregation_policy(path: str | Path = DEFAULT_POLICY) -> AggregationPol
             required.get("require_mutually_exclusive", True)),
         require_arm_census=bool(required.get("require_arm_census", True)),
         require_distinct_arms=bool(required.get("require_distinct_arms", True)),
+        honour_run_contract_axes=bool(
+            required.get("honour_run_contract_axes", True)),
+        require_axes_the_claim_states=bool(
+            required.get("require_axes_the_claim_states", True)),
         population_must_match_claim=bool(
             required.get("population_must_match_claim", True)),
         timepoint_must_match_claim=bool(
             required.get("timepoint_must_match_claim", True)),
+        minimum_axes=tuple(body.get("minimum_axes") or ["population_basis"]),
         on_unknown=one_of(str(body.get("on_unknown", "reject")),
                           ("reject",), field="on_unknown"),
         timepoint_matching=one_of(str(body.get("timepoint_matching",
@@ -145,6 +194,23 @@ _READ_REQUIREMENTS = {
     "min_components", "require_partition_anchor", "require_complete",
     "require_mutually_exclusive", "require_arm_census", "require_distinct_arms",
     "population_must_match_claim", "timepoint_must_match_claim",
+    "require_partition_axis_binding", "require_explicit_census_grammar",
+    "honour_run_contract_axes", "require_axes_the_claim_states",
+}
+
+#: Exactly what this evaluator enforces unconditionally. A policy must list all
+#: of these and nothing else: an omission hides a rule that is in force, and an
+#: invention describes one that is not.
+_INVARIANTS = {
+    "component_value_anchored", "component_label_anchored",
+    "set_population_anchored", "set_timepoint_anchored",
+    "match_on_both_population_axes", "never_derive_over_explicit_contradiction",
+    "model_never_computes", "census_read_from_partition_passage",
+    "census_matches_components_exactly", "component_bound_to_set_population",
+    "component_bound_to_set_timepoint", "partition_describes_the_sets_population",
+    "census_number_must_qualify_a_group_noun", "partition_bound_per_axis",
+    "census_matches_explicit_grammar", "aggregation_uses_run_contract_axes",
+    "rejected_set_cleared_only_by_definite_mismatch",
 }
 
 
@@ -157,6 +223,11 @@ class AggregationOutcome:
     reason: str = ""
     derivation: str = ""
     components: list[BatchCohortCount] = field(default_factory=list)
+    #: The axes actually applied, so a refusal can be read against what was asked.
+    required_axes: list[str] = field(default_factory=list)
+    #: What decided, not only what it decided under. Filled by the caller, which
+    #: is the only layer that knows whether this run is registered.
+    evaluator: EvaluatorIdentity | None = None
     chosen_set: AggregationSet | None = None
     verified_scope: PopulationScope | None = None
     #: The passage that established the partition. This is the only quote a
@@ -189,7 +260,9 @@ def derive_partitioned_total(
     target_shape: str = STUDY,
     field_type: str = "",
     timepoint_label: str = "",
+    required_axes: list[str] | None = None,
     rejected_sets: list[RejectedAggregationSet] | None = None,
+    evaluator: EvaluatorIdentity | None = None,
     policy: AggregationPolicy | None = None,
     population_contract: PopulationContract | None = None,
 ) -> AggregationOutcome:
@@ -200,7 +273,9 @@ def derive_partitioned_total(
     that these three arms are all of them" is.
     """
     rules = policy or load_aggregation_policy()
-    out = AggregationOutcome(policy_id=rules.policy_id, policy_sha256=rules.sha256)
+    axes = rules.axes_for(required_axes, requested_scope)
+    out = AggregationOutcome(policy_id=rules.policy_id, policy_sha256=rules.sha256,
+                             required_axes=list(axes), evaluator=evaluator)
 
     # The whitelist is enforced HERE, not only in the prompt. A prompt shapes
     # what is asked; a policy decides what is permitted, and a response that
@@ -220,7 +295,8 @@ def derive_partitioned_total(
     # and then no surviving set can be shown to be the only candidate, which is
     # the whole basis on which a set is allowed to answer.
     blocking, aside = _split_rejected(rejected_sets or [], requested_scope,
-                                      rules, population_contract, timepoint_label)
+                                      rules, population_contract, timepoint_label,
+                                      axes)
     out.unrelated_rejections = [r.describe() for r in aside]
     if blocking:
         # A malformed aggregation is a broken answer, not a missing one. Calling
@@ -248,7 +324,7 @@ def derive_partitioned_total(
         return out
 
     chosen, reason, exact = _select_set(sets, requested_scope, timepoint_label,
-                                        rules, population_contract)
+                                        rules, population_contract, axes)
     if chosen is None:
         out.status = REJECTED
         out.reason = reason
@@ -281,7 +357,7 @@ def derive_partitioned_total(
 
 def _select_set(sets: list[AggregationSet], requested: PopulationScope | None,
                 timepoint_label: str, rules: AggregationPolicy,
-                contract: PopulationContract | None
+                contract: PopulationContract | None, axes: list[str]
                 ) -> tuple[AggregationSet | None, str, bool]:
     """Which set answers THIS claim — decided here, never by the model.
 
@@ -298,14 +374,10 @@ def _select_set(sets: list[AggregationSet], requested: PopulationScope | None,
 
     from react_review.audit.scope import scope_verdict
 
-    # Both axes are compared; only one is always REQUIRED. A stated conflict on
-    # either — analysed/ITT against analysed/per-protocol — is a mismatch on its
-    # own. But demanding that a set name an analysis set when the review never
-    # named one would refuse every honest count in the corpus, which is refusing
-    # the question rather than answering it safely.
-    axes = ["population_basis"]
-    if requested.axis_stated("analysis_set"):
-        axes.append("analysis_set")
+    # The axes come from the caller: this policy's floor, raised by whatever the
+    # run contract requires. A printed total and a computed one are held to the
+    # same standard in the same run, which they were not while this function
+    # decided for itself that population basis was enough.
     matches = [s for s in sets
                if scope_verdict(requested, s.population or PopulationScope(),
                                 required_axes=axes,
@@ -357,36 +429,35 @@ def _normalise_timepoint(text: str) -> str:
 
 def _split_rejected(rejected: list[RejectedAggregationSet],
                     requested: PopulationScope | None, rules: AggregationPolicy,
-                    contract: PopulationContract | None, timepoint_label: str = ""
+                    contract: PopulationContract | None, timepoint_label: str = "",
+                    axes: list[str] | None = None
                     ) -> tuple[list[RejectedAggregationSet],
                                list[RejectedAggregationSet]]:
-    """Which broken sets could have held this claim's answer, and which could not."""
+    """Which broken sets could have held this claim's answer, and which could not.
+
+    ANY axis that is definitely different clears the set: a set about other
+    people cannot have held this answer whatever its timepoint, and one at
+    another moment cannot whatever its population. But every axis has to be
+    definite to be useful — an axis nobody could resolve leaves the set possibly
+    relevant, and a possibly-relevant broken set means no surviving set can be
+    shown to be the only candidate.
+    """
     if requested is None or not rules.population_must_match_claim:
         return list(rejected), []       # nothing distinguishes them; all block
 
     from react_review.audit.scope import MISMATCH, scope_verdict
 
-    axes = ["population_basis"]
-    if requested.axis_stated("analysis_set"):
-        axes.append("analysis_set")
     blocking, aside = [], []
     for bad in rejected:
-        if not bad.population_known:
-            blocking.append(bad)        # unknown means it might have been this one
-            continue
-        verdict = scope_verdict(requested, bad.population, required_axes=axes,
-                                contract=contract)
-        # Only a DEMONSTRATED mismatch clears a broken set. "Unresolved" means
-        # nobody could tell whether it was about these people — an analysed set
-        # with no analysis set named may well have been the ITT one the claim
-        # wants — and treating that as unrelated is assuming the answer to the
-        # question that could not be answered.
-        mismatched = verdict.status == MISMATCH
-        if mismatched and timepoint_label and bad.timepoint_phrase:
-            mismatched = not _same_timepoint(bad.timepoint_phrase, timepoint_label)
-        elif mismatched and timepoint_label and not bad.timepoint_phrase:
-            mismatched = False          # unknown moment: might be this one
-        (aside if mismatched else blocking).append(bad)
+        cleared = False
+        if bad.population_known:
+            verdict = scope_verdict(requested, bad.population,
+                                    required_axes=axes or ["population_basis"],
+                                    contract=contract)
+            cleared = verdict.status == MISMATCH
+        if not cleared and timepoint_label and bad.timepoint_phrase:
+            cleared = not _same_timepoint(bad.timepoint_phrase, timepoint_label)
+        (aside if cleared else blocking).append(bad)
     return blocking, aside
 
 

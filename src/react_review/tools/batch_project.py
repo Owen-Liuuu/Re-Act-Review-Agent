@@ -38,6 +38,7 @@ from react_review.schemas.batch import (
     BatchEntry,
 )
 from react_review.tools.batch_parse import BatchReading
+from react_review.tools.aggregation_identity import EvaluatorIdentity
 from react_review.tools.safe_aggregation import (
     NOT_APPLICABLE,
     PROTOCOL_ERROR,
@@ -86,6 +87,12 @@ class Projection:
     timepoint_quote: str = ""
     aggregation_set: str = ""
     unrelated_rejections: list[str] = field(default_factory=list)
+    required_axes: list[str] = field(default_factory=list)
+    #: What decided. Present on every aggregation outcome, including the ones
+    #: that refused and the one where a printed total won and the sum merely
+    #: corroborated it — a refusal is a decision, and a reader has to be able to
+    #: ask which code made it.
+    evaluator: EvaluatorIdentity | None = None
     #: Why a set could not be read at all. Survives every path: a released
     #: printed total does not make a malformed aggregation block stop existing.
     aggregation_errors: list[str] = field(default_factory=list)
@@ -134,6 +141,7 @@ def project_claim(
     timepoint_label: str = "",
     population_contract: PopulationContract | None = None,
     aggregation_policy: AggregationPolicy | None = None,
+    evaluator: EvaluatorIdentity | None = None,
     field_type: str = "",
 ) -> Projection:
     """Answer ONE claim from a batched reading, or say why it cannot be."""
@@ -146,7 +154,7 @@ def project_claim(
             reading, entries, requested_scope=requested_scope,
             required_axes=required_axes or [], timepoint_label=timepoint_label,
             population_contract=population_contract, policy=aggregation_policy,
-            field_type=field_type)
+            field_type=field_type, evaluator=evaluator)
 
     if not entries:
         return Projection(
@@ -187,7 +195,8 @@ _NEVER_DERIVE = (CONTRADICTORY, AMBIGUOUS)
 
 def _project_study(reading: BatchReading, entries: list[BatchEntry], *,
                    requested_scope, required_axes, timepoint_label: str,
-                   population_contract, policy, field_type: str) -> Projection:
+                   population_contract, policy, field_type: str,
+                   evaluator=None) -> Projection:
     """A whole-study total: read it if the paper prints it, compute it if not.
 
     The order is not a preference, it is the difference between a fact and an
@@ -217,8 +226,11 @@ def _project_study(reading: BatchReading, entries: list[BatchEntry], *,
     summed = derive_partitioned_total(
         reading.aggregation_sets, requested_scope, target_shape=STUDY,
         field_type=field_type, timepoint_label=timepoint_label,
+        # The run contract's axes, so a computed total is held to exactly the
+        # standard a printed one is held to in the same run.
+        required_axes=required_axes,
         rejected_sets=reading.rejected_sets, policy=policy,
-        population_contract=population_contract)
+        population_contract=population_contract, evaluator=evaluator)
     provenance["policy"] = f"{summed.policy_id} ({summed.policy_sha256[:12]}…)"
     if summed.chosen_set is not None:
         provenance["aggregation_set"] = summed.chosen_set.describe()
@@ -233,6 +245,8 @@ def _project_study(reading: BatchReading, entries: list[BatchEntry], *,
         projection.aggregation_errors = list(reading.aggregation_errors)
         projection.policy_id = summed.policy_id
         projection.policy_sha256 = summed.policy_sha256
+        projection.required_axes = list(summed.required_axes)
+        projection.evaluator = summed.evaluator
         projection.population_quote = summed.population_quote
         projection.timepoint_quote = summed.timepoint_quote
         projection.partition_quote = (projection.partition_quote

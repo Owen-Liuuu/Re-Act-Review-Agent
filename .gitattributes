@@ -8,3 +8,4 @@
 # would rewrite a frozen benchmark to fix a problem it did not cause.
 configs/gates/*.json text eol=lf
 configs/aggregation/*.json text eol=lf
+configs/aggregation/evaluators/*.json text eol=lf

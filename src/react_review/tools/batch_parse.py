@@ -237,7 +237,8 @@ def _parse_set(item: object, index: int, document: str
     if partition is None:
         return fail(reason)
     reason = _partition_describes_this_set(partition, scope, witness,
-                                           timepoint_phrase, where, document)
+                                           timepoint_phrase, timepoint_quote,
+                                           where, document)
     if reason:
         return fail(reason)
     reason = _census_is_read_not_asserted(partition, counts, where)
@@ -297,8 +298,8 @@ def _component_belongs(count: BatchCohortCount, population_phrase: str,
 
 def _partition_describes_this_set(partition: PartitionWitness,
                                   scope: PopulationScope, population_quote: str,
-                                  timepoint_phrase: str, where: str,
-                                  document: str) -> str:
+                                  timepoint_phrase: str, timepoint_quote: str,
+                                  where: str, document: str) -> str:
     """Whether the sentence licensing the sum is about THESE people, at this time.
 
     Everything else in a set is now tied to its population, and this was not: a
@@ -314,26 +315,46 @@ def _partition_describes_this_set(partition: PartitionWitness,
         # this check is about WHOM a passage describes, so it has nothing to add.
         return ""
     stated = classify_population(partition.quote, source="same_quote")
-    if stated.stated:
-        if stated.basis != scope.basis:
-            return (f"{where} counts the {scope.describe()} population but its "
-                    f"partition passage describes the {stated.describe()} one, "
-                    "which is a statement about different people")
-        if (stated.axis_stated("analysis_set") and scope.axis_stated("analysis_set")
-                and stated.analysis_set != scope.analysis_set):
-            return (f"{where} counts the {scope.describe()} population and its "
-                    f"partition passage describes {stated.describe()}")
-    elif not _same_block(partition.quote, population_quote, document):
-        return (f"{where} gives a partition passage that names no population and "
-                "does not sit beside the one it is supposed to divide, so nothing "
-                "connects it to these counts")
-    if timepoint_phrase and not normalised_contains(partition.quote, timepoint_phrase):
-        # A partition established at one moment is not a partition at another:
-        # groups complete at randomisation need not be complete at follow-up.
-        if not _same_block(partition.quote, population_quote, document):
-            return (f"{where} counts at {timepoint_phrase!r} but its partition "
-                    "passage neither states that timepoint nor sits with the "
-                    "counts it divides")
+
+    # Every axis, one at a time. Agreeing about the basis is not agreeing: a
+    # sentence saying the analysis population fell into three groups is silent
+    # about whether the ITT set did, and one written at randomisation is silent
+    # about week 12. An axis the set declares is met only by a partition that
+    # declares the same thing, or that the paper prints beside the witness for
+    # THAT axis — never by the partition being near some other axis's witness.
+    for axis, ours, theirs, witness in (
+            ("population basis", scope.basis,
+             stated.basis if stated.stated else "", population_quote),
+            ("analysis set",
+             scope.analysis_set if scope.axis_stated("analysis_set") else "",
+             stated.analysis_set if stated.axis_stated("analysis_set") else "",
+             population_quote),
+            ("timepoint", timepoint_phrase,
+             timepoint_phrase if timepoint_phrase and normalised_contains(
+                 partition.quote, timepoint_phrase) else "",
+             timepoint_quote)):
+        if not ours:
+            continue                     # the set does not claim this axis
+        if theirs and theirs != ours:
+            return (f"{where} counts {ours!r} and its partition passage describes "
+                    f"{theirs!r}, which is a statement about a different set of "
+                    "people")
+        if axis == "timepoint" and not theirs:
+            # No proximity fallback for WHEN. Two sentences printed together can
+            # still be about different moments — a randomisation sentence sits
+            # beside an allocation sentence and describes the same people, but a
+            # baseline table sits beside a week-12 table and does not describe
+            # the same visit. A partition at a stated moment has to state it.
+            return (f"{where} counts at {ours!r} and its partition passage does "
+                    "not say it holds at that moment; groups complete at one "
+                    "visit need not be complete at another")
+        if not theirs and not _same_block(partition.quote, witness, document):
+            return (f"{where} counts {ours!r}, and its partition passage neither "
+                    f"says so nor sits with the passage that does, so nothing "
+                    f"establishes that these arms are all of {ours!r}")
+    if not stated.stated and not scope.basis:
+        return (f"{where} gives a partition passage that names no population at "
+                "all, and neither do its counts")
     return ""
 
 
@@ -348,12 +369,17 @@ _NUMBER_WORDS = {
     "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
 }
 
-#: What a number has to be NEXT TO before it counts as a number of arms. Without
-#: this, "randomised in a 2:1:1 ratio to one of three groups" supports a declared
-#: census of two, because a 2 does appear in it — and two of the three arms are
-#: then summed into a study total.
-_GROUP_NOUNS = ("group", "groups", "arm", "arms", "cohort", "cohorts",
-                "treatment", "treatments", "regimen", "regimens")
+#: PLURAL nouns for a set of study participants. Plural because the passage has
+#: to be counting groups: "group 3" names one, "3 treatment cycles" counts
+#: something else entirely, and singular "treatment" is a thing given rather
+#: than a set of people ("3 mg treatment").
+_GROUP_NOUNS = ("groups", "arms", "cohorts", "regimens")
+
+#: The only words allowed between the number and the noun. A closed list, so
+#: that "3 mg treatment arms" cannot creep in on the strength of "mg" being
+#: short.
+_GROUP_QUALIFIERS = ("treatment", "study", "parallel", "randomised", "randomized",
+                     "assigned", "trial", "intervention", "active")
 
 
 def _census_is_read_not_asserted(partition: PartitionWitness,
@@ -409,22 +435,34 @@ def _census_is_read_not_asserted(partition: PartitionWitness,
 
 
 def _states_group_count(normalised_quote: str, n: int) -> bool:
-    """Whether the passage says there are N GROUPS, not merely that N occurs in it.
+    """Whether the passage says there are N GROUPS, in the grammar of saying so.
 
-    A ratio, a dose, a year and a page number are all numbers a passage can
-    contain without saying anything about how many arms there are. The number
-    has to be attached to a word that means "arm": "one of three groups",
-    "3 treatment arms", "divided into two cohorts".
+    Nearness was the previous rule and it is not a rule: "3 mg treatment" puts a
+    number two words from a noun and means a dose, "5-year treatment" means a
+    duration, "3 treatment cycles" counts visits, and "group 3" names one arm
+    rather than counting three. What licenses a sum is the paper stating how
+    many groups there ARE, which English says in a small number of ways:
+
+        three groups · 3 treatment arms · one of three groups
+        divided into 3 cohorts · randomised to two regimens
+
+    So the number must be followed by an optional qualifier from a closed list
+    and then a PLURAL noun for a study group. Singular "treatment" is not one:
+    a treatment is a thing given, not a set of people.
     """
     tokens = normalised_quote.split()
     word = next((w for w, v in _NUMBER_WORDS.items() if v == n), "")
     wanted = {str(n), word} - {""}
     for index, token in enumerate(tokens):
-        if token in wanted:
-            # The noun follows the count, allowing one qualifier between them
-            # ("three treatment groups", "3 parallel arms").
-            if any(t in _GROUP_NOUNS for t in tokens[index + 1:index + 3]):
-                return True
+        if token not in wanted:
+            continue
+        rest = tokens[index + 1:index + 3]
+        if not rest:
+            continue
+        if rest[0] in _GROUP_NOUNS:
+            return True
+        if len(rest) > 1 and rest[0] in _GROUP_QUALIFIERS and rest[1] in _GROUP_NOUNS:
+            return True
     return False
 
 

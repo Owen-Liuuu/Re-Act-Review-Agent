@@ -14,6 +14,8 @@ would quietly settle the argument.
 """
 from __future__ import annotations
 
+import pytest
+
 from react_review.normalize.population import PopulationScope
 from react_review.schemas.batch import STUDY
 from react_review.tools.batch_parse import parse_batch
@@ -144,7 +146,7 @@ def test_a_derived_total_never_carries_a_quote_that_prints_it():
 
 def test_the_policy_that_permitted_it_is_recorded_with_its_hash():
     projection = _project(_batch(sets=[_set()]))
-    assert projection.policy_id == "safe_sum_v3"
+    assert projection.policy_id == "safe_sum_v4"
     assert len(projection.policy_sha256) == 64
 
 
@@ -371,7 +373,7 @@ def test_a_single_arm_is_not_a_partition():
                                             partition={**GOOD_PARTITION,
                                                        "declared_arm_count": 1})]))
     assert projection.status != DERIVED
-    assert "at least 2" in projection.aggregation_reason
+    assert projection.aggregation_status == PROTOCOL_ERROR
 
 
 # --- T5 / T6 / T7: populations are not interchangeable --------------------
@@ -601,7 +603,7 @@ def test_nothing_is_derived_when_no_components_were_offered():
 
 def test_the_policy_is_hashed_so_a_run_can_say_which_one_it_applied():
     policy = load_aggregation_policy()
-    assert len(policy.sha256) == 64 and policy.policy_id == "safe_sum_v3"
+    assert len(policy.sha256) == 64 and policy.policy_id == "safe_sum_v4"
 
 
 # --- T11 again: a timepoint is checked even with only one candidate -------
@@ -668,7 +670,7 @@ def test_a_derived_total_carries_its_policy_and_all_four_kinds_of_anchor():
     projection = _project(_batch(sets=[_set()]))
     result = to_source_result(projection)
     provenance = result.aggregation_provenance
-    assert provenance.policy_id == "safe_sum_v3"
+    assert provenance.policy_id == "safe_sum_v4"
     assert len(provenance.policy_sha256) == 64
     assert provenance.aggregation_set.startswith("allocated")
     assert provenance.population_quote == ALLOCATION
@@ -695,7 +697,7 @@ def test_a_released_printed_total_still_carries_the_broken_sets():
         _total("945", "A total of 945 patients underwent randomization")],
         sets=[_set(counts=[{**ALLOCATED_ARMS[0], "count": "not a number"}])])
     provenance = to_source_result(_project(reading)).aggregation_provenance
-    assert provenance.errors and provenance.policy_id == "safe_sum_v3"
+    assert provenance.errors and provenance.policy_id == "safe_sum_v4"
 
 
 # --- round 3: the sentence that licenses the sum must be about these people ---
@@ -722,7 +724,7 @@ def test_a_partition_about_the_analysed_cannot_license_allocated_counts():
                                            "declared_arm_count": 2})],
                      document=ROUND3_PAPER)
     assert reading.aggregation_sets == []
-    assert any("describes the analysed" in e for e in reading.aggregation_errors)
+    assert any("describes 'analysed'" in e for e in reading.aggregation_errors)
     assert _project(reading).status != DERIVED
 
 
@@ -805,3 +807,168 @@ def test_an_arm_projection_carries_no_aggregation_provenance_at_all():
     projection = project_claim(
         reading, review_labels={"a": "Nivolumab (3 mg/kg)"}, cohort_key="a")
     assert to_source_result(projection).aggregation_provenance is None
+
+
+# --- round 4 (D1-4B): every axis, and the axes the run contract demands ---
+
+ITT_TABLE = ("Table 5. ITT analysis population: alfa (N = 40), beta (N = 60), "
+             "one of two groups.")
+WEEK12 = ("At week 12, among those who underwent randomization, 41 were in the "
+          "alfa group and 61 in the beta group, one of two groups.")
+BASELINE_PARTITION = ("At baseline the trial comprised two groups, alfa and beta, "
+                      "with no patient in both.")
+#: The baseline partition sits WITH the week-12 counts, so the population axis
+#: is satisfied by proximity and the TIMEPOINT axis is the one under test. That
+#: is the realistic shape of the trap: two sentences printed together, about the
+#: same people, at different visits.
+B_PAPER = "\n\n".join([PAPER, ITT_TABLE, WEEK12 + " " + BASELINE_PARTITION])
+BOTH = ["population_basis", "analysis_set"]
+ITT = PopulationScope(basis="analysed", analysis_set="itt")
+
+
+def _itt_set(partition_quote):
+    return {"population_phrase": "ITT analysis population",
+            "population_quote": ITT_TABLE,
+            "cohort_counts": [_count("alfa", 40, ITT_TABLE),
+                              _count("beta", 60, ITT_TABLE)],
+            "partition": {"complete": True, "mutually_exclusive": True,
+                          "quote": partition_quote, "declared_arm_count": 2}}
+
+
+def test_b1_an_itt_set_needs_a_partition_that_says_itt():
+    """Agreeing about the basis is not agreeing.
+
+    "The analysis population comprised three groups" is silent about whether the
+    ITT set did, and silence is not a licence to add ITT counts together.
+    """
+    reading = _batch(sets=[_itt_set(ANALYSIS_PARTITION)], document=B_PAPER)
+    assert reading.aggregation_sets == []
+    assert any("neither says so nor sits with" in e
+               for e in reading.aggregation_errors)
+
+
+def test_b1_the_same_set_derives_when_its_partition_is_in_the_itt_passage():
+    projection = project_claim(
+        _batch(sets=[_itt_set(ITT_TABLE)], document=B_PAPER), target_shape=STUDY,
+        requested_scope=ITT, required_axes=BOTH, field_type="sample_size")
+    assert projection.status == DERIVED and projection.derived_value == 100
+
+
+def test_b2_week_12_counts_are_not_completed_by_a_baseline_partition():
+    """Groups complete at baseline need not be complete twelve weeks later."""
+    reading = _batch(sets=[{
+        "population_phrase": "underwent randomization", "population_quote": WEEK12,
+        "timepoint_phrase": "At week 12", "timepoint_quote": WEEK12,
+        "cohort_counts": [_count("alfa", 41, WEEK12), _count("beta", 61, WEEK12)],
+        "partition": {"complete": True, "mutually_exclusive": True,
+                      "quote": BASELINE_PARTITION, "declared_arm_count": 2}}],
+        document=B_PAPER)
+    assert reading.aggregation_sets == []
+    assert any("does not say it holds at that moment" in e
+               for e in reading.aggregation_errors)
+
+
+def test_b3_a_dose_is_not_a_census():
+    """A number two words from a noun is not a count of groups."""
+    dosed = ("Patients received 3 mg treatment in one of two groups, alfa and "
+             "beta, with no patient in both.")
+    reading = _batch(sets=[{
+        "population_phrase": "underwent randomization",
+        "population_quote": ALLOCATION, "cohort_counts": ALLOCATED_ARMS[:2],
+        "partition": {"complete": True, "mutually_exclusive": True,
+                      "quote": dosed, "declared_arm_count": 3}}],
+        # Beside the allocation sentence, so the population axis is satisfied
+        # and the CENSUS is the thing under test.
+        document=ALLOCATION + " " + dosed + "\n\n" + PARTITION)
+    assert reading.aggregation_sets == []
+    assert any("does not state" in e for e in reading.aggregation_errors)
+
+
+def test_b4_a_profile_requiring_an_analysis_set_refuses_components_without_one():
+    """The run contract's axes reach the sum, not only the printed total."""
+    projection = project_claim(
+        _batch(sets=[ANALYSED_SET]), target_shape=STUDY, requested_scope=ANALYSED,
+        required_axes=BOTH, field_type="sample_size")
+    assert projection.status != DERIVED
+    assert projection.required_axes == sorted(BOTH)
+
+
+def test_b4_the_same_components_derive_when_the_profile_asks_only_for_a_basis():
+    projection = project_claim(
+        _batch(sets=[ANALYSED_SET]), target_shape=STUDY, requested_scope=ANALYSED,
+        required_axes=["population_basis"], field_type="sample_size")
+    assert projection.status == DERIVED and projection.derived_value == 936
+
+
+def test_b5_a_broken_set_about_other_people_is_unrelated():
+    broken = _set(counts=[{**ALLOCATED_ARMS[0], "count": -1}])
+    projection = _project(_batch(sets=[broken, ANALYSED_SET]), scope=ANALYSED)
+    assert projection.status == DERIVED
+    assert projection.unrelated_rejections == ["set 0 (allocated)"]
+
+
+def test_b6_a_broken_set_of_the_same_people_at_another_time_is_unrelated():
+    """One axis definitely different is enough: it cannot have held this answer."""
+    broken = {"population_phrase": "underwent randomization",
+              "population_quote": WEEK12, "timepoint_phrase": "At week 12",
+              "timepoint_quote": WEEK12,
+              "cohort_counts": [{**_count("alfa", 41, WEEK12), "count": -1}],
+              "partition": {"complete": True, "mutually_exclusive": True,
+                            "quote": WEEK12, "declared_arm_count": 2}}
+    reading = parse_batch(
+        {"readings": [], "aggregation_sets": [broken, _timed_set("At baseline")]},
+        TIMED_PAPER + "\n\n" + WEEK12, target_shape=STUDY, aggregable=True)
+    projection = _project(reading, timepoint_label="At baseline")
+    assert projection.status == DERIVED and projection.derived_value == 945
+    assert projection.unrelated_rejections
+
+
+def test_b6_a_broken_set_nobody_can_place_still_blocks():
+    reading = _batch(sets=[{"population_phrase": "", "cohort_counts": []},
+                           ANALYSED_SET])
+    assert _project(reading, scope=ANALYSED).status != DERIVED
+
+
+# --- the evaluator travels with every outcome ----------------------------
+
+def _identity():
+    from react_review.tools.aggregation_identity import evaluator_readiness
+    return evaluator_readiness("1.4.0", policy_id="safe_sum_v4",
+                               policy_hash=load_aggregation_policy().sha256)
+
+
+@pytest.mark.parametrize("sets,scope,expected", [
+    ([_set()], ALLOCATED, DERIVED),
+    ([ANALYSED_SET], ALLOCATED, NOT_REPORTED),
+    ([_set(partition={**GOOD_PARTITION, "complete": "false"})], ALLOCATED,
+     NOT_REPORTED),
+])
+def test_every_aggregation_outcome_names_the_code_that_decided(sets, scope, expected):
+    """A refusal is a decision too, and a reader must be able to ask whose."""
+    projection = project_claim(_batch(sets=sets), target_shape=STUDY,
+                               requested_scope=scope, required_axes=AXES,
+                               field_type="sample_size", evaluator=_identity())
+    assert projection.status == expected
+    provenance = to_source_result(projection).aggregation_provenance
+    assert provenance.evaluator_id == "safe_aggregation"
+    assert provenance.evaluator_version == "1.4.0"
+    assert provenance.evaluator_hash.startswith("sha256:")
+    assert provenance.policy_id == "safe_sum_v4"
+
+
+def test_a_printed_total_that_won_still_names_the_evaluator_that_checked_it():
+    reading = _batch(readings=[_total(
+        "945", "A total of 945 patients underwent randomization")], sets=[_set()])
+    projection = project_claim(reading, target_shape=STUDY,
+                               requested_scope=ALLOCATED, required_axes=AXES,
+                               field_type="sample_size", evaluator=_identity())
+    assert projection.status == OK
+    provenance = to_source_result(projection).aggregation_provenance
+    assert provenance.evaluator_version == "1.4.0"
+
+
+def test_without_an_identity_nothing_is_release_eligible():
+    provenance = to_source_result(
+        _project(_batch(sets=[_set()]))).aggregation_provenance
+    assert provenance.release_eligible is False
+    assert provenance.evaluator_status == "unavailable"
