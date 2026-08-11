@@ -43,7 +43,12 @@ from react_review.contracts import (
     sha256_file,
 )
 from react_review.normalize.cohorts import distinguishing_tokens
-from react_review.tools.aggregation_identity import EvaluatorIdentity
+from react_review.tools.aggregation_identity import (
+    UNAVAILABLE,
+    EvaluatorIdentity,
+    evaluator_readiness,
+    registry_entry,
+)
 from react_review.normalize.population import PopulationContract, PopulationScope
 from react_review.schemas.batch import (
     STUDY,
@@ -122,6 +127,71 @@ class AggregationPolicy:
         return sorted(axes)
 
 
+@dataclass(frozen=True)
+class AggregationRuntime:
+    """The policy that will actually run, bound to the identity that cleared it.
+
+    They used to be two arguments. Readiness verified one policy and the caller
+    could hand the projector another, so a result could name a policy nobody had
+    checked and still report itself release-eligible — the same shape of fault as
+    a result attesting to an axis nobody applied, and unfixable by comparing them
+    at the exit, because by then two independent objects have already disagreed
+    for a whole run. Here there is only ever one, resolved together.
+
+    The axes come from here too, for the same reason: an escape hatch that let a
+    caller declare them pre-computed skipped the union of policy floor, run
+    contract and claim, which is the core invariant of safe_sum_v5.
+    """
+
+    policy: AggregationPolicy
+    evaluator: EvaluatorIdentity
+
+    @classmethod
+    def resolve(cls, *, policy_id: str, evaluator_version: str,
+                root: Path | None = None) -> "AggregationRuntime":
+        """Read the registry's policy and clear it, in one step that cannot skew."""
+        identity = evaluator_readiness(evaluator_version, policy_id=policy_id,
+                                       root=root)
+        entry = registry_entry(policy_id, root)
+        policy = load_aggregation_policy(
+            str((root or repo_root()) / str(entry.get("file") or "")))
+        if policy.policy_id != identity.policy_id or policy.sha256 != identity.policy_hash:
+            raise ContractError(
+                f"the policy loaded ({policy.policy_id} {policy.sha256[:12]}…) is "
+                f"not the one readiness cleared ({identity.policy_id} "
+                f"{identity.policy_hash[:12]}…)")
+        return cls(policy=policy, evaluator=identity)
+
+    @classmethod
+    def unregistered(cls, policy: AggregationPolicy | None = None
+                     ) -> "AggregationRuntime":
+        """A runtime for development and offline tests. Never publishable.
+
+        Its identity says so in every field a reader might check, so nothing has
+        to remember that this constructor is the unsafe one.
+        """
+        rules = policy or load_aggregation_policy()
+        return cls(policy=rules, evaluator=EvaluatorIdentity(
+            evaluator_id="", evaluator_version="", evaluator_hash="",
+            policy_id=rules.policy_id, policy_hash=rules.sha256,
+            status=UNAVAILABLE,
+            reason=("this run resolved no evaluator identity, so nothing "
+                    "attributes its verdicts to a commit")))
+
+    @property
+    def release_eligible(self) -> bool:
+        """Publishable only if the identity holds AND it is THIS policy's."""
+        return (self.evaluator.release_eligible
+                and self.evaluator.policy_id == self.policy.policy_id
+                and self.evaluator.policy_hash == self.policy.sha256)
+
+    def axes_for_claim(self, required_axes, claim, *, target_shape: str,
+                       field_type: str) -> list[str]:
+        return self.policy.effective_axes(required_axes, claim,
+                                          target_shape=target_shape,
+                                          field_type=field_type)
+
+
 @lru_cache(maxsize=8)
 def load_aggregation_policy(path: str | Path = DEFAULT_POLICY) -> AggregationPolicy:
     """Read the frozen policy, recording the bytes it was read from."""
@@ -177,6 +247,18 @@ def load_aggregation_policy(path: str | Path = DEFAULT_POLICY) -> AggregationPol
             + ". A rule the loader ignores is documentation pretending to be a "
               "contract; a rule the file omits is one that silently takes a "
               "default, and a default nobody wrote down is not a decision")
+    for key in ("minimum_axes", "on_unknown", "timepoint_matching"):
+        if key not in body:
+            raise ContractError(
+                f"{resolved} omits {key!r}. It used to take a default, so the "
+                "file said one thing and the code did another — writing "
+                '"minimum_axes": [] got population_basis anyway')
+    axes = tuple(body["minimum_axes"])
+    unknown = [a for a in axes if a not in _KNOWN_AXES]
+    if unknown:
+        raise ContractError(
+            f"{resolved} names {unknown} as axes. Only {sorted(_KNOWN_AXES)} "
+            "exist, and an axis nobody compares is a requirement nobody applies")
     count = required.get("min_components")
     if type(count) is not int or type(count) is bool or count < 2:
         raise ContractError(
@@ -201,12 +283,12 @@ def load_aggregation_policy(path: str | Path = DEFAULT_POLICY) -> AggregationPol
         require_axes_the_claim_states=required["require_axes_the_claim_states"],
         population_must_match_claim=required["population_must_match_claim"],
         timepoint_must_match_claim=required["timepoint_must_match_claim"],
-        minimum_axes=tuple(body.get("minimum_axes") or ["population_basis"]),
-        on_unknown=one_of(str(body.get("on_unknown", "reject")),
-                          ("reject",), field="on_unknown"),
-        timepoint_matching=one_of(str(body.get("timepoint_matching",
-                                               "normalised_exact")),
-                                  ("normalised_exact",), field="timepoint_matching"),
+        minimum_axes=axes,
+        on_unknown=one_of(str(body["on_unknown"]), ("reject",),
+                          field="on_unknown"),
+        timepoint_matching=one_of(str(body["timepoint_matching"]),
+                                  ("normalised_exact",),
+                                  field="timepoint_matching"),
     )
 
 
@@ -218,6 +300,10 @@ _READ_REQUIREMENTS = {
     "population_must_match_claim", "timepoint_must_match_claim",
     "honour_run_contract_axes", "require_axes_the_claim_states",
 }
+
+#: The axes a population can actually be compared on. Named here so a policy
+#: cannot require one that no comparison implements.
+_KNOWN_AXES = {"population_basis", "analysis_set"}
 
 #: Exactly what this evaluator enforces unconditionally. A policy must list all
 #: of these and nothing else: an omission hides a rule that is in force, and an
@@ -285,7 +371,6 @@ def derive_partitioned_total(
     field_type: str = "",
     timepoint_label: str = "",
     required_axes: list[str] | None = None,
-    axes_already_effective: bool = False,
     rejected_sets: list[RejectedAggregationSet] | None = None,
     evaluator: EvaluatorIdentity | None = None,
     policy: AggregationPolicy | None = None,
@@ -298,12 +383,12 @@ def derive_partitioned_total(
     that these three arms are all of them" is.
     """
     rules = policy or load_aggregation_policy()
-    # The caller computes these now, so the printed and the computed total are
-    # held to one standard. The old behaviour survives for direct callers.
-    axes = (list(required_axes or []) if axes_already_effective
-            else rules.effective_axes(required_axes, requested_scope,
-                                      target_shape=target_shape,
-                                      field_type=field_type))
+    # Always derived here, never accepted as already-computed. The flag that
+    # used to allow that let a caller skip the union of policy floor, run
+    # contract and claim — turning a rejected ITT claim into a derived 945 by
+    # passing one axis and a promise.
+    axes = rules.effective_axes(required_axes, requested_scope,
+                                target_shape=target_shape, field_type=field_type)
     out = AggregationOutcome(policy_id=rules.policy_id, policy_sha256=rules.sha256,
                              required_axes=list(axes), evaluator=evaluator)
 

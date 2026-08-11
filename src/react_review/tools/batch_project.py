@@ -41,7 +41,7 @@ from react_review.tools.batch_parse import BatchReading
 from react_review.tools.aggregation_identity import EvaluatorIdentity
 from react_review.tools.safe_aggregation import (
     NOT_APPLICABLE,
-    load_aggregation_policy,
+    AggregationRuntime,
     PROTOCOL_ERROR,
     REJECTED,
     AggregationPolicy,
@@ -94,6 +94,9 @@ class Projection:
     #: corroborated it — a refusal is a decision, and a reader has to be able to
     #: ask which code made it.
     evaluator: EvaluatorIdentity | None = None
+    #: The bound policy-and-identity this projection ran under. Release
+    #: eligibility is read from here, never assembled from parts.
+    runtime: Any | None = None
     #: Why a set could not be read at all. Survives every path: a released
     #: printed total does not make a malformed aggregation block stop existing.
     aggregation_errors: list[str] = field(default_factory=list)
@@ -141,8 +144,11 @@ def project_claim(
     required_axes: list[str] | None = None,
     timepoint_label: str = "",
     population_contract: PopulationContract | None = None,
-    aggregation_policy: AggregationPolicy | None = None,
-    evaluator: EvaluatorIdentity | None = None,
+    # ONE object, not a policy and an identity that can disagree. See
+    # AggregationRuntime: the two used to be separate arguments, and a result
+    # could name a policy readiness had never seen while reporting itself
+    # release-eligible.
+    runtime: AggregationRuntime | None = None,
     field_type: str = "",
 ) -> Projection:
     """Answer ONE claim from a batched reading, or say why it cannot be."""
@@ -154,8 +160,8 @@ def project_claim(
         return _project_study(
             reading, entries, requested_scope=requested_scope,
             required_axes=required_axes or [], timepoint_label=timepoint_label,
-            population_contract=population_contract, policy=aggregation_policy,
-            field_type=field_type, evaluator=evaluator)
+            population_contract=population_contract, runtime=runtime,
+            field_type=field_type)
 
     if not entries:
         return Projection(
@@ -196,8 +202,7 @@ _NEVER_DERIVE = (CONTRADICTORY, AMBIGUOUS)
 
 def _project_study(reading: BatchReading, entries: list[BatchEntry], *,
                    requested_scope, required_axes, timepoint_label: str,
-                   population_contract, policy, field_type: str,
-                   evaluator=None) -> Projection:
+                   population_contract, runtime, field_type: str) -> Projection:
     """A whole-study total: read it if the paper prints it, compute it if not.
 
     The order is not a preference, it is the difference between a fact and an
@@ -218,9 +223,10 @@ def _project_study(reading: BatchReading, entries: list[BatchEntry], *,
     # contract's axes alone while the result recorded the wider set the sum would
     # have used — an answer carrying an attestation to a check that never
     # happened, which is worse than an answer that is merely wrong.
-    rules = policy or load_aggregation_policy()
-    axes = rules.effective_axes(required_axes, requested_scope,
-                                target_shape=STUDY, field_type=field_type)
+    runtime = runtime or AggregationRuntime.unregistered()
+    rules = runtime.policy
+    axes = runtime.axes_for_claim(required_axes, requested_scope,
+                                  target_shape=STUDY, field_type=field_type)
     provenance["required_axes"] = list(axes)
 
     explicit = Projection(
@@ -237,10 +243,9 @@ def _project_study(reading: BatchReading, entries: list[BatchEntry], *,
     summed = derive_partitioned_total(
         reading.aggregation_sets, requested_scope, target_shape=STUDY,
         field_type=field_type, timepoint_label=timepoint_label,
-        # The very same axes the printed total was selected against.
-        required_axes=axes, axes_already_effective=True,
+        required_axes=required_axes,
         rejected_sets=reading.rejected_sets, policy=rules,
-        population_contract=population_contract, evaluator=evaluator)
+        population_contract=population_contract, evaluator=runtime.evaluator)
     provenance["policy"] = f"{summed.policy_id} ({summed.policy_sha256[:12]}…)"
     if summed.chosen_set is not None:
         provenance["aggregation_set"] = summed.chosen_set.describe()
@@ -257,6 +262,7 @@ def _project_study(reading: BatchReading, entries: list[BatchEntry], *,
         projection.policy_sha256 = summed.policy_sha256
         projection.required_axes = list(summed.required_axes)
         projection.evaluator = summed.evaluator
+        projection.runtime = runtime
         projection.population_quote = summed.population_quote
         projection.timepoint_quote = summed.timepoint_quote
         projection.partition_quote = (projection.partition_quote

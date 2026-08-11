@@ -62,9 +62,12 @@ def _provenance(projection: Projection) -> AggregationProvenance | None:
             git_commit_matches_evaluator=bool(
                 who and who.git_commit_matches_evaluator),
             evaluator_status=who.status if who else "unavailable",
-            # An identity nobody established is not release-eligible, and the
-            # absence of one is exactly the case that must not read as a pass.
-            release_eligible=bool(who and who.release_eligible),
+            # From the RUNTIME, which is the only thing that knows the policy
+            # that ran is the policy readiness cleared. Reading it off the
+            # identity alone let a result name one policy and be vouched for by
+            # another.
+            release_eligible=bool(projection.runtime
+                                  and projection.runtime.release_eligible),
             required_axes=list(projection.required_axes),
             aggregation_set=projection.aggregation_set,
             population_quote=projection.population_quote,

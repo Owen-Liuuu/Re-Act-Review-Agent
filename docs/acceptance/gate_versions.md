@@ -18,9 +18,9 @@ matching fails the suite instead of sitting in a document nobody recomputes.
 | v4 | `configs/aggregation/safe_sum_v4.json` | `FE1B925C28FA7558` | superseded; never applied to a result |
 | v5 | `configs/aggregation/safe_sum_v5.json` | `DAEB6715F812E88E` | current |
 | v1 | `configs/aggregation/registry.json` | `0F16E3F1228BC4E9` | superseded; could not grow without breaking its own pin |
-| v2 | `configs/aggregation/registry_v2.json` | `3F593BB1097A3CA0` | current; records each policy's file and bytes |
+| v2 | `configs/aggregation/registry_v2.json` | `3F593BB1097A3CA0` | superseded |
 | 1.4.0 | `configs/aggregation/evaluators/safe_aggregation_1.4.0.json` | `3B4912D2A0596CEF` | superseded |
-| 1.5.0 | `configs/aggregation/evaluators/safe_aggregation_1.5.0.json` | `0C5274C554AF1813` | current evaluator |
+| 1.5.0 | `configs/aggregation/evaluators/safe_aggregation_1.5.0.json` | `0C5274C554AF1813` | superseded |
 
 ## A policy version is not enough — the code that applies it also has an identity
 
@@ -46,6 +46,21 @@ which ought to cost a version. `registry_v2.json` also records each policy's
 file and bytes, so readiness computes the policy hash itself rather than
 accepting one from its caller; handed the string "not-a-hash", the previous
 version reported a registered, release-eligible run.
+
+| v3 | `configs/aggregation/registry_v3.json` | `7B439CBDA99D54D4` | current |
+| 1.6.0 | `configs/aggregation/evaluators/safe_aggregation_1.6.0.json` | `E2514A771F246A1C` | current evaluator |
+
+A policy and the identity that cleared it are ONE object, `AggregationRuntime`.
+They were two arguments to the projector, and readiness could clear one policy
+while the run applied another — a result naming a policy nobody had checked, and
+reporting itself release-eligible. Comparing them at the exit would have closed
+that hole and kept the shape of it, so the projector now takes only the bound
+pair, and the scope axes come from it too: the flag that let a caller declare
+them pre-computed skipped the union this policy exists to require.
+
+`aggregation_identity.py` is inside the hashed evaluator boundary from 1.6.0.
+Being only in the clean check caught an uncommitted edit and missed a committed
+one — the evaluator hash stayed put and the run went back to clean.
 
 Versioning is semantic and the rule is about OUTCOMES, not about how large the
 change felt: anything that can move a claim between `derived`, `rejected`,

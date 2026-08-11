@@ -945,9 +945,10 @@ def test_b6_a_broken_set_nobody_can_place_still_blocks():
 
 # --- the evaluator travels with every outcome ----------------------------
 
-def _identity():
-    from react_review.tools.aggregation_identity import evaluator_readiness
-    return evaluator_readiness("1.5.0", policy_id="safe_sum_v5")
+def _runtime():
+    from react_review.tools.safe_aggregation import AggregationRuntime
+    return AggregationRuntime.resolve(policy_id="safe_sum_v5",
+                                      evaluator_version="1.6.0")
 
 
 @pytest.mark.parametrize("sets,scope,expected", [
@@ -960,11 +961,11 @@ def test_every_aggregation_outcome_names_the_code_that_decided(sets, scope, expe
     """A refusal is a decision too, and a reader must be able to ask whose."""
     projection = project_claim(_batch(sets=sets), target_shape=STUDY,
                                requested_scope=scope, required_axes=AXES,
-                               field_type="sample_size", evaluator=_identity())
+                               field_type="sample_size", runtime=_runtime())
     assert projection.status == expected
     provenance = to_source_result(projection).aggregation_provenance
     assert provenance.evaluator_id == "safe_aggregation"
-    assert provenance.evaluator_version == "1.5.0"
+    assert provenance.evaluator_version == "1.6.0"
     assert provenance.evaluator_hash.startswith("sha256:")
     assert provenance.policy_id == "safe_sum_v5"
 
@@ -974,10 +975,10 @@ def test_a_printed_total_that_won_still_names_the_evaluator_that_checked_it():
         "945", "A total of 945 patients underwent randomization")], sets=[_set()])
     projection = project_claim(reading, target_shape=STUDY,
                                requested_scope=ALLOCATED, required_axes=AXES,
-                               field_type="sample_size", evaluator=_identity())
+                               field_type="sample_size", runtime=_runtime())
     assert projection.status == OK
     provenance = to_source_result(projection).aggregation_provenance
-    assert provenance.evaluator_version == "1.5.0"
+    assert provenance.evaluator_version == "1.6.0"
 
 
 def test_without_an_identity_nothing_is_release_eligible():
@@ -1030,3 +1031,43 @@ def test_a_field_nobody_may_sum_does_not_inherit_the_aggregation_floor():
         _printed_analysis_total(), target_shape=STUDY, requested_scope=None,
         required_axes=[], field_type="progression_free_survival")
     assert projection.required_axes == []
+
+
+def test_a_policy_readiness_never_saw_cannot_be_vouched_for_by_a_real_identity():
+    """The projector takes ONE object, so the two cannot be mismatched at all.
+
+    Before this, `aggregation_policy=` and `evaluator=` were separate arguments
+    and a result could name a rogue policy while reporting release_eligible.
+    """
+    import inspect
+
+    from dataclasses import replace
+
+    signature = inspect.signature(project_claim).parameters
+    assert "aggregation_policy" not in signature and "evaluator" not in signature
+
+    good = _runtime()
+    rogue = replace(good, policy=replace(good.policy, policy_id="rogue_policy",
+                                         sha256="0" * 64))
+    projection = project_claim(_batch(sets=[_set()]), target_shape=STUDY,
+                               requested_scope=ALLOCATED, required_axes=AXES,
+                               field_type="sample_size", runtime=rogue)
+    provenance = to_source_result(projection).aggregation_provenance
+    assert provenance.policy_id == "rogue_policy"
+    assert provenance.release_eligible is False
+
+
+def test_the_scope_axes_cannot_be_declared_pre_computed_by_a_caller():
+    """The flag turned a rejected ITT claim into a derived 945."""
+    import inspect
+
+    from react_review.tools.safe_aggregation import derive_partitioned_total
+
+    assert "axes_already_effective" not in inspect.signature(
+        derive_partitioned_total).parameters
+    itt = PopulationScope(basis="allocated", analysis_set="itt")
+    outcome = derive_partitioned_total(
+        _batch(sets=[_set()]).aggregation_sets, itt, target_shape=STUDY,
+        field_type="sample_size", required_axes=["population_basis"])
+    assert outcome.required_axes == ["analysis_set", "population_basis"]
+    assert outcome.status != "derived"

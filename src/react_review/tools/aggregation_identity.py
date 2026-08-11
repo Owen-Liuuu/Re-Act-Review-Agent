@@ -36,18 +36,20 @@ from react_review.contracts import (
 #: Named so a future scheme cannot be mistaken for this one in an old artifact.
 HASH_ALGORITHM = "sha256-path-lf-v1"
 
+EVALUATOR_ID = "safe_aggregation"
 EVALUATOR_DIR = "configs/aggregation/evaluators"
 #: The registry is versioned like everything else it governs. It is pinned by
 #: hash, so it could never gain a policy or an evaluator pair without breaking
 #: its own immutability rule — and changing which pairs may publish is exactly
 #: the kind of change that should require a version anyway.
-REGISTRY = "configs/aggregation/registry_v2.json"
+REGISTRY = "configs/aggregation/registry_v3.json"
 
 #: Files that decide WHETHER a result may be published, as opposed to what it
-#: says. A change to any of them is a change to the identity itself, so they are
-#: covered by the clean check alongside the evaluator's own sources.
-CONTROL_PLANE = ("configs/aggregation/registry_v2.json",
-                 "src/react_review/tools/aggregation_identity.py")
+#: says. `aggregation_identity.py` is no longer listed here: it is inside the
+#: hashed evaluator boundary now, which is strictly stronger. Being only in the
+#: clean check meant an uncommitted change was caught and a COMMITTED one was
+#: not — the evaluator hash stayed put and the run went back to clean.
+CONTROL_PLANE = ("configs/aggregation/registry_v3.json",)
 
 #: What a run may do with the evaluator it is running.
 REGISTERED = "registered"          # matches a published manifest at a clean HEAD
@@ -131,8 +133,16 @@ def _canonical_bytes(path: Path) -> bytes:
 
 
 @lru_cache(maxsize=8)
-def load_evaluator_manifest(version: str) -> EvaluatorManifest:
-    path = repo_root() / EVALUATOR_DIR / f"safe_aggregation_{version}.json"
+def load_evaluator_manifest(version: str,
+                            root: Path | None = None) -> EvaluatorManifest:
+    """The manifest for one version, read from the checkout being examined.
+
+    ``root`` is honoured rather than ignored: a readiness check pointed at
+    another working copy has to read THAT copy's manifest, or it verifies one
+    tree's code against another tree's published claim about it.
+    """
+    base = root or repo_root()
+    path = base / EVALUATOR_DIR / f"safe_aggregation_{version}.json"
     body = read_json_object(path, kind="evaluator manifest")
     algorithm = str(body.get("hash_algorithm") or "")
     if algorithm != HASH_ALGORITHM:
@@ -143,6 +153,17 @@ def load_evaluator_manifest(version: str) -> EvaluatorManifest:
     sources = body.get("source_files") or {}
     if not isinstance(sources, dict) or not sources:
         raise ContractError(f"{path} lists no source files, so it identifies nothing")
+    # A manifest that does not agree with its own filename identifies the wrong
+    # thing: 1.6.0's file saying `evaluator_version: 1.5.0` would publish one
+    # version's hash under another's name.
+    if str(body.get("evaluator_version") or "") != version:
+        raise ContractError(
+            f"{path} is named for evaluator {version} and declares "
+            f"{body.get('evaluator_version')!r}")
+    if str(body.get("evaluator_id") or "") != EVALUATOR_ID:
+        raise ContractError(
+            f"{path} declares evaluator_id {body.get('evaluator_id')!r}; this "
+            f"build is {EVALUATOR_ID!r}")
     return EvaluatorManifest(
         evaluator_id=str(body.get("evaluator_id") or ""),
         evaluator_version=str(body.get("evaluator_version") or ""),
@@ -164,7 +185,7 @@ def evaluator_readiness(version: str, *, policy_id: str,
     thousands of times is a check somebody eventually removes for being slow.
     """
     base = root or repo_root()
-    manifest = load_evaluator_manifest(version)
+    manifest = load_evaluator_manifest(version, base)
     computed, per_file = hash_sources(list(manifest.source_files), base)
     entry = _registry(base).get(policy_id) or {}
     policy_file = str(entry.get("file") or "")
@@ -220,7 +241,7 @@ def evaluator_readiness(version: str, *, policy_id: str,
     # verdicts may be published. Without the second group, changing which pairs
     # are authorised — or changing this function — left the run looking clean.
     paths = sorted({*manifest.source_files, *CONTROL_PLANE, policy_file,
-                    str(manifest.path.relative_to(base)).replace("\\", "/")})
+                    manifest.path.relative_to(base).as_posix()})
     tracked, error = _git(["ls-files", "--error-unmatch", *paths], base)
     if tracked is None:
         return refuse(UNAVAILABLE,
@@ -253,6 +274,11 @@ def evaluator_readiness(version: str, *, policy_id: str,
         evaluator_id=manifest.evaluator_id, evaluator_version=version,
         evaluator_hash=computed, policy_id=policy_id, policy_hash=policy_hash,
         git_commit=commit, git_commit_matches_evaluator=True, status=REGISTERED)
+
+
+def registry_entry(policy_id: str, root: Path | None = None) -> dict:
+    """What the registry says about one policy — its file, bytes and standing."""
+    return dict(_registry(root).get(policy_id) or {})
 
 
 @lru_cache(maxsize=4)
