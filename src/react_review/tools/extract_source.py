@@ -13,6 +13,7 @@ import unicodedata
 import structlog
 from pydantic import BaseModel, Field
 
+from react_review.contracts import ContractError
 from react_review.llm.base import LLMBackend, parse_llm_response
 from react_review.normalize.anchors import normalised_contains
 from react_review.normalize.cohorts import ComparisonTarget
@@ -385,7 +386,20 @@ class ExtractSourceValueTool(Tool):
         # the review's RAW column label — so an UNRESOLVED field (no field_type)
         # is still extractable: the raw name itself says what to look for.
         target = payload.concept or payload.raw_field_name or payload.field_type
-        targeted = prompt_profile(payload) == "targeted_v4"
+        profile = prompt_profile(payload)
+        if profile == "targeted_v5_batch":
+            # The second gate. A v5 request reaching here would be built with the
+            # LEGACY prompt body — only targeted_v4 turns the targeted sections
+            # on — and cached under the v5 prompt version: neither contract, and
+            # written into the namespace of the one it is not. The startup gate
+            # should make this unreachable; this is what makes a hole in the
+            # startup gate a crash rather than a poisoned recording.
+            raise ContractError(
+                "a targeted_v5_batch claim reached the single-target extractor. "
+                "That path builds the legacy prompt and would record it under the "
+                "v5 cache namespace, which is neither contract. Route it to the "
+                "batch tool or fail the run")
+        targeted = profile == "targeted_v4"
         prompt = _PROMPT.format(
             targeted_target=(_targeted_target(payload) if targeted else ""),
             targeted_rules=(_TARGETED_RULES if targeted else ""),

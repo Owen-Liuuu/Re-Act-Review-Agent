@@ -40,13 +40,17 @@ from react_review.contracts import (
     verify_declared_hash,
 )
 from react_review.run_profile import (
+    CLAIM_KINDS,
     RunContractProfile,
     legacy_contract,
     load_run_contract,
 )
 
 SCHEMA_VERSION = 1
-SCHEMA_VERSIONS = (1, 2)
+#: v3 routes by claim kind instead of naming one extraction profile, so a
+#: benchmark can express the mixed contract a batched run actually uses. v1 and
+#: v2 keep their meaning and their bytes.
+SCHEMA_VERSIONS = (1, 2, 3)
 
 EXTRACTION_PROFILES = ("legacy_v3", "targeted_v4", "targeted_v5_batch")
 SEMANTIC_PROFILES = ("semantic_v1", "semantic_v2_specificity")
@@ -145,6 +149,8 @@ class BenchmarkProfile(BaseModel):
     sha256: str
     schema_version: int = SCHEMA_VERSION
     extraction_profile: str = "legacy_v3"
+    #: v3 only. Empty for v1/v2, where the single profile above IS the route.
+    extraction_routes: dict[str, str] = Field(default_factory=dict)
     semantic_prompt_profile: str = "semantic_v1"
     semantic_overlay_path: Path | None = None
     semantic_overlay_sha256: str = ""
@@ -177,6 +183,8 @@ class BenchmarkProfile(BaseModel):
             "benchmark_profile": str(self.path),
             "benchmark_profile_sha256": self.sha256,
             "extraction_profile": self.extraction_profile,
+            **({"extraction_routes": dict(sorted(self.extraction_routes.items()))}
+               if self.extraction_routes else {}),
             "semantic_prompt_profile": self.semantic_prompt_profile,
             "semantic_overlay": str(self.semantic_overlay_path or ""),
             "semantic_overlay_sha256": self.semantic_overlay_sha256,
@@ -330,7 +338,12 @@ def load_profile(
             f"benchmark profile schema_version {version!r} is not one of "
             f"{', '.join(str(v) for v in SCHEMA_VERSIONS)}")
 
-    extraction = str(body.get("extraction_profile") or "")
+    routes = _profile_routes(body, version, path)
+    # The value route is what every v1/v2 caller has always meant by "the
+    # extraction profile", so it keeps that name downstream. A v3 file does not
+    # carry the single key at all — two places naming the profile in force is
+    # how a run gets recorded under one and executed under another.
+    extraction = routes["value"]
     semantic_profile = str(body.get("semantic_prompt_profile") or "")
     if extraction not in EXTRACTION_PROFILES:
         raise ProfileError(
@@ -373,7 +386,8 @@ def load_profile(
             body, "target_contract_sha256", target_path)
         targets = load_target_contract(target_path, answer_key_ids)
 
-    run_contract = _run_contract_for(body, path, version, extraction, semantic_profile)
+    run_contract = _run_contract_for(body, path, version, extraction,
+                                     semantic_profile, routes)
 
     gold_path = gold_sha = ""
     gold: dict[str, TargetGoldRow] = {}
@@ -384,7 +398,9 @@ def load_profile(
 
     return BenchmarkProfile(
         path=path, sha256=sha256_file(path), schema_version=version,
-        extraction_profile=extraction, semantic_prompt_profile=semantic_profile,
+        extraction_profile=extraction,
+        extraction_routes=(routes if version >= 3 else {}),
+        semantic_prompt_profile=semantic_profile,
         semantic_overlay_path=(overlay_path or None),
         semantic_overlay_sha256=overlay_sha,
         target_contract_path=(target_path or None),
@@ -393,8 +409,43 @@ def load_profile(
         target_gold_path=(gold_path or None), target_gold_sha256=gold_sha, gold=gold)
 
 
+def _profile_routes(body: dict, version: int, path: Path) -> dict[str, str]:
+    """One profile expanded, or v3's explicit routes — never both.
+
+    A v1 or v2 file names a single profile and has always meant it for
+    everything, so it is expanded rather than reinterpreted. A v3 file names
+    each kind and must name every kind; it may not also carry the single key,
+    because two places saying which profile is in force is how a run comes to be
+    recorded under one and executed under another.
+    """
+    if version >= 3:
+        if "extraction_profile" in body:
+            raise ProfileError(
+                f"{path.name} declares schema_version {version} and "
+                "extraction_profile; v3 routes by claim kind, and a leftover "
+                "single profile is a second source of truth about what ran")
+        declared = body.get("extraction_routes")
+        if not isinstance(declared, dict):
+            raise ProfileError(f"{path.name} must declare extraction_routes")
+        missing = [k for k in CLAIM_KINDS if k not in declared]
+        if missing:
+            raise ProfileError(
+                f"{path.name} declares no extraction route for {missing}")
+        unknown = [k for k in declared if k not in CLAIM_KINDS]
+        if unknown:
+            raise ProfileError(
+                f"{path.name} routes {unknown}, which nothing dispatches on")
+        return {kind: str(declared[kind]) for kind in CLAIM_KINDS}
+    if body.get("extraction_routes"):
+        raise ProfileError(
+            f"{path.name} declares schema_version {version} and "
+            "extraction_routes; routing needs schema_version 3")
+    return {kind: str(body.get("extraction_profile") or "") for kind in CLAIM_KINDS}
+
+
 def _run_contract_for(body: dict, path: Path, version: int,
-                      extraction: str, semantic_profile: str) -> RunContractProfile:
+                      extraction: str, semantic_profile: str,
+                      routes: dict[str, str]) -> RunContractProfile:
     """The runtime contract this benchmark profile runs under.
 
     A v2 profile names a run-profile FILE and pins its hash, and its own
@@ -430,6 +481,15 @@ def _run_contract_for(body: dict, path: Path, version: int,
             raise ProfileError(
                 f"the benchmark profile declares {field}={declared!r} but its "
                 f"run contract {contract.profile_id!r} says {actual!r}")
+    # Every route, not only the value one. A benchmark that agreed about values
+    # and disagreed about arm identities would run half of itself under a
+    # contract nobody declared.
+    for kind, declared in sorted(routes.items()):
+        if declared != contract.route_for(kind):
+            raise ProfileError(
+                f"the benchmark profile routes {kind} to {declared!r} but its "
+                f"run contract {contract.profile_id!r} routes it to "
+                f"{contract.route_for(kind)!r}")
     return contract
 
 
