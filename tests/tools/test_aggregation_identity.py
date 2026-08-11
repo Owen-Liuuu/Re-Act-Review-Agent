@@ -17,6 +17,7 @@ import pytest
 
 from react_review.contracts import ContractError, repo_root
 from react_review.tools.aggregation_identity import (
+    CONTROL_PLANE,
     HASH_ALGORITHM,
     REGISTERED,
     UNREGISTERED,
@@ -246,9 +247,9 @@ def test_the_files_that_decide_publishability_are_covered_somewhere():
     evaluator hash unchanged. Code that decides publishability belongs inside
     the boundary that is hashed.
     """
-    from react_review.tools.aggregation_identity import CONTROL_PLANE
+    from react_review.tools.aggregation_identity import REGISTRY
 
-    assert "configs/aggregation/registry_v3.json" in CONTROL_PLANE
+    assert REGISTRY in CONTROL_PLANE
     manifest = load_evaluator_manifest(VERSION)
     assert "src/react_review/tools/aggregation_identity.py" in manifest.source_files
 
@@ -269,15 +270,35 @@ def test_a_manifest_named_for_one_version_may_not_declare_another():
 
 
 def test_a_dirty_control_plane_file_makes_the_run_unpublishable():
-    registry = repo_root() / "configs/aggregation/registry_v2.json"
-    original = registry.read_bytes()
-    try:
-        registry.write_bytes(original + b"\n")
-        identity = evaluator_readiness(VERSION, policy_id=POLICY)
-        assert not identity.release_eligible
-        assert identity.status == UNREGISTERED
-    finally:
-        registry.write_bytes(original)
+    """A TRANSITION, not a state.
+
+    This test named registry_v2 after the constant had moved to v3, so it dirtied
+    a file nothing was watching. It stayed green anyway, because the working copy
+    it ran in had uncommitted evaluator sources and the run was already
+    unregistered for another reason entirely — the assertion held and measured
+    nothing. It could only ever have failed once something was committed, which
+    is precisely when it did.
+
+    So it reads the constant rather than a name, and asserts the change: eligible
+    before, not eligible after. If the baseline is not eligible there is no
+    transition to observe and nothing to claim.
+    """
+    for name in CONTROL_PLANE:
+        watched = repo_root() / name
+        before = evaluator_readiness(VERSION, policy_id=POLICY)
+        if not before.release_eligible:
+            pytest.skip(f"this checkout is already {before.status}, so dirtying "
+                        f"{name} would prove nothing")
+        original = watched.read_bytes()
+        try:
+            watched.write_bytes(original + b"\n")
+            after = evaluator_readiness(VERSION, policy_id=POLICY)
+            assert not after.release_eligible, name
+            assert after.status == UNREGISTERED
+            assert "differ from HEAD" in after.reason
+        finally:
+            watched.write_bytes(original)
+        assert evaluator_readiness(VERSION, policy_id=POLICY).release_eligible
 
 
 # --- D1-4C: the policy that runs is the policy that was cleared -----------
