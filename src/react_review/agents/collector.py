@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
+from react_review.contracts import ContractError
 from react_review.core.enums import CollectionOutcome, ReflectionDecision
 from react_review.dkb import KnowledgeBase, evidence_contradicts
 from react_review.normalize.cohorts import CohortRegistry, parse_comparison
@@ -26,28 +27,15 @@ from react_review.schemas.agent import AgentRun, StepRecord
 from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
 from react_review.steps.paper_verification.schemas import ReferenceEntry
 from react_review.tools.extract_source import ExtractSourceValueInput, SourceValueResult
-from react_review.tools.extraction_profile import DEFAULT_PROFILE
-from react_review.tools.extraction_profile import DEFAULT_PROFILE
+from react_review.tools.batch_group import claim_kind, group_claims
+from react_review.tools.extraction_profile import BATCH_PROFILE_NAME, DEFAULT_PROFILE
 from react_review.tools.registry import ToolRegistry
 from react_review.tools.search import ResolveReferenceInput
 
 
-def _target_kind(review_item: ReviewDataItem) -> str:
-    """Whether this claim is ABOUT an arm, or a value reported FOR one.
-
-    Structural, not a vocabulary: the review's cell for an arm-identity column
-    IS the review's own name for that arm — the same text the cohort was
-    labelled with. When the two coincide, the field being audited is the arm's
-    identity, and its source answer is the paper's name for that arm rather
-    than any number reported about it. Nothing here knows what a drug is.
-    """
-    value = _norm_text(review_item.value)
-    label = _norm_text(review_item.cohort_label)
-    return "arm_identity" if value and value == label else "value"
-
-
-def _norm_text(value: object) -> str:
-    return " ".join(str(value or "").lower().split())
+#: Kept under its old name; the rule now lives with the grouping, so a claim
+#: cannot be routed one way and grouped another.
+_target_kind = claim_kind
 
 
 class StudySource(BaseModel):
@@ -75,6 +63,31 @@ class CollectResult(BaseModel):
     source_item: SourceEvidenceItem
     record: AgentRun
     decision: ReflectionDecision
+
+
+class CollectStudyResult(BaseModel):
+    """One study's claims, and the readings they came out of.
+
+    Two lists rather than one, because a batched run produces two KINDS of
+    thing. The claim results are per claim, as they always were. The batch
+    records are per reading, and there are fewer of them — that is the whole
+    point. Copying a response onto every claim it answered would multiply it by
+    the group size and still not show that the group shared it; referencing it
+    by execution id does both.
+    """
+
+    claim_results: list[CollectResult] = []
+    batch_records: list[object] = []
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    @property
+    def source_items(self) -> list[SourceEvidenceItem]:
+        return [r.source_item for r in self.claim_results]
+
+    @property
+    def records(self) -> list[AgentRun]:
+        return [r.record for r in self.claim_results]
 
 
 # Where a retriever records the document's location. Each tier uses its own key,
@@ -163,6 +176,15 @@ class Collector:
         decider: ReflectionDecider | None = None,
         max_attempts: int = 3,
         extraction_profile: str = DEFAULT_PROFILE,
+        # The RUN CONTRACT, when there is one. It carries the route for each
+        # kind of claim and the axes each field is held to, so the Collector
+        # never has to be told the same thing twice in two shapes.
+        contract=None,
+        # Resolved ONCE by the harness that builds this Collector, never here:
+        # readiness shells out to git, and a check that runs per claim is a
+        # check somebody eventually removes for being slow.
+        aggregation_runtime=None,
+        batch_tool=None,
         telemetry=None,
     ) -> None:
         self._fetch = catalogue.get("fetch_fulltext")
@@ -174,11 +196,32 @@ class Collector:
         # Which prompt contract every request runs under. Carried explicitly so
         # a run's answers are attributable to the profile that produced them.
         self._extraction_profile = extraction_profile
-        self._extraction_profile = extraction_profile
+        self._contract = contract
+        self._runtime = aggregation_runtime
+        self._batch = batch_tool or (
+            catalogue.get("extract_source_batch")
+            if "extract_source_batch" in catalogue else None)
         # Counts retrievals, so "one paper, one fetch" is a measured claim.
         self._telemetry = telemetry
         self._max_attempts = max(1, max_attempts)
         self._decider = decider or ReflectionDecider(max_attempts=self._max_attempts)
+
+    def route_for(self, review_item) -> str:
+        """The extraction contract THIS claim runs under.
+
+        A run may legitimately read values in batch and arm identities one at a
+        time. What it may not do is leave that undeclared, so the route comes
+        from the contract when there is one and from the single profile when
+        there is not — never from a guess about what the claim looks like.
+        """
+        if self._contract is None:
+            return self._extraction_profile
+        return self._contract.route_for(claim_kind(review_item))
+
+    def _axes_for(self, field_type: str) -> list[str]:
+        if self._contract is None or not self._contract.scope_enabled:
+            return []
+        return self._contract.axes_for(field_type)
 
     def _concept_for(self, field_type: str) -> str:
         if self._kb and field_type in self._kb.entries:
@@ -250,6 +293,70 @@ class Collector:
         return StudySource(reference=reference, document=fetched.document,
                            retrieved=True, provenance=provenance, steps=steps)
 
+    async def collect_study(
+        self,
+        claims: list[ReviewDataItem],
+        reference: ReferenceEntry,
+        *,
+        research_context: str = "",
+        source: StudySource | None = None,
+    ) -> CollectStudyResult:
+        """Every claim about one paper, each under the route its contract names.
+
+        A mixed contract is the normal case, not an edge: values are worth
+        batching because one reading answers several of them, and arm identities
+        are not, because there is one per arm and asking "what is this arm
+        called" alongside "what does it report" needs a different prompt. Both
+        happen here, in one pass over one document, and each claim records which
+        route actually read it — a run-level profile would describe half the
+        run and leave the other half unattributable.
+
+        Claims come back in the order they arrived. Nothing downstream should
+        have to know that they were reordered to be grouped.
+        """
+        if source is None:
+            source = await self.open_study(reference)
+
+        results: dict[int, CollectResult] = {}
+        records: list[object] = []
+        for group in group_claims(claims):
+            route = (self._contract.route_for(group.kind) if self._contract
+                     else self._extraction_profile)
+            positions = [claims.index(claim) for claim in group.claims]
+            if route == BATCH_PROFILE_NAME:
+                produced, record = await self._collect_batched(
+                    group, reference, source, research_context)
+                if record is not None:
+                    records.append(record)
+            else:
+                produced = [
+                    await self.collect(claim, reference,
+                                       research_context=research_context,
+                                       source=source, route=route)
+                    for claim in group.claims]
+            for position, result in zip(positions, produced):
+                results[position] = result
+        return CollectStudyResult(
+            claim_results=[results[i] for i in sorted(results)],
+            batch_records=records)
+
+    async def _collect_batched(self, group, reference, source, research_context):
+        """One reading for a whole group. Wired in D1-5.5; refused until then.
+
+        Deliberately explicit rather than quietly falling through to the
+        single-target path: a v5 group read one claim at a time would put half a
+        run's answers under a profile the artifact does not name, and would make
+        the cost of batching unmeasurable, since every fallback adds back the
+        calls the batch was supposed to save.
+        """
+        if self._batch is None:
+            raise ContractError(
+                f"{group.describe()} is routed to {BATCH_PROFILE_NAME} and this "
+                "Collector has no batch tool. A run that cannot honour its own "
+                "contract must stop rather than read the claims some other way")
+        raise NotImplementedError(
+            "the batch reading path is wired in D1-5.5")
+
     async def collect(
         self,
         review_item: ReviewDataItem,
@@ -257,6 +364,7 @@ class Collector:
         *,
         research_context: str = "",
         source: StudySource | None = None,
+        route: str = "",
     ) -> CollectResult:
         steps: list[StepRecord] = []
 
@@ -309,7 +417,7 @@ class Collector:
                 cohort_display=review_item.cohort_label,
                 cohorts=self._cohort_variants(),
                 target_kind=_target_kind(review_item),
-                extraction_profile=self._extraction_profile,
+                extraction_profile=(route or self.route_for(review_item)),
                 attempt=attempt,
                 # A claim about two arms is carried as a pair, not as one name:
                 # "A vs B" handed over as a single cohort string is what let the
