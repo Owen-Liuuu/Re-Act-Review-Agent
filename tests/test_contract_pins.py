@@ -37,6 +37,8 @@ PINNED = {
     "configs/aggregation/registry_v3.json": "7B439CBDA99D54D4",
     "configs/aggregation/evaluators/safe_aggregation_1.5.0.json": "0C5274C554AF1813",
     "configs/aggregation/evaluators/safe_aggregation_1.6.0.json": "E2514A771F246A1C",
+    "configs/aggregation/registry_v4.json": "83AB58639A50D8EE",
+    "configs/aggregation/evaluators/safe_aggregation_1.6.1.json": "A49941F1458D43B4",
     "configs/aggregation/evaluators/safe_aggregation_1.4.0.json": "3B4912D2A0596CEF",
 }
 

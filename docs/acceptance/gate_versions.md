@@ -48,7 +48,32 @@ accepting one from its caller; handed the string "not-a-hash", the previous
 version reported a registered, release-eligible run.
 
 | v3 | `configs/aggregation/registry_v3.json` | `7B439CBDA99D54D4` | current |
-| 1.6.0 | `configs/aggregation/evaluators/safe_aggregation_1.6.0.json` | `E2514A771F246A1C` | current evaluator |
+| 1.6.0 | `configs/aggregation/evaluators/safe_aggregation_1.6.0.json` | `E2514A771F246A1C` | superseded |
+
+| v4 | `configs/aggregation/registry_v4.json` | `83AB58639A50D8EE` | current |
+| 1.6.1 | `configs/aggregation/evaluators/safe_aggregation_1.6.1.json` | `A49941F1458D43B4` | current evaluator |
+
+## A version is decided by measurement, not by reading the diff
+
+D1-5 edited three files inside the evaluator's hashed boundary and added no new
+refusal. "Only provenance wiring" is exactly what somebody believes before
+discovering that a total moved from 944 to 945, so the claim is not made by
+inspection. `eval/aggregation_behavior.py` runs a frozen 26-case corpus through
+the projector and records a behaviour vector — status, value, chosen object,
+verified scope, applied axes, component counts, refusal stage — and compares it
+to the baseline frozen at `f2adc5e` BEFORE the phase began. Identical means
+PATCH; any difference means at least MINOR, whatever the author believes.
+
+It reported 26 of 26 identical, so D1-5 ships as `1.6.1`. Each evaluator version
+ships with the registry that authorises it, which is why `registry_v4` accompanies
+it: the pointer is part of publishing a version rather than a change within one.
+
+The corpus declares what each case is supposed to demonstrate and the emitter
+refuses to freeze a case that does not. The first draft of
+`explicit_totals_disagree` quoted a population sentence its document did not
+contain, so its aggregation never parsed, the printed total won by default, and
+it recorded `ok` while claiming to prove that a contradiction is refused. A
+frozen baseline of that would have defended the wrong behaviour.
 
 A policy and the identity that cleared it are ONE object, `AggregationRuntime`.
 They were two arguments to the projector, and readiness could clear one policy

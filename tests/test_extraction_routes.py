@@ -27,7 +27,7 @@ BASE = {
     "extraction_routes": {"value": "targeted_v5_batch",
                           "arm_identity": "targeted_v4"},
     "aggregation_policy_id": "safe_sum_v5",
-    "evaluator_version": "1.6.0",
+    "evaluator_version": "1.6.1",
 }
 
 
@@ -97,7 +97,7 @@ def test_the_identity_of_a_routed_contract_records_every_route(tmp_path):
     assert identity["extraction_routes"] == {
         "arm_identity": "targeted_v4", "value": "targeted_v5_batch"}
     assert identity["aggregation_policy_id"] == "safe_sum_v5"
-    assert identity["evaluator_version"] == "1.6.0"
+    assert identity["evaluator_version"] == "1.6.1"
     # The v1 key keeps its place and its meaning, so nothing that reads it moves.
     assert identity["extraction_profile"] == "targeted_v5_batch"
 

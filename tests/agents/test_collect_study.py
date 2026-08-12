@@ -76,7 +76,7 @@ def _contract(tmp_path, value_route, identity_route="targeted_v4", **extra):
                                   "arm_identity": identity_route}}
     if value_route == "targeted_v5_batch" or identity_route == "targeted_v5_batch":
         body["aggregation_policy_id"] = "safe_sum_v5"
-        body["evaluator_version"] = "1.6.0"
+        body["evaluator_version"] = "1.6.1"
     body.update(extra)
     path = tmp_path / "contract.json"
     path.write_text(json.dumps(body), encoding="utf-8")

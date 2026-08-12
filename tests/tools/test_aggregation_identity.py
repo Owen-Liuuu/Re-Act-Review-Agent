@@ -27,7 +27,7 @@ from react_review.tools.aggregation_identity import (
     load_evaluator_manifest,
 )
 
-VERSION = "1.6.0"
+VERSION = "1.6.1"
 POLICY = "safe_sum_v5"
 
 

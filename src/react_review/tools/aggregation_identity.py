@@ -42,14 +42,14 @@ EVALUATOR_DIR = "configs/aggregation/evaluators"
 #: hash, so it could never gain a policy or an evaluator pair without breaking
 #: its own immutability rule — and changing which pairs may publish is exactly
 #: the kind of change that should require a version anyway.
-REGISTRY = "configs/aggregation/registry_v3.json"
+REGISTRY = "configs/aggregation/registry_v4.json"
 
 #: Files that decide WHETHER a result may be published, as opposed to what it
 #: says. `aggregation_identity.py` is no longer listed here: it is inside the
 #: hashed evaluator boundary now, which is strictly stronger. Being only in the
 #: clean check meant an uncommitted change was caught and a COMMITTED one was
 #: not — the evaluator hash stayed put and the run went back to clean.
-CONTROL_PLANE = ("configs/aggregation/registry_v3.json",)
+CONTROL_PLANE = ("configs/aggregation/registry_v4.json",)
 
 #: What a run may do with the evaluator it is running.
 REGISTERED = "registered"          # matches a published manifest at a clean HEAD

@@ -958,7 +958,7 @@ def _runtime():
 
     policy = load_aggregation_policy()
     return AggregationRuntime(policy=policy, evaluator=EvaluatorIdentity(
-        evaluator_id="safe_aggregation", evaluator_version="1.6.0",
+        evaluator_id="safe_aggregation", evaluator_version="1.6.1",
         evaluator_hash="sha256:" + "a" * 64, policy_id=policy.policy_id,
         policy_hash=policy.sha256, git_commit="c" * 40,
         git_commit_matches_evaluator=True, status=REGISTERED))
@@ -978,7 +978,7 @@ def test_every_aggregation_outcome_names_the_code_that_decided(sets, scope, expe
     assert projection.status == expected
     provenance = to_source_result(projection).aggregation_provenance
     assert provenance.evaluator_id == "safe_aggregation"
-    assert provenance.evaluator_version == "1.6.0"
+    assert provenance.evaluator_version == "1.6.1"
     assert provenance.evaluator_hash.startswith("sha256:")
     assert provenance.policy_id == "safe_sum_v5"
 
@@ -991,7 +991,7 @@ def test_a_printed_total_that_won_still_names_the_evaluator_that_checked_it():
                                field_type="sample_size", runtime=_runtime())
     assert projection.status == OK
     provenance = to_source_result(projection).aggregation_provenance
-    assert provenance.evaluator_version == "1.6.0"
+    assert provenance.evaluator_version == "1.6.1"
 
 
 def test_without_an_identity_nothing_is_release_eligible():
