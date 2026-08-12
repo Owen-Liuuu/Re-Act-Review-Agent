@@ -32,6 +32,19 @@ _OUTCOME_FLAG = {
         "unknown_cohort",
         "the claim could not be tied to a cohort this review reports, so there "
         "was nothing specific to look for in the paper"),
+    # A broken reading is not a silent paper. Without these two the batch path's
+    # failures would arrive as `missing_source`, which reads as "the review may
+    # have made this up" — an accusation for a fault in the extractor.
+    CollectionOutcome.EXTRACTION_FAILED: (
+        "extraction_failed",
+        "the paper was retrieved but the reading of it failed: no response, a "
+        "malformed one, or one whose every reading failed a deterministic "
+        "check. This says nothing about whether the paper states the value"),
+    CollectionOutcome.EXTRACTION_UNRESOLVED: (
+        "extraction_unresolved",
+        "the paper was read and the answer is not unique: the arm, population "
+        "or timepoint could not be pinned to one candidate, or the paper "
+        "disagrees with itself. A human must choose, and nothing was released"),
 }
 
 

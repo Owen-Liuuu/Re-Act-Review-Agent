@@ -129,6 +129,17 @@ class CollectionOutcome(str, Enum):
                             there was nothing specific to look for. Kept separate
                             from MISSING_SOURCE, which reads as possible
                             fabrication and would be the wrong accusation here.
+    - EXTRACTION_FAILED:    the paper was retrieved and the READING failed — the
+                            response never arrived, or arrived malformed, or
+                            every reading in it failed a deterministic check.
+                            This is a fact about the response. Reporting it as
+                            MISSING_SOURCE would put an accusation on the review
+                            for a fault in the extractor.
+    - EXTRACTION_UNRESOLVED: the reading was fine and the ANSWER is not unique —
+                            the arm, the population or the timepoint could not
+                            be pinned to exactly one candidate, or the paper
+                            contradicts itself. Nothing was hidden and nothing
+                            may be released.
     """
 
     FOUND = "found"
@@ -136,3 +147,5 @@ class CollectionOutcome(str, Enum):
     MISSING_SOURCE = "missing_source"
     UNRESOLVED_SOURCE = "unresolved_source"
     UNKNOWN_COHORT = "unknown_cohort"
+    EXTRACTION_FAILED = "extraction_failed"
+    EXTRACTION_UNRESOLVED = "extraction_unresolved"

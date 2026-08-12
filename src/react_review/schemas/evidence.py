@@ -9,7 +9,7 @@ compare time, so the raw spread is preserved for the report.
 """
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_serializer
 
 from react_review.core.enums import CollectionOutcome
 from react_review.normalize.population import PopulationScope
@@ -67,6 +67,37 @@ class AggregationProvenance(BaseModel):
     def anchors(self) -> list[str]:
         return [q for q in (self.population_quote, self.timepoint_quote,
                             self.partition_quote, *self.component_quotes) if q]
+
+
+class BatchProjectionProvenance(BaseModel):
+    """Which reading this claim came out of, and how it was picked.
+
+    A batched run answers several claims from one act of reading. Without this,
+    an artifact can show four answers and no way to establish that they came
+    from ONE response rather than four — which is the entire cost and the entire
+    consistency argument for batching, unevidenced.
+
+    The response itself is not here. It is kept once, keyed by
+    ``batch_execution_id``; copying it onto every claim would multiply it by the
+    group size and still not show that the group shared it.
+    """
+
+    batch_question_id: str = ""
+    batch_execution_id: str = ""
+    claim_group_key: str = ""
+    claim_id: str = ""
+    #: Which piece of the response was released, when one was. Empty for a
+    #: derived total, which is not any single entry.
+    selected_entry_id: str = ""
+    projection_status: str = ""
+    projection_reason: str = ""
+    #: The profile that ACTUALLY read this claim. A mixed contract routes value
+    #: claims and arm-identity claims differently, and a reader must be able to
+    #: ask which one produced this row rather than infer it from a run-level
+    #: profile that only describes half the run.
+    route: str = ""
+    attempts: int = 0
+    served_from_cache: bool = False
 
 
 class SourceNumericComponents(BaseModel):
@@ -196,6 +227,37 @@ class SourceEvidenceItem(BaseModel):
     assigned_arm_label: str = ""    # the paper's own name for the assigned arm
     cohorts_seen: list[str] = Field(default_factory=list)
     reasons: list[ReasonRecord] = Field(default_factory=list)
+    # --- batch-path provenance -------------------------------------------
+    # Both are None on every path that predates the batch, and both are DROPPED
+    # from the serialised form when None (see `model_dump` below). A legacy
+    # artifact gaining `"batch_provenance": null` is a changed artifact, and the
+    # replay comparisons that guard this project compare bytes.
+    batch_provenance: BatchProjectionProvenance | None = None
+    aggregation_provenance: AggregationProvenance | None = None
+
+    #: Fields that exist only for the batch path. Present when a batch produced
+    #: this row; absent — not null — otherwise.
+    _BATCH_ONLY = ("batch_provenance", "aggregation_provenance")
+
+    @model_serializer(mode="wrap")
+    def _omit_unused_batch_fields(self, handler):
+        """Legacy rows serialise exactly as they did before these fields existed.
+
+        A wrap serialiser rather than a `model_dump` override, because Pydantic
+        serialises NESTED models through its own core machinery and never calls
+        an overridden method on the child. The override looked right on this row
+        and did nothing inside an EvidencePackage — which is the one that
+        matters, since that is what a replay compares.
+
+        Not `exclude_none`: `source_components` and `population_scope` are null
+        on purpose in every artifact ever written, and dropping them would
+        change exactly the bytes this exists to protect.
+        """
+        body = handler(self)
+        for name in self._BATCH_ONLY:
+            if body.get(name) is None:
+                body.pop(name, None)
+        return body
 
 
 class IncludedStudy(BaseModel):
