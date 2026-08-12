@@ -1,0 +1,122 @@
+{
+  "contract_id": "batch_v5",
+  "prompt_version": "extract-source-v5-batch",
+  "extraction_profile": "targeted_v5_batch",
+  "written_on": "2026-08-12",
+  "hash_algorithm": "sha256-rendered-utf8-v1",
+  "purpose": "What the model is ASKED under targeted_v5_batch. The prompt's SHA-256 enters the replay cache key and the BatchQuestionId on every batched answer, so an unpinned template can invalidate every recording ever made and report it as a missing recording.",
+  "boundary": "The RENDERED prompt, not the file that renders it. Comments, renames and refactors do not change what is asked and must not fail this contract; a different question must. The inputs are pinned here beside the hashes they produce, because a pin whose inputs live elsewhere can be made to pass by editing the inputs.",
+  "governance": "A rendered prompt that changes is a NEW PROMPT VERSION: add a profile in tools/extraction_profile.py and a contract file for it. Updating a hash here so an edited prompt passes turns every recording into a replay miss with nothing to say why. This file's own bytes are pinned in tests/test_contract_pins.py and published in docs/acceptance/gate_versions.md, so editing it is visible.",
+  "pin_model_id": "pinned-model",
+  "pin_attempt": 1,
+  "cases": [
+    {
+      "case_id": "arm",
+      "why": "one reading per arm — the route every batched value takes",
+      "inputs": {
+        "target_shape": "arm",
+        "context": "a systematic review of a fixture",
+        "concept": "cohort size",
+        "raw_label": "Arm, n",
+        "field_type": "cohort_n",
+        "concept_variants": "cohort size, number randomised",
+        "unit_hint": "count",
+        "paper_text": "Fixture text for pinning the prompt's shape. Three groups were formed: 10 in group A, 12 in group B, and 8 in group C.",
+        "timepoint_label": ""
+      },
+      "rendered_chars": 3551,
+      "rendered_sha256": "E3F76AD375A6B5AE30ED4A88F574A6775129184ACD8CB75F7D033F9F8C8B25E1",
+      "cache_key": "33BE0E0E93B82B9291F47594A129DBC9868CF5B11F62E63E5A4E42E67D59F00D"
+    },
+    {
+      "case_id": "arm_timepoint",
+      "why": "the timepoint clause is a whole paragraph the prompt grows a condition, and a reading at another timepoint is a different number",
+      "inputs": {
+        "target_shape": "arm",
+        "context": "a systematic review of a fixture",
+        "concept": "cohort size",
+        "raw_label": "Arm, n",
+        "field_type": "cohort_n",
+        "concept_variants": "cohort size, number randomised",
+        "unit_hint": "count",
+        "paper_text": "Fixture text for pinning the prompt's shape. Three groups were formed: 10 in group A, 12 in group B, and 8 in group C.",
+        "timepoint_label": "12 months"
+      },
+      "rendered_chars": 3714,
+      "rendered_sha256": "6E8DCB01F12C7C31706A6BC6969E01D265A6EBABF780D8AD27AEDCD3D8187CF1",
+      "cache_key": "991BE2A1C44195CCD01C765871AD536BAB0790437F788AB0CD9D0890421E08E4"
+    },
+    {
+      "case_id": "comparison",
+      "why": "two sides in one reading — its own reading fields, so a shape added without a case would ship unpinned",
+      "inputs": {
+        "target_shape": "comparison",
+        "context": "a systematic review of a fixture",
+        "concept": "hazard ratio",
+        "raw_label": "HR (95% CI)",
+        "field_type": "hazard_ratio",
+        "concept_variants": "cohort size, number randomised",
+        "unit_hint": "count",
+        "paper_text": "Fixture text for pinning the prompt's shape. Three groups were formed: 10 in group A, 12 in group B, and 8 in group C.",
+        "timepoint_label": ""
+      },
+      "rendered_chars": 3471,
+      "rendered_sha256": "6A61844F80AA186E029D4540AA153EF819A663ADD476C00F59A1B35408B6D9E9",
+      "cache_key": "107CB68D86C1415B6429D9B13508FEE7AA45085AA51E2967C81186C10F5523D2"
+    },
+    {
+      "case_id": "study",
+      "why": "one total for the whole study, NOT aggregable — the branch that must not offer components",
+      "inputs": {
+        "target_shape": "study",
+        "context": "a systematic review of a fixture",
+        "concept": "events",
+        "raw_label": "Events, n",
+        "field_type": "event_count",
+        "concept_variants": "cohort size, number randomised",
+        "unit_hint": "count",
+        "paper_text": "Fixture text for pinning the prompt's shape. Three groups were formed: 10 in group A, 12 in group B, and 8 in group C.",
+        "timepoint_label": ""
+      },
+      "rendered_chars": 3567,
+      "rendered_sha256": "A35122FEC909FF5DA5DF9859FF39A0DDC2BA7C5F3C253C421DB3ACDB0A016C05",
+      "cache_key": "AFDF004AD1A1F614A40F142DEC38CD95A1EAB5441A5073B6B68FA8ED736919D7"
+    },
+    {
+      "case_id": "study_aggregation",
+      "why": "the only branch that asks for a partition: the counts body plus the aggregation fields deterministic code later sums",
+      "inputs": {
+        "target_shape": "study",
+        "context": "a systematic review of a fixture",
+        "concept": "sample size",
+        "raw_label": "Total, n",
+        "field_type": "sample_size",
+        "concept_variants": "cohort size, number randomised",
+        "unit_hint": "count",
+        "paper_text": "Fixture text for pinning the prompt's shape. Three groups were formed: 10 in group A, 12 in group B, and 8 in group C.",
+        "timepoint_label": ""
+      },
+      "rendered_chars": 8441,
+      "rendered_sha256": "A0E8D6553018CDFC3FD0C325A5F2EB11C54DE5C216562E886D94BEF33FDFDA88",
+      "cache_key": "76E47E8588152A55E698A964321DAD54DEBFB406AB3B3A58C35B30552B7BBDF3"
+    },
+    {
+      "case_id": "study_aggregation_timepoint",
+      "why": "both conditional blocks at once — each is fine alone and their assembly is what is actually sent",
+      "inputs": {
+        "target_shape": "study",
+        "context": "a systematic review of a fixture",
+        "concept": "sample size",
+        "raw_label": "Total, n",
+        "field_type": "sample_size",
+        "concept_variants": "cohort size, number randomised",
+        "unit_hint": "count",
+        "paper_text": "Fixture text for pinning the prompt's shape. Three groups were formed: 10 in group A, 12 in group B, and 8 in group C.",
+        "timepoint_label": "at randomisation"
+      },
+      "rendered_chars": 8611,
+      "rendered_sha256": "A18E41BA7C3C7E438C6B3DF6E5862F50E9DDD200AB86FC349F35E256CF3BC177",
+      "cache_key": "04910928A408F57157F36BA45C342A4363AE0490BBC127A9A1BFE7FF267E18F9"
+    }
+  ]
+}

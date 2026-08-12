@@ -18,3 +18,4 @@ eval/aggregation_behavior.py text eol=lf
 # exactly how a benchmark was made unrunnable once already.
 configs/run_profiles/phase8_batch.json text eol=lf
 eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_profile.json text eol=lf
+configs/prompt_contracts/*.json text eol=lf

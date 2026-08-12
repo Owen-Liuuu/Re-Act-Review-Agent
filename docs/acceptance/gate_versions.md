@@ -56,6 +56,33 @@ version reported a registered, release-eligible run.
 | — | `configs/run_profiles/phase8_batch.json` | `17C65B8C07A45898` | the contract that selects the batch route |
 | — | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_profile.json` | `8F13C10443B8BEDE` | the benchmark that runs it |
 
+| v5 | `configs/prompt_contracts/batch_v5.json` | `1A02A44DDE55A797` | what `targeted_v5_batch` ASKS |
+
+## A rendered prompt that changes is a new prompt version
+
+The batch prompt's SHA-256 enters the replay cache key and the
+`BatchQuestionId` on every batched answer. A character changed in the template
+therefore invalidates every recording ever made under it, and the symptom —
+`ExtractionCacheMiss: attempt 1` — reads as a missing recording rather than an
+edited prompt. `legacy_v3` has been pinned since Phase 7; the batch contract was
+routed to by a frozen benchmark profile while nothing pinned its words, because
+that profile pins the run profile, which names route STRINGS.
+
+`configs/prompt_contracts/batch_v5.json` pins the RENDERED prompt for every
+branch — each target shape, the timepoint clause present and absent, the
+aggregation block present and absent — together with the recording key each
+would be written under. Comments, renames and extracted helpers do not change
+what is asked and do not fail it.
+
+**The rule.** If a rendered prompt must change, add a new profile in
+`tools/extraction_profile.py` and a new contract file for it. Do not update a
+hash in an existing contract so that an edited prompt passes: that converts
+every recording made under it into a replay miss, with nothing in the artifact
+to say why. The contract file's own bytes are pinned in
+`tests/test_contract_pins.py`, so editing it is a visible decision rather than a
+silent one — which is the same protection the evaluator manifests get, for the
+same reason.
+
 ## Erratum: what registry_v4 says it changed
 
 `registry_v4.json` and `safe_aggregation_1.6.1.json` describe the D1-5 boundary

@@ -42,6 +42,10 @@ PINNED = {
     "configs/aggregation/registry_v4.json": "83AB58639A50D8EE",
     "configs/aggregation/evaluators/safe_aggregation_1.6.1.json": "A49941F1458D43B4",
     "configs/aggregation/evaluators/safe_aggregation_1.4.0.json": "3B4912D2A0596CEF",
+    # What the model is ASKED under targeted_v5_batch. Pinned here so that
+    # editing the contract to make an edited prompt pass is a visible decision
+    # and not a hash quietly retyped.
+    "configs/prompt_contracts/batch_v5.json": "1A02A44DDE55A797",
 }
 
 
