@@ -12,7 +12,13 @@ import json
 
 import pytest
 
-from react_review.production import FinalisationFailed, ProductionSession
+from react_review.production import (
+    FINALISATION_FAILED,
+    FINALISED_PARTIAL,
+    FINALISED_SUCCESS,
+    FinalisationFailed,
+    ProductionSession,
+)
 from react_review.schemas.evidence import SourceEvidenceItem
 from react_review.schemas.package import EvidencePackage
 from react_review.schemas.telemetry import RunTelemetry
@@ -82,6 +88,44 @@ def test_a_crash_is_an_outcome_and_says_so(tmp_path, capsys):
     assert "RuntimeError: the retriever gave up" in data["stop_reason"]
 
 
+def test_a_cache_failure_cannot_mask_the_original_error(tmp_path):
+    class _BrokenCache:
+        hits, misses = 2, 1
+
+        def save(self):
+            raise OSError("cache disk full")
+
+    session = _session(_store_with_partial(tmp_path))
+    session.semantic_cache = _BrokenCache()
+    session.finalise_error(RuntimeError("audit failed"))
+
+    data = _partial(tmp_path)
+    assert data["status"] == "error"
+    assert data["stop_reason"] == "RuntimeError: audit failed"
+    assert data["telemetry"]["cache_hits"] == 2
+    assert data["finalisation_errors"] == [{
+        "phase": "semantic_cache", "error": "OSError: cache disk full"}]
+    assert session.state == FINALISATION_FAILED
+
+
+def test_a_corrupt_partial_is_preserved_and_gets_an_outcome_sidecar(tmp_path):
+    store = EvidencePackageStore(tmp_path)
+    partial = store.run_dir("r1") / "package.partial.json"
+    partial.parent.mkdir(parents=True)
+    partial.write_text("{bad", encoding="utf-8")
+
+    session = _session(store)
+    session.finalise_stopped(stage="collect_study", reason="stopped by user")
+
+    assert partial.read_text(encoding="utf-8") == "{bad"
+    sidecar = json.loads((partial.parent / "run.outcome.json").read_text(
+        encoding="utf-8"))
+    assert sidecar["status"] == "stopped_by_user"
+    assert sidecar["stop_reason"] == "stopped by user"
+    assert sidecar["finalisation_errors"][0]["phase"] == "partial_patch"
+    assert session.state == FINALISATION_FAILED
+
+
 def test_stopping_before_the_first_paper_still_leaves_an_artifact(tmp_path, capsys):
     """Otherwise an interrupt during parsing is indistinguishable from no run.
 
@@ -122,6 +166,16 @@ def test_a_second_finalise_does_not_overwrite_the_first_reason(tmp_path):
     data = _partial(tmp_path)
     assert data["status"] == "stopped_by_user"
     assert data["stop_reason"] == "stopped by user"
+    assert session.state == FINALISED_PARTIAL
+
+
+def test_cross_outcome_finalisation_returns_the_first_artifact(tmp_path):
+    session = _session(_store_with_partial(tmp_path))
+    first = session.finalise_stopped(stage="collect_study", reason="stopped")
+    second = session.finalise_success(EvidencePackage(run_id="r1"))
+    assert second == first
+    assert session.state == FINALISED_PARTIAL
+    assert not (tmp_path / "r1" / "package.json").exists()
 
 
 def test_finalising_twice_does_not_double_the_books(tmp_path):
@@ -155,6 +209,15 @@ def test_the_finished_package_is_saved_once_and_returned_from_disk(tmp_path):
     assert loaded.telemetry.batch.claims == 4          # the run's own totals
     assert store.package_path("r1").is_file()
     assert session.outcome == "complete"
+    assert session.state == FINALISED_SUCCESS
+
+
+def test_success_removes_the_superseded_progress_artifact(tmp_path):
+    store = _store_with_partial(tmp_path)
+    session = _session(store)
+    session.finalise_success(EvidencePackage(run_id="r1"))
+    assert store.package_path("r1").is_file()
+    assert not (tmp_path / "r1" / "package.partial.json").exists()
 
 
 def test_the_time_the_run_took_is_in_the_file_not_only_in_the_object(tmp_path):
@@ -200,6 +263,12 @@ def test_a_package_that_cannot_be_read_back_is_not_reported_as_complete(tmp_path
     with pytest.raises(FinalisationFailed, match="could not be read back"):
         session.finalise_success(EvidencePackage(run_id="r1"))
     assert session.outcome != "complete"
+    assert session.state == FINALISATION_FAILED
+    assert not session.store.package_path("r1").exists()
+    outcome = json.loads((tmp_path / "r1" / "run.outcome.json").read_text(
+        encoding="utf-8"))
+    assert outcome["requested_outcome"] == "complete"
+    assert outcome["finalisation_errors"][0]["phase"] == "package_validation"
 
 
 def test_a_failure_after_finalising_does_not_restate_a_good_run_as_failed(tmp_path):

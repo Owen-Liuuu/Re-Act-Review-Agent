@@ -31,6 +31,10 @@ class EvidencePackageStore:
         """Public path to the final package used by report/render workflows."""
         return self._package_path(run_id)
 
+    def finalizing_path(self, run_id: str) -> Path:
+        """Private candidate path used while a final package is validated."""
+        return self.run_dir(run_id) / "package.finalizing.json"
+
     def exists(self, run_id: str) -> bool:
         return self._package_path(run_id).is_file()
 
@@ -46,6 +50,17 @@ class EvidencePackageStore:
     def save(self, package: EvidencePackage) -> Path:
         """Write ``package`` atomically; returns the package.json path."""
         return self._write(package, self._package_path(package.run_id))
+
+    def save_finalizing(self, package: EvidencePackage) -> Path:
+        """Write a final candidate without publishing it as authoritative."""
+        return self._write(package, self.finalizing_path(package.run_id))
+
+    def publish_finalizing(self, run_id: str) -> Path:
+        """Atomically publish a candidate that has already been read back."""
+        candidate = self.finalizing_path(run_id)
+        final = self._package_path(run_id)
+        os.replace(candidate, final)
+        return final
 
     def save_partial(self, package: EvidencePackage) -> Path:
         """Write progress so far to ``package.partial.json``.
@@ -65,9 +80,9 @@ class EvidencePackageStore:
         os.replace(tmp, path)  # atomic on the same filesystem
         return path
 
-    def load(self, run_id: str) -> EvidencePackage:
-        """Load the package for ``run_id`` (FileNotFoundError if absent)."""
-        path = self._package_path(run_id)
+    def load(self, run_id: str, *, path: Path | None = None) -> EvidencePackage:
+        """Load and validate a package, optionally from an unpublished path."""
+        path = path or self._package_path(run_id)
         if not path.is_file():
             raise FileNotFoundError(f"no evidence package for run {run_id!r} at {path}")
         data = json.loads(path.read_text(encoding="utf-8-sig"))

@@ -193,3 +193,38 @@ def test_the_cache_hash_is_only_recorded_once_writing_has_stopped(tmp_path):
     manifest = SchemaRunManifest.of(load_run_contract(PROFILES / "legacy.json"), mode)
     assert manifest.extraction_cache_sha256 == ""
     assert manifest.finalise(mode).extraction_cache_sha256 != ""
+
+
+def test_success_finalises_the_manifest_after_saving_both_caches(tmp_path):
+    from react_review.production import ProductionSession
+    from react_review.schemas.telemetry import RunTelemetry
+    from react_review.store import EvidencePackageStore
+
+    extraction = tmp_path / "extraction.json"
+    semantic = tmp_path / "semantic.json"
+    mode = ExecutionMode(
+        extraction_mode="record", extraction_cache=extraction,
+        semantic_mode="on", semantic_cache=semantic)
+    manifest = RunManifest.of(load_run_contract(PROFILES / "legacy.json"), mode)
+
+    class _Cache:
+        hits = misses = 0
+
+        def __init__(self, path, body):
+            self.path, self.body = path, body
+
+        def save(self):
+            self.path.write_text(self.body, encoding="utf-8")
+
+    session = ProductionSession(
+        EvidencePackageStore(tmp_path / "runs"), "r1", telemetry=RunTelemetry(),
+        manifest=manifest, execution=mode,
+        extraction_cache=_Cache(extraction, "extraction"),
+        semantic_cache=_Cache(semantic, "semantic"))
+    loaded = session.finalise_success(
+        EvidencePackage(run_id="r1", run_manifest=manifest))
+
+    assert loaded.run_manifest.complete is True
+    assert loaded.run_manifest.extraction_cache_sha256
+    assert loaded.run_manifest.semantic_cache_sha256
+    assert manifest.complete is False  # partial/run-time manifest was not mutated

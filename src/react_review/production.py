@@ -12,7 +12,10 @@ test writes works.
 """
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from react_review.llm.metered import MeteredBackend
@@ -131,7 +134,12 @@ def snapshot_cache_totals(telemetry: RunTelemetry, *, extraction=None,
 
 # --- the end of a run, which happens exactly once ---------------------------
 
-RUNNING, FINALISED = "running", "finalised"
+RUNNING = "running"
+FINALISING = "finalising"
+FINALISED_SUCCESS = "finalised_success"
+FINALISED_PARTIAL = "finalised_partial"
+FINALISATION_FAILED = "finalisation_failed"
+TERMINAL_STATES = (FINALISED_SUCCESS, FINALISED_PARTIAL, FINALISATION_FAILED)
 
 COMPLETE = "complete"
 STOPPED_BY_USER = "stopped_by_user"
@@ -177,12 +185,15 @@ class ProductionSession:
     run_id: str
     telemetry: RunTelemetry
     manifest: Any = None
+    execution: Any = None
     extraction_cache: Any = None
     semantic_cache: Any = None
     emit: Any = print
     state: str = RUNNING
     outcome: str = ""
     _clock: Any = field(default=None, repr=False)
+    _artifact: Any = field(default=None, init=False, repr=False)
+    _failure: FinalisationFailed | None = field(default=None, init=False, repr=False)
 
     # --- the clock -----------------------------------------------------------
 
@@ -210,55 +221,118 @@ class ProductionSession:
 
     # --- the books -----------------------------------------------------------
 
-    def _close_books(self) -> None:
-        """Stop the clock and take the cache snapshot. Safe to repeat."""
+    def _close_books(self) -> list[dict[str, str]]:
+        """Stop/snapshot first, then try every cache without hiding failures."""
         self._stop_clock()
         snapshot_cache_totals(self.telemetry, extraction=self.extraction_cache,
                               semantic=self.semantic_cache)
-        if self.semantic_cache is not None:
-            self.semantic_cache.save()
+        errors: list[dict[str, str]] = []
+        seen: set[int] = set()
+        for name, cache in (("extraction_cache", self.extraction_cache),
+                            ("semantic_cache", self.semantic_cache)):
+            if cache is None or id(cache) in seen:
+                continue
+            seen.add(id(cache))
+            try:
+                cache.save()
+            except Exception as exc:                               # noqa: BLE001
+                errors.append(self._error(name, exc))
+        return errors
+
+    @staticmethod
+    def _error(phase: str, exc: BaseException) -> dict[str, str]:
+        return {"phase": phase, "error": f"{type(exc).__name__}: {exc}"}
+
+    def _already_finalised(self):
+        if self.state == FINALISATION_FAILED and self._failure is not None:
+            raise self._failure
+        return self._artifact
+
+    def _fail_success(self, message: str, errors: list[dict[str, str]],
+                      exc: BaseException | None = None):
+        """Record a failed success-finalisation and raise one stable error."""
+        self.state = FINALISATION_FAILED
+        self._write_outcome_sidecar(
+            status=FINALISATION_FAILED, stage="", reason=message,
+            requested_outcome=COMPLETE, errors=errors)
+        failure = FinalisationFailed(message)
+        if exc is not None:
+            failure.__cause__ = exc
+        self._failure = failure
+        raise failure
 
     # --- the four ways out ---------------------------------------------------
 
     def finalise_success(self, package):
-        """Save the finished package once, then RELOAD it and return that.
+        """Validate an unpublished candidate, then atomically make it final."""
+        if self.state in TERMINAL_STATES:
+            return self._already_finalised()
+        if self.state != RUNNING:
+            raise FinalisationFailed(f"cannot finalise success from {self.state}")
+        self.state = FINALISING
+        errors = self._close_books()
+        if errors:
+            detail = "; ".join(e["error"] for e in errors)
+            self._fail_success(f"could not save the run caches: {detail}", errors)
 
-        The reload is not a check that can be skipped on a good day. The report
-        renders from the file, so a package that saves and does not load again
-        is a run that reports success and produces an unreadable result — which
-        is exactly what the derived-value round trip turned out to be. Better to
-        fail here, holding the file, than downstream holding nothing.
-        """
-        if self.state == FINALISED:
-            return self.store.load(self.run_id)
-        self._close_books()
-        final = package.model_copy(update={"telemetry": self.telemetry})
-        path = self.store.save(final)
+        manifest = self.manifest or getattr(package, "run_manifest", None)
+        if manifest is not None:
+            manifest = manifest.model_copy(deep=True)
+            if self.execution is None:
+                error = RuntimeError("ProductionSession has no ExecutionMode")
+                self._fail_success(str(error), [self._error("manifest", error)], error)
+            try:
+                manifest.finalise(self.execution)
+            except Exception as exc:                               # noqa: BLE001
+                self._fail_success(
+                    f"could not finalise the run manifest: {exc}",
+                    [self._error("manifest", exc)], exc)
+
+        final = package.model_copy(update={"telemetry": self.telemetry,
+                                           "run_manifest": manifest})
         try:
-            reloaded = self.store.load(self.run_id)
+            candidate = self.store.save_finalizing(final)
+            reloaded = self.store.load(self.run_id, path=candidate)
         except Exception as exc:                                   # noqa: BLE001
-            raise FinalisationFailed(
-                f"the package was written to {path} and could not be read back: "
-                f"{exc}. The run's own result is not loadable, so it cannot be "
-                "reported as complete") from exc
-        self.state, self.outcome = FINALISED, COMPLETE
+            path = getattr(self.store, "finalizing_path", lambda _: "candidate")(
+                self.run_id)
+            self._fail_success(
+                f"the package candidate at {path} could not be read back after "
+                f"writing: {exc}. No package was published as complete",
+                [self._error("package_validation", exc)], exc)
+        try:
+            self.store.publish_finalizing(self.run_id)
+        except Exception as exc:                                   # noqa: BLE001
+            self._fail_success(
+                f"the validated package could not be published: {exc}",
+                [self._error("package_publish", exc)], exc)
+
+        cleanup_errors = self._retire_partial()
+        if cleanup_errors:
+            detail = "; ".join(e["error"] for e in cleanup_errors)
+            self._fail_success(
+                f"the package is complete, but its progress artifact could not "
+                f"be retired: {detail}", cleanup_errors)
+        self.state, self.outcome = FINALISED_SUCCESS, COMPLETE
+        self._artifact = reloaded
         return reloaded
 
-    def finalise_stopped(self, *, stage: str, reason: str) -> None:
-        self._finalise_early(STOPPED_BY_USER, stage=stage, reason=reason)
+    def finalise_stopped(self, *, stage: str, reason: str):
+        return self._finalise_early(STOPPED_BY_USER, stage=stage, reason=reason)
 
-    def finalise_interrupted(self, *, reason: str = "interrupted (Ctrl-C)") -> None:
-        self._finalise_early(INTERRUPTED, stage="", reason=reason)
+    def finalise_interrupted(self, *, reason: str = "interrupted (Ctrl-C)"):
+        return self._finalise_early(INTERRUPTED, stage="", reason=reason)
 
-    def finalise_error(self, exc: BaseException) -> None:
+    def finalise_error(self, exc: BaseException):
         """A run that died of an exception is evidence too, and says so.
 
         It used to leave a partial marked `in_progress`, which reads as a run
         still going — the one thing it certainly is not.
         """
-        self._finalise_early(ERROR, stage="", reason=f"{type(exc).__name__}: {exc}")
+        return self._finalise_early(
+            ERROR, stage="", reason=f"{type(exc).__name__}: {exc}")
 
-    def _finalise_early(self, status: str, *, stage: str, reason: str) -> None:
+    def _finalise_early(self, status: str, *, stage: str, reason: str):
         """Leave an artifact that says how the run ended — always one.
 
         Including when nothing had been collected yet. A partial written only
@@ -266,28 +340,53 @@ class ProductionSession:
         directory with no package in it, and no way to tell that from a run that
         was never started.
         """
-        if self.state == FINALISED:
-            return
-        self._close_books()
+        if self.state in TERMINAL_STATES:
+            return self._artifact
+        if self.state != RUNNING:
+            return self._artifact
+        self.state = FINALISING
+        errors = self._close_books()
         run_dir = self.store.run_dir(self.run_id)
         partial = run_dir / "package.partial.json"
         existed = partial.is_file()
         if existed:
-            self._patch_partial(partial, status=status, stage=stage, reason=reason)
+            try:
+                self._artifact = self._patch_partial(
+                    partial, status=status, stage=stage, reason=reason,
+                    errors=errors)
+            except Exception as exc:                               # noqa: BLE001
+                errors.append(self._error("partial_patch", exc))
+                self._artifact = self._write_outcome_sidecar(
+                    status=status, stage=stage, reason=reason,
+                    requested_outcome=status, errors=errors)
         else:
             from react_review.schemas.package import EvidencePackage
 
-            self.store.save_partial(EvidencePackage(
-                run_id=self.run_id, run_manifest=self.manifest, status=status,
-                stopped_at_stage=stage, stop_reason=reason,
-                telemetry=self.telemetry))
-        self.state, self.outcome = FINALISED, status
+            try:
+                package = EvidencePackage(
+                    run_id=self.run_id, run_manifest=self.manifest, status=status,
+                    stopped_at_stage=stage, stop_reason=reason,
+                    telemetry=self.telemetry, finalisation_errors=errors)
+                self.store.save_partial(package)
+                self._artifact = package
+            except Exception as exc:                               # noqa: BLE001
+                errors.append(self._error("partial_write", exc))
+                self._artifact = self._write_outcome_sidecar(
+                    status=status, stage=stage, reason=reason,
+                    requested_outcome=status, errors=errors)
+        self.state = FINALISATION_FAILED if errors else FINALISED_PARTIAL
+        self.outcome = status
         self.emit(f"\n[{status}] {reason}")
         self.emit(f"[ARTIFACTS] {run_dir.resolve()}")
         if existed:
             self.emit(f"[PARTIAL]   {partial.resolve()} — evidence collected so far")
+        for failure in errors:
+            self.emit(f"[FINALISATION FAILED] {failure['phase']}: "
+                      f"{failure['error']}")
+        return self._artifact
 
-    def _patch_partial(self, path, *, status: str, stage: str, reason: str) -> None:
+    def _patch_partial(self, path, *, status: str, stage: str, reason: str,
+                       errors: list[dict[str, str]]):
         """Add how it ended to the evidence already on disk, without risking it.
 
         Patched as JSON rather than rebuilt through the model, because the
@@ -296,14 +395,60 @@ class ProductionSession:
         by a minimal one — losing the collected evidence in order to record that
         collection had stopped.
         """
-        import json
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+        data["status"], data["stopped_at_stage"] = status, stage
+        data["stop_reason"] = reason
+        data["telemetry"] = self.telemetry.model_dump(mode="json")
+        if errors:
+            data["finalisation_errors"] = errors
+        self._atomic_json(path, data)
+        return path
 
+    def _write_outcome_sidecar(self, *, status: str, stage: str, reason: str,
+                               requested_outcome: str,
+                               errors: list[dict[str, str]]):
+        """Preserve an outcome when the sole partial cannot safely be touched."""
+        path = self.store.run_dir(self.run_id) / "run.outcome.json"
+        data = {
+            "run_id": self.run_id,
+            "status": status,
+            "requested_outcome": requested_outcome,
+            "stopped_at_stage": stage,
+            "stop_reason": reason,
+            "telemetry": self.telemetry.model_dump(mode="json"),
+            "run_manifest": (self.manifest.model_dump(mode="json")
+                             if self.manifest is not None else None),
+            "finalisation_errors": errors,
+        }
         try:
-            data = json.loads(path.read_text(encoding="utf-8-sig"))
-            data["status"], data["stopped_at_stage"] = status, stage
-            data["stop_reason"] = reason
-            data["telemetry"] = self.telemetry.model_dump(mode="json")
-            path.write_text(json.dumps(data, indent=2, ensure_ascii=False),
-                            encoding="utf-8")
+            self._atomic_json(path, data)
+            return path
         except Exception as exc:                                   # noqa: BLE001
-            self.emit(f"[WARN] could not record the outcome in {path}: {exc}")
+            self.emit(f"[FINALISATION FAILED] outcome sidecar: "
+                      f"{type(exc).__name__}: {exc}")
+            return None
+
+    def _retire_partial(self) -> list[dict[str, str]]:
+        """Remove stale progress only after a final package is authoritative."""
+        partial = self.store.run_dir(self.run_id) / "package.partial.json"
+        if not partial.is_file():
+            return []
+        try:
+            partial.unlink()
+            return []
+        except Exception as unlink_exc:                            # noqa: BLE001
+            archived = partial.with_name("package.partial.superseded.json")
+            try:
+                os.replace(partial, archived)
+                return []
+            except Exception as replace_exc:                       # noqa: BLE001
+                return [self._error("partial_cleanup", unlink_exc),
+                        self._error("partial_archive", replace_exc)]
+
+    @staticmethod
+    def _atomic_json(path: Path, data: dict[str, Any]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False),
+                       encoding="utf-8")
+        os.replace(tmp, path)

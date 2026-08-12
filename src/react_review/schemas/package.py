@@ -72,6 +72,10 @@ class EvidencePackage(BaseModel):
         # into every completed package would change bytes that nothing changed.
         if not body.get("stop_reason"):
             body.pop("stop_reason", None)
+        if not body.get("finalisation_errors"):
+            body.pop("finalisation_errors", None)
+        if not body.get("superseded_by"):
+            body.pop("superseded_by", None)
         return body
     # The verbatim tables the review claims were read from, as approved at the
     # capture checkpoint — so any audited value can be traced back to its cell.
@@ -99,3 +103,10 @@ class EvidencePackage(BaseModel):
     #: where it stopped but never what stopped it — which is the part a reader
     #: coming back to the directory a day later actually needs.
     stop_reason: str = ""
+    #: Failures encountered while making the outcome durable. Kept beside the
+    #: original stop/error reason so a cache or disk failure cannot replace the
+    #: event that caused finalisation in the first place.
+    finalisation_errors: list[dict[str, str]] = Field(default_factory=list)
+    #: A completed final package may supersede a progress artifact when the
+    #: latter cannot be removed. This is omitted from ordinary packages.
+    superseded_by: str = ""

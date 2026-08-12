@@ -18,13 +18,15 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from react_review.schemas.batch import BatchQuestionId
 from react_review.schemas.evidence import (
     AggregationProvenance,
     BatchProjectionProvenance,
     SourceEvidenceItem,
 )
-from react_review.schemas.telemetry import RunTelemetry
+from react_review.schemas.telemetry import BatchStats, RunTelemetry
 
 BATCH_KEYS = {"batch_provenance", "aggregation_provenance"}
 
@@ -330,3 +332,10 @@ def test_claims_per_batch_cannot_be_supplied():
     with _pytest.raises(Exception):
         BatchStats(batches=2, claims=4, claims_per_batch=999)
     assert BatchStats(batches=2, claims=4).model_dump()["claims_per_batch"] == 2.0
+
+
+@pytest.mark.parametrize("supplied", [None, "2.0", float("nan"), float("inf"), 2.00001])
+def test_claims_per_batch_checksum_rejects_noncanonical_values(supplied):
+    with pytest.raises((TypeError, ValueError)):
+        BatchStats.model_validate({
+            "batches": 2, "claims": 4, "claims_per_batch": supplied})

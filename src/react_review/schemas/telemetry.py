@@ -23,6 +23,7 @@ local work live.
 from __future__ import annotations
 
 import time
+import math
 from contextlib import contextmanager
 
 from pydantic import (
@@ -129,7 +130,10 @@ class BatchStats(BaseModel):
         batches = int(body.get("batches") or 0)
         claims = int(body.get("claims") or 0)
         expected = round((claims / batches) if batches else 0.0, 4)
-        if supplied is not None and round(float(supplied), 4) != expected:
+        if (isinstance(supplied, bool)
+                or not isinstance(supplied, (int, float))
+                or not math.isfinite(float(supplied))
+                or float(supplied) != expected):
             raise ValueError(
                 f"claims_per_batch is {supplied}, and {claims} claims over "
                 f"{batches} batch(es) is {expected}. It is derived from those "

@@ -675,13 +675,14 @@ def _run_main(argv: list[str] | None = None) -> None:
     # same three things behind: an artifact saying how it ended, telemetry for
     # the whole execution, and a saved cache.
     session = ProductionSession(store, run_id, telemetry=telemetry,
-                                emit=_safe_print)
+                                execution=execution, emit=_safe_print)
     # Provisional, so a run interrupted during PARSING still leaves an artifact
     # that names its contract and modes. `context_source` is not knowable yet —
     # it depends on what the review turns out to contain — so it says what is
     # true before parsing, and _run_audit replaces this with the settled one.
     session.manifest = RunManifest.of(
-        contract, execution, context_source="cli",
+        contract, execution,
+        context_source=("cli" if args.context else "default"),
         inputs={"review_pdf": str(args.pdf.name),
                 "studies": str(args.studies.name) if args.studies else ""})
     try:
