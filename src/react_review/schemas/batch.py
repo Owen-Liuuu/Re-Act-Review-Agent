@@ -300,6 +300,41 @@ class ClaimGroupKey(BaseModel):
                 f"[{self.target_shape}/{self.target_kind}]")
 
 
+class BatchReadingRecord(BaseModel):
+    """One reading of one paper, as it is written down.
+
+    The persistent form of a batch. Kept ONCE per reading and referenced by
+    every claim it answered, because copying it onto each claim would multiply
+    it by the group size and still not establish that the group shared it.
+
+    Deliberately a schema of its own rather than the working object: what a run
+    holds in memory may change freely, and what an artifact promises may not.
+    """
+
+    question_id: str = ""
+    execution_id: str = ""
+    study_id: str = ""
+    field_type: str = ""
+    target_shape: str = ARM
+    #: Which claims this reading answered, so a reference can be resolved in
+    #: both directions.
+    claim_ids: list[str] = Field(default_factory=list)
+    attempts: int = 0
+    served_from_cache: bool = False
+    failure: str = ""
+    detail: str = ""
+    #: Entries the parser refused, one reason each. A reading that produced
+    #: usable answers AND refusals is a fact worth keeping: it says the response
+    #: was partly unusable without costing the claims that survived it.
+    parse_errors: list[str] = Field(default_factory=list)
+    usable_readings: int = 0
+    rejected_readings: int = 0
+    #: The DECODED JSON the cache stores — not the model's literal bytes, which
+    #: the cache has never held. Calling it a raw response would describe a
+    #: provenance nobody has.
+    model_payload: dict | None = None
+
+
 class BatchQuestionId(BaseModel):
     """What the MODEL was asked — and nothing about who consumes the answer.
 

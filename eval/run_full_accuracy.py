@@ -33,7 +33,7 @@ from react_review.audit.semantic_control import (
 )
 from react_review.core.config import load_config
 from react_review.csv_io import load_included_studies
-from react_review.eval_accuracy import format_report, run_rows, score_rows
+from react_review.eval_accuracy import row_payload, format_report, run_rows, score_rows
 from react_review.eval_benchmark import (
     benchmark_diagnostics,
     format_benchmark_diagnostics,
@@ -343,7 +343,14 @@ def main(argv: list[str] | None = None) -> None:
         args.out.write_text(
             json.dumps({"run": run_meta, "metrics": metrics,
                         "benchmark_diagnostics": diagnostics,
-                        "rows": [asdict(r) for r in results]},
+                        "rows": [row_payload(r) for r in results],
+                        # One entry per READING, not per row. Every batched row
+                        # names an execution id, and this is the only place that
+                        # reference resolves. Absent entirely when nothing
+                        # batched, so a legacy report is unchanged.
+                        **({"batches": [b.model_dump(mode="json")
+                                        for b in getattr(results, "batch_readings", [])]}
+                           if getattr(results, "batch_readings", None) else {})},
                        ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"[report] {args.out.resolve()}")
 

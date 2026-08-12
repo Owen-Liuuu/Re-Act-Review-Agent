@@ -82,6 +82,13 @@ class RowResult:
     assigned_arm_label: str = ""
     source_components: dict[str, Any] = field(default_factory=dict)
     component_status: str = ""
+    # Which reading answered this row, and under what. A single-target row has
+    # none of them, and `row_payload` drops all three rather than writing empty
+    # strings: `asdict` would put them into every legacy row, which is a changed
+    # report for a fact nothing recorded. See tests/test_legacy_bytes.py.
+    batch_execution_id: str = ""
+    batch_route: str = ""
+    projection_status: str = ""
     # --- extraction quality, as orthogonal facts (metrics schema v2) ---------
     # One "extraction_correct" number answered several different questions at
     # once and got them wrong together: 313 against a gold 314 counted as a
@@ -202,6 +209,121 @@ def _semantic_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
 
+#: Fields a row has only when a batch produced it. Written when it did, absent
+#: when it did not — never present-and-empty, which is a changed artifact.
+BATCH_ROW_FIELDS = ("batch_execution_id", "batch_route", "projection_status")
+
+
+def row_payload(result) -> dict:
+    """One row as the report writes it.
+
+    The single place that decides what a row looks like on disk, so a new field
+    cannot reach a legacy artifact by way of a caller that used `asdict`
+    directly and did not know there was a rule.
+    """
+    from dataclasses import asdict
+
+    body = asdict(result)
+    if not any(body.get(name) for name in BATCH_ROW_FIELDS):
+        for name in BATCH_ROW_FIELDS:
+            body.pop(name, None)
+    return body
+
+
+def _batch_field(source_item, name: str) -> str:
+    """One field of a row's batch provenance, or "" where there was none.
+
+    A single-target row has no batch provenance at all — not an empty one — so
+    this reads through the absence rather than requiring every caller to.
+    """
+    provenance = getattr(source_item, "batch_provenance", None)
+    return str(getattr(provenance, name, "") or "") if provenance else ""
+
+
+class _Rows(list):
+    """The rows, plus the readings that produced them.
+
+    A list subclass rather than a new return type, because every caller already
+    treats this as a list of rows and a batched run adds something ALONGSIDE
+    them rather than changing what they are.
+    """
+
+    batch_readings: list = []
+
+
+class _Collected:
+    """Every row's source evidence, and the readings they came out of.
+
+    Keyed by the position a row arrived at rather than by its identity, because
+    an answer key may legitimately repeat a locator and the ORDER is what the
+    caller asked about. The identity is checked against it, so a mismatch is an
+    error rather than a silently misaligned column of results.
+    """
+
+    def __init__(self) -> None:
+        self._by_position: dict[int, Any] = {}
+        self.batch_readings: list[Any] = []
+
+    def add(self, position: int, source_item: Any) -> None:
+        self._by_position[position] = source_item
+
+    def for_row(self, position: int) -> Any:
+        return self._by_position[position]
+
+
+async def _collect_all(collector, reviews, reference_for, opened, opener,
+                       research_context) -> _Collected:
+    """Collect every row, one study at a time.
+
+    A batched read answers several rows from one response, so collection cannot
+    be interleaved with comparison: a loop that compared as it went would either
+    be unable to use a batch or would pay for one per row and discard it.
+    """
+    collected = _Collected()
+    order: list[str] = []
+    grouped: dict[str, list[tuple[int, Any]]] = {}
+    for position, review in enumerate(reviews):
+        if review.study_id not in grouped:
+            grouped[review.study_id] = []
+            order.append(review.study_id)
+        grouped[review.study_id].append((position, review))
+
+    collect_study = getattr(collector, "collect_study", None)
+    seen: set[str] = set()
+    for study_id in order:
+        entries = grouped[study_id]
+        reference = reference_for(study_id)
+        if opener is not None and study_id not in opened:
+            opened[study_id] = await opener(reference)
+        source = opened.get(study_id)
+        claims = [review for _, review in entries]
+
+        if collect_study is not None:
+            produced = await collect_study(
+                claims, reference, research_context=research_context,
+                **({"source": source} if source is not None else {}))
+            results = produced.claim_results
+            if len(results) != len(entries):
+                raise RuntimeError(
+                    f"{study_id}: {len(entries)} claims went in and "
+                    f"{len(results)} came back; a result set that does not line "
+                    "up cannot be assigned to rows")
+            for (position, _), result in zip(entries, results):
+                collected.add(position, result.source_item)
+            for record in produced.batch_records:
+                persistent = record.persistent()
+                if persistent.execution_id not in seen:
+                    seen.add(persistent.execution_id)
+                    collected.batch_readings.append(persistent)
+        else:
+            for position, review in entries:
+                result = await collector.collect(
+                    review, reference, research_context=research_context,
+                    **({"source": source} if source is not None else {}))
+                collected.add(position, result.source_item)
+    return collected
+
+
 async def run_rows(
     rows: list[dict[str, str]],
     collector: _CollectorLike,
@@ -225,11 +347,17 @@ async def run_rows(
     # must not create extra semantic judgements with no source quote, nor make
     # the audit's semantic-call count depend on how the scorer grades extraction.
     extraction_comparator = CompareValuesTool(tol)
-    results: list[RowResult] = []
+    results: _Rows = _Rows()
     # One retrieval per study, shared by that study's rows — the eval must pay
     # what a run pays, or its cost numbers describe a pipeline nobody runs.
     opened: dict[str, Any] = {}
     opener = getattr(collector, "open_study", None)
+
+    # Collection happens per STUDY and comparison per row, in two passes rather
+    # than one interleaved loop. A batched read answers several rows at once, so
+    # a loop that collected and compared one row at a time could not use it —
+    # and re-collecting per row would pay for the batch and then throw it away.
+    reviews: list[ReviewDataItem] = []
     for r in rows:
         # Only a target contract may add to the question the extractor is
         # asked. Deriving a raw field name from the answer key's own column
@@ -246,19 +374,23 @@ async def run_rows(
                 target, "population_scope_source", ""),
         }
         review = ReviewDataItem(
+            # The benchmark's own identity for this row. Production has
+            # `review_data_id` already; here the answer key's `audit_id` is what
+            # names a claim, and carrying it means nothing downstream has to
+            # recover a row's identity from its position in a list.
+            review_data_id=(r.get("audit_id") or ""),
             study_id=r["study_id"], group=(r.get("group") or "-"),
             field_type=r["field_type"], value=(r.get("review_value") or None),
             unit=(r.get("unit") or ""), column_header=(r.get("column_header") or ""),
             **extra,
         )
-        reference = reference_for(review.study_id)
-        if opener is not None and review.study_id not in opened:
-            opened[review.study_id] = await opener(reference)
-        source = opened.get(review.study_id)
-        res = await collector.collect(
-            review, reference, research_context=research_context,
-            **({"source": source} if source is not None else {}))
-        si = res.source_item
+        reviews.append(review)
+
+    collected = await _collect_all(collector, reviews, reference_for, opened,
+                                   opener, research_context)
+
+    for position, (r, review) in enumerate(zip(rows, reviews)):
+        si = collected.for_row(position)
 
         match = await _compare(
             comparator, review.field_type, review.value, si.source_value,
@@ -343,6 +475,9 @@ async def run_rows(
             review_numeric=dataclass_asdict(parse_numeric(review.value)),
             source_numeric=dataclass_asdict(parse_numeric(si.source_value)),
             audit_id=(r.get("audit_id") or ""),
+            batch_execution_id=_batch_field(si, "batch_execution_id"),
+            batch_route=_batch_field(si, "route"),
+            projection_status=_batch_field(si, "projection_status"),
             column_header=(r.get("column_header") or ""),
             expected_match_mode=(r.get("expected_match_mode") or ""),
             expected_review_required=_as_bool(r.get("expected_review_required")),
@@ -368,6 +503,10 @@ async def run_rows(
             semantic_controls=dict(match.semantic_controls),
             semantic=_semantic_dict(match.semantic),
         ))
+    # The readings, attached to the list the caller already holds. A row
+    # names an execution id and this is where that reference resolves; a
+    # reference pointing at nothing is worse than no reference at all.
+    results.batch_readings = collected.batch_readings   # type: ignore[attr-defined]
     return results
 
 

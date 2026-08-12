@@ -33,7 +33,11 @@ from dataclasses import dataclass, field
 import structlog
 
 from react_review.llm.base import LLMBackend, parse_llm_response
-from react_review.schemas.batch import BatchExecutionId, BatchQuestionId
+from react_review.schemas.batch import (
+    BatchExecutionId,
+    BatchQuestionId,
+    BatchReadingRecord,
+)
 from react_review.tools.batch_parse import BatchReading, parse_batch
 from react_review.tools.batch_prompt import aggregation_applies, build_batch_prompt
 from react_review.tools.extraction_cache import (
@@ -105,6 +109,30 @@ class BatchRecord:
         if self.failure:
             return f"{head}; failed: {self.failure} — {self.detail}"
         return f"{head}; {self.reading.summary() if self.reading else 'no reading'}"
+
+    def persistent(self) -> BatchReadingRecord:
+        """The form an artifact keeps, which is not the form a run holds.
+
+        What the working object contains may change freely; what a written
+        record promises may not, so the two are separate shapes and this is the
+        one place that maps between them.
+        """
+        reading = self.reading
+        return BatchReadingRecord(
+            question_id=self.question.identity(),
+            execution_id=self.execution_id,
+            study_id=self.question.study_id,
+            field_type=self.question.field_type,
+            target_shape=self.question.target_shape,
+            claim_ids=(self.execution.claim_ids() if self.execution else []),
+            attempts=len(self.attempts),
+            served_from_cache=self.served_from_cache,
+            failure=self.failure, detail=self.detail,
+            parse_errors=[str(r.get("reason", "")) for r in
+                          (reading.rejected if reading else [])],
+            usable_readings=len(reading.usable) if reading else 0,
+            rejected_readings=len(reading.rejected) if reading else 0,
+            model_payload=self.model_payload)
 
 
 class ExtractSourceBatchTool:

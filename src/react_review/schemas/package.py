@@ -12,11 +12,12 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_serializer
 
 from react_review.checklist.schema import ChecklistApplication
 from react_review.normalize.cohorts import CohortRegistry
 from react_review.schemas.agent import AgentRun
+from react_review.schemas.batch import BatchReadingRecord
 from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
 from react_review.schemas.knowledge import KnowledgeImportRecord
 from react_review.schemas.report import AuditReport, FinalVerification
@@ -40,6 +41,24 @@ class EvidencePackage(BaseModel):
     report: AuditReport | None = None
     final_verification: FinalVerification | None = None
     processing_records: list[AgentRun] = Field(default_factory=list)
+    #: One entry per BATCH reading, not per claim. Every claim answered by a
+    #: batch names its execution id, and this is where that reference resolves;
+    #: without it the reference points at nothing and the claim that several
+    #: answers came from one act of reading is unverifiable.
+    batch_records: list[BatchReadingRecord] = Field(default_factory=list)
+
+    @model_serializer(mode="wrap")
+    def _omit_unused_batch_records(self, handler):
+        """A package with no batch readings gains no key for them.
+
+        Same rule as the evidence row, for the same reason and by the same
+        mechanism: a replay compares BYTES, and an empty list written into every
+        package ever recorded is a changed artifact for a fact nothing had.
+        """
+        body = handler(self)
+        if not body.get("batch_records"):
+            body.pop("batch_records", None)
+        return body
     # The verbatim tables the review claims were read from, as approved at the
     # capture checkpoint — so any audited value can be traced back to its cell.
     captured_tables: CapturedTableSet = Field(default_factory=CapturedTableSet)

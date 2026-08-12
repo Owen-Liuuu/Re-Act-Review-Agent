@@ -100,6 +100,8 @@ class AuditPipeline:
 
         source_items = []
         records: list[AgentRun] = [parser_record] if parser_record else []
+        batch_records = []
+        seen_readings: set[str] = set()
         groups = _group_by_study(review_items)
         per_study: list[dict] = []
 
@@ -110,20 +112,38 @@ class AuditPipeline:
             # scales with papers rather than with cells.
             opener = getattr(self._collector, "open_study", None)
             source = await opener(reference) if opener is not None else None
-            for item in claims:
-                result = await self._collector.collect(
-                    item, reference, research_context=research_context,
-                    **({"source": source} if source is not None else {})
-                )
-                source_items.append(result.source_item)
-                records.append(result.record)
+            collect_study = getattr(self._collector, "collect_study", None)
+            if collect_study is not None:
+                # One pass per paper. The claims come back in the order they
+                # went in, so nothing here has to know they were grouped.
+                produced = await collect_study(
+                    claims, reference, research_context=research_context,
+                    **({"source": source} if source is not None else {}))
+                source_items.extend(produced.source_items)
+                records.extend(produced.records)
+                for record in produced.batch_records:
+                    # Deduplicated by execution id: one reading is one record
+                    # however many claims name it, and a run that resumed could
+                    # otherwise write the same reading twice.
+                    persistent = record.persistent()
+                    if persistent.execution_id not in seen_readings:
+                        seen_readings.add(persistent.execution_id)
+                        batch_records.append(persistent)
+            else:
+                for item in claims:
+                    result = await self._collector.collect(
+                        item, reference, research_context=research_context,
+                        **({"source": source} if source is not None else {})
+                    )
+                    source_items.append(result.source_item)
+                    records.append(result.record)
 
             # Progress survives a crash or a Ctrl-C: written after every paper.
             if self._store is not None:
                 self._store.save_partial(EvidencePackage(
                     run_id=run_id, run_manifest=self._run_manifest,
                     review_items=review_items, source_items=source_items,
-                    processing_records=records,
+                    processing_records=records, batch_records=batch_records,
                     captured_tables=captured_tables or CapturedTableSet(),
                     cohorts=cohorts or CohortRegistry(),
                     field_resolutions=field_resolutions or [],
@@ -189,6 +209,7 @@ class AuditPipeline:
             report=report,
             final_verification=final,
             processing_records=records,
+            batch_records=batch_records,
             captured_tables=captured_tables or CapturedTableSet(),
             cohorts=cohorts or CohortRegistry(),
             field_resolutions=field_resolutions or [],
