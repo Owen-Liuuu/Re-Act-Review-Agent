@@ -14,6 +14,7 @@ import structlog
 from pydantic import BaseModel, Field
 
 from react_review.contracts import ContractError
+from react_review.schemas.telemetry import SINGLE_EXTRACTION
 from react_review.llm.base import LLMBackend, parse_llm_response
 from react_review.normalize.anchors import normalised_contains
 from react_review.normalize.cohorts import ComparisonTarget
@@ -364,6 +365,7 @@ class ExtractSourceValueTool(Tool):
         *,
         cache: ExtractionCache | None = None,
         cache_mode: str = "live",
+        stage: str = "",
         telemetry=None,
     ) -> None:
         if cache_mode not in {"live", "record", "replay"}:
@@ -375,6 +377,7 @@ class ExtractSourceValueTool(Tool):
         self._backend = backend
         self._cache = cache
         self._cache_mode = cache_mode
+        self._stage = stage
         self._telemetry = telemetry
 
     async def run(self, payload: ExtractSourceValueInput) -> SourceValueResult:
@@ -448,6 +451,21 @@ class ExtractSourceValueTool(Tool):
             # exact prompt/attempt, and call the model only for a cache miss.
             data = (self._cache.get(key)
                     if self._cache_mode in {"record", "replay"} else None)
+            if self._stage and self._telemetry is not None and self._cache_mode != "live":
+                # The same stage accounting the batch path keeps, so the two are
+                # comparable. Only the stage bucket: the harness folds each
+                # cache's own totals into the global counters when a run ends.
+                #
+                # And only when a stage was asked for. Per-stage numbers exist
+                # to compare one reading against another; a run with a single
+                # route has nothing to compare and its global counters already
+                # say what it cost — so recording them anyway would add a
+                # section to every artifact ever replayed, for a measurement
+                # nobody was making.
+                self._telemetry.record_stage_cache(
+                    self._stage,
+                    hits=1 if data is not None else 0,
+                    misses=0 if data is not None else 1)
             if data is None:
                 if self._cache_mode == "replay":
                     raise ExtractionCacheMiss(

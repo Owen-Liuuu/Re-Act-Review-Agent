@@ -67,6 +67,7 @@ class AuditPipeline:
         store: EvidencePackageStore | None = None,
         reporter: StepReporter | None = None,
         run_manifest=None,
+        telemetry=None,
     ) -> None:
         self._collector = collector
         self._auditor = auditor
@@ -75,6 +76,10 @@ class AuditPipeline:
         # Recorded on every package this run writes, partial ones included: a
         # run that stopped halfway still has to say what rules it was applying.
         self._run_manifest = run_manifest
+        # What the run cost, written into the package it produces — including
+        # the partial one, where a reader most needs to know what had already
+        # been spent when it stopped.
+        self._telemetry = telemetry
         # Default reporter never blocks and never writes — library/CI behaviour.
         self._reporter = reporter or StepReporter()
 
@@ -144,6 +149,7 @@ class AuditPipeline:
                     run_id=run_id, run_manifest=self._run_manifest,
                     review_items=review_items, source_items=source_items,
                     processing_records=records, batch_records=batch_records,
+                    telemetry=self._telemetry,
                     captured_tables=captured_tables or CapturedTableSet(),
                     cohorts=cohorts or CohortRegistry(),
                     field_resolutions=field_resolutions or [],
@@ -210,6 +216,7 @@ class AuditPipeline:
             final_verification=final,
             processing_records=records,
             batch_records=batch_records,
+            telemetry=self._telemetry,
             captured_tables=captured_tables or CapturedTableSet(),
             cohorts=cohorts or CohortRegistry(),
             field_resolutions=field_resolutions or [],

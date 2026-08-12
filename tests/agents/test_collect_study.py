@@ -309,3 +309,31 @@ def test_a_claim_the_reading_never_covered_is_unresolved(tmp_path):
     outcomes = [r.source_item.collection_outcome for r in result.claim_results]
     assert outcomes[0] is CollectionOutcome.FOUND
     assert outcomes[1] is CollectionOutcome.EXTRACTION_UNRESOLVED
+
+
+# --- two claims may not share an identity ---------------------------------
+
+def test_two_claims_with_one_identity_are_refused(tmp_path):
+    """Every reference in a batched artifact names a claim by its identity.
+
+    Two claims with one identity make every one of those references ambiguous,
+    in an artifact nobody can re-run to disambiguate. Refused here rather than
+    resolved by a rule nobody agreed to.
+    """
+    twin = ReviewDataItem(study_id="larkin", group="a", field_type="cohort_n",
+                          raw_field_name="Arm, n", value="316")
+    collector = Collector(_registry(_Backend()),
+                          contract=_contract(tmp_path, "targeted_v4"))
+    with pytest.raises(ContractError, match="share the identity"):
+        asyncio.run(collector.collect_study([twin, twin.model_copy()], REFERENCE))
+
+
+def test_identical_claims_do_not_overwrite_each_others_positions(tmp_path):
+    """`list.index` returns the first match for both, so one result replaced
+    the other and a later read ran off the end."""
+    from react_review.tools.batch_group import group_claims
+
+    twin = ReviewDataItem(study_id="larkin", group="a", field_type="cohort_n",
+                          raw_field_name="Arm, n", value="316")
+    groups = group_claims([twin, twin.model_copy(), twin.model_copy()])
+    assert groups[0].positions == [0, 1, 2]

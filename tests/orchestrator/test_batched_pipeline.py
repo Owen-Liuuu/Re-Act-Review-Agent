@@ -385,3 +385,98 @@ def test_a_batched_run_reports_what_batching_bought(tmp_path):
     assert stats.batches == 1 and stats.claims == 2
     assert stats.singleton_batches == 0
     assert stats.projections.get("ok") == 2
+
+
+# --- the production construction chain, executed -------------------------
+
+def test_the_production_pipeline_routes_records_and_measures(tmp_path):
+    """Builds what the CLI builds, and RUNS it.
+
+    The source-reading tests above prove the arguments are written down. This
+    proves they do something: the contract is honoured per claim kind, the
+    runtime reaches the manifest, the readings are persisted, and the run can
+    say what it cost. Each of those was separately absent while the source
+    still looked correct.
+    """
+    import asyncio
+
+    from react_review.cli import _aggregation_runtime
+    from react_review.llm.metered import MeteredBackend
+    from react_review.schemas.run_manifest import RunManifest
+    from react_review.schemas.telemetry import (
+        BATCH_EXTRACTION,
+        SINGLE_EXTRACTION,
+        RunTelemetry,
+    )
+
+    contract = _contract(tmp_path)
+    telemetry = RunTelemetry()
+    batch_backend, single_backend = _Batch(), _Single()
+
+    registry = ToolRegistry()
+    registry.register(FetchFullTextTool(_Retriever()))
+    registry.register(ExtractSourceValueTool(
+        MeteredBackend(single_backend, telemetry, SINGLE_EXTRACTION),
+        telemetry=telemetry))
+    registry.register(ExtractSourceBatchTool(
+        MeteredBackend(batch_backend, telemetry, BATCH_EXTRACTION),
+        telemetry=telemetry))
+    registry.register(CompareValuesTool(ToleranceTable()))
+
+    runtime = _aggregation_runtime(contract)
+    assert runtime is not None, "a batching contract must resolve a runtime"
+
+    collector = Collector(
+        registry, contract=contract, aggregation_runtime=runtime,
+        telemetry=telemetry,
+        cohorts=CohortRegistry(labels=[
+            CohortLabel(key="nivolumab_plus_placebo",
+                        display="Nivolumab (3 mg/kg) + placebo"),
+            CohortLabel(key="ipilimumab_plus_placebo",
+                        display="Ipilimumab (3 mg/kg) + placebo")]))
+    pipeline = AuditPipeline(collector, AuditOrchestrator(registry), Judge(),
+                             telemetry=telemetry)
+
+    claims = _claims() + [
+        ReviewDataItem(review_data_id="r3", study_id="larkin",
+                       group="nivolumab_plus_placebo", field_type="treatment_arm",
+                       raw_field_name="Arm",
+                       cohort_label="Nivolumab (3 mg/kg) + placebo",
+                       value="Nivolumab (3 mg/kg) + placebo")]
+    evidence = asyncio.run(pipeline.run(claims, lambda _: REFERENCE))
+
+    # The routes were honoured: one batch for the two values, one single call
+    # for the arm identity.
+    assert batch_backend.calls == 1
+    assert telemetry.stages[BATCH_EXTRACTION].requests == 1
+    assert telemetry.stages[SINGLE_EXTRACTION].requests == 1
+
+    # The readings are in the package and every reference resolves.
+    known = {r.execution_id for r in evidence.batch_records}
+    batched = [i for i in evidence.source_items if i.batch_provenance]
+    assert len(batched) == 2
+    assert all(i.batch_provenance.batch_execution_id in known for i in batched)
+
+    # The arm identity went the other way and says so by carrying nothing.
+    identity = [i for i in evidence.source_items if i.field_type == "treatment_arm"]
+    assert identity and identity[0].batch_provenance is None
+
+    # The run can say what it cost, and what batching bought.
+    assert evidence.telemetry is not None
+    assert evidence.telemetry.batch.batches == 1
+    assert evidence.telemetry.batch.claims == 2
+    assert evidence.telemetry.batch.claims_per_batch == 2.0
+
+    # And what decided is recorded rather than inferred.
+    body = RunManifest.runtime_of(runtime)
+    assert body["policy_id"] == "safe_sum_v5"
+    assert body["evaluator_version"] == "1.6.1"
+
+
+def test_a_package_from_a_run_that_measured_nothing_has_no_telemetry_key(tmp_path):
+    """Every package written before telemetry existed must stay unchanged."""
+    import asyncio
+
+    pipeline = _pipeline(tmp_path, _Batch())
+    evidence = asyncio.run(pipeline.run(_claims(), lambda _: REFERENCE))
+    assert "telemetry" not in evidence.model_dump(mode="json")

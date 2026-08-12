@@ -97,11 +97,24 @@ def test_a_transport_failure_is_retried_under_the_same_contract():
     assert record.attempts[0].cache_key != record.attempts[1].cache_key
 
 
-def test_a_reply_that_is_not_json_is_retried():
+def test_a_reply_that_is_not_json_is_classified_as_such():
+    """Not as a transport failure.
+
+    The model answered; it just did not answer in JSON. Recording that as
+    transport would make a formatting problem indistinguishable from the network
+    being down — the retry is the same, the diagnosis is not.
+    """
     tool = ExtractSourceBatchTool(_Backend("I'm afraid I can't do that", GOOD))
     record = _read(tool)
     assert record.usable
-    assert record.attempts[0].failure in (NOT_JSON, TRANSPORT)
+    assert record.attempts[0].failure == NOT_JSON
+    assert record.attempts[0].failure != TRANSPORT
+
+
+def test_a_transport_failure_is_not_reported_as_a_formatting_one():
+    tool = ExtractSourceBatchTool(_Backend(ConnectionError("reset"), GOOD))
+    record = _read(tool)
+    assert record.attempts[0].failure == TRANSPORT
 
 
 def test_json_without_the_top_level_shape_is_retried():
@@ -203,3 +216,98 @@ def test_a_live_tool_needs_a_backend():
 def test_an_unknown_mode_is_refused():
     with pytest.raises(ValueError, match="live, record, or replay"):
         ExtractSourceBatchTool(_Backend(GOOD), cache_mode="whenever")
+
+
+# --- an attempt is an attempt, cache hit or not ----------------------------
+
+def test_a_replayed_batch_still_counts_as_a_tool_attempt(tmp_path):
+    """`backend_requests` is the counter that means "the model was asked".
+
+    Counting tool attempts only on a real call made a replayed run look like it
+    did no work at all, and disagreed with the single-target tool, which has
+    always counted the attempt before the cache lookup.
+    """
+    from react_review.schemas.telemetry import BATCH_EXTRACTION, RunTelemetry
+
+    cache = ExtractionCache(tmp_path / "cache.json")
+    recorder = ExtractSourceBatchTool(_Backend(GOOD), cache=cache,
+                                      cache_mode="record")
+    _read(recorder)
+
+    telemetry = RunTelemetry()
+    replayer = ExtractSourceBatchTool(None, cache=cache, cache_mode="replay",
+                                      telemetry=telemetry)
+    record = _read(replayer)
+    assert record.served_from_cache
+    assert telemetry.tool_attempts["extract_source_batch"] == 1
+    assert telemetry.backend_requests == 0
+    assert telemetry.stages[BATCH_EXTRACTION].cache_hits == 1
+
+
+def test_both_extraction_tools_record_their_cache_into_their_own_stage(tmp_path):
+    """Otherwise the two stages are not comparable, which is the point of having
+    them.
+
+    The single-target tool records only when a stage is asked for. A run with
+    one route has nothing to compare, and switching it on regardless would add a
+    section to every artifact ever replayed for a measurement nobody was making
+    — which is what the legacy byte pin caught.
+    """
+    from react_review.schemas.telemetry import (
+        BATCH_EXTRACTION,
+        SINGLE_EXTRACTION,
+        RunTelemetry,
+    )
+
+    telemetry = RunTelemetry()
+    batch = ExtractSourceBatchTool(None, cache=ExtractionCache(tmp_path / "b.json"),
+                                   cache_mode="replay", telemetry=telemetry)
+    with pytest.raises(ExtractionCacheMiss):
+        _read(batch)
+    assert telemetry.stages[BATCH_EXTRACTION].cache_misses == 1
+
+    import asyncio
+
+    from react_review.steps.data_extraction.schemas import PaperDocument
+    from react_review.steps.paper_verification.schemas import ReferenceEntry
+    from react_review.tools.extract_source import (
+        ExtractSourceValueInput,
+        ExtractSourceValueTool,
+    )
+
+    single = ExtractSourceValueTool(
+        None, cache=ExtractionCache(tmp_path / "s.json"), cache_mode="replay",
+        telemetry=telemetry, stage=SINGLE_EXTRACTION)
+    with pytest.raises(ExtractionCacheMiss):
+        asyncio.run(single.run(ExtractSourceValueInput(
+            document=PaperDocument(
+                paper_id="p1", full_text=DOCUMENT,
+                reference=ReferenceEntry(study_id="s1", title="A trial")),
+            field_type="cohort_n", group="a")))
+    assert telemetry.stages[SINGLE_EXTRACTION].cache_misses == 1
+
+
+def test_the_single_target_tool_records_no_stage_unless_asked(tmp_path):
+    """The legacy replay pin: an old artifact gains no section."""
+    import asyncio
+
+    from react_review.schemas.telemetry import RunTelemetry
+    from react_review.steps.data_extraction.schemas import PaperDocument
+    from react_review.steps.paper_verification.schemas import ReferenceEntry
+    from react_review.tools.extract_source import (
+        ExtractSourceValueInput,
+        ExtractSourceValueTool,
+    )
+
+    telemetry = RunTelemetry()
+    tool = ExtractSourceValueTool(
+        None, cache=ExtractionCache(tmp_path / "s.json"), cache_mode="replay",
+        telemetry=telemetry)
+    with pytest.raises(ExtractionCacheMiss):
+        asyncio.run(tool.run(ExtractSourceValueInput(
+            document=PaperDocument(
+                paper_id="p1", full_text=DOCUMENT,
+                reference=ReferenceEntry(study_id="s1", title="A trial")),
+            field_type="cohort_n", group="a")))
+    assert telemetry.stages is None
+    assert "stages" not in telemetry.model_dump(mode="json")

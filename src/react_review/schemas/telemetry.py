@@ -90,10 +90,14 @@ class BatchStats(BaseModel):
     #: two must never be summed into one "checked" figure.
     explicit_vs_derived_agreements: int = 0
     explicit_vs_derived_conflicts: int = 0
+    #: Recorded, not derived at read time. A property never reaches the JSON, so
+    #: the number the whole cost argument turns on would have been absent from
+    #: every artifact that carried the counts it is computed from.
+    claims_per_batch: float = 0.0
 
-    @property
-    def claims_per_batch(self) -> float:
-        return (self.claims / self.batches) if self.batches else 0.0
+    def _recompute(self) -> None:
+        self.claims_per_batch = round(
+            (self.claims / self.batches) if self.batches else 0.0, 4)
 
 
 class RunTelemetry(BaseModel):
@@ -142,6 +146,7 @@ class RunTelemetry(BaseModel):
             stats.singleton_batches += 1
         if failed:
             stats.failed_batches += 1
+        stats._recompute()
 
     def record_projection(self, status: str, aggregation_status: str) -> None:
         """One claim's outcome, and what the aggregation did for it.

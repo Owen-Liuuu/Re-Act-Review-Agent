@@ -69,6 +69,26 @@ def _document_sha256(text: str) -> str:
     return hashlib.sha256(canonical).hexdigest().upper()
 
 
+def _refuse_repeated_identities(claims) -> None:
+    """Two claims may not share an identity.
+
+    Everything downstream refers to a claim by that identity — the binding in an
+    execution id, the reference on a row, the claim list on a reading. A
+    duplicate would make those references ambiguous in an artifact nobody can
+    re-run, so it is refused here rather than resolved by a rule nobody agreed.
+    """
+    seen: dict[str, int] = {}
+    for position, claim in enumerate(claims):
+        identity = _claim_id(claim)
+        if identity in seen:
+            raise ContractError(
+                f"claims {seen[identity]} and {position} share the identity "
+                f"{identity!r}. Every reference in a batched artifact names a "
+                "claim by its identity, so two claims with one identity make "
+                "every one of those references ambiguous")
+        seen[identity] = position
+
+
 def _claim_id(claim) -> str:
     """A stable name for one claim, preferring the one the review already gave.
 
@@ -370,12 +390,13 @@ class Collector:
         if source is None:
             source = await self.open_study(reference)
 
+        _refuse_repeated_identities(claims)
         results: dict[int, CollectResult] = {}
         records: list[object] = []
         for group in group_claims(claims):
             route = (self._contract.route_for(group.kind) if self._contract
                      else self._extraction_profile)
-            positions = [claims.index(claim) for claim in group.claims]
+            positions = group.positions
             if route == BATCH_PROFILE_NAME:
                 produced, record = await self._collect_batched(
                     group, reference, source, research_context)

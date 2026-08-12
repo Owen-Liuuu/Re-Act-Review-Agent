@@ -18,6 +18,7 @@ from react_review.checklist.schema import ChecklistApplication
 from react_review.normalize.cohorts import CohortRegistry
 from react_review.schemas.agent import AgentRun
 from react_review.schemas.batch import BatchReadingRecord
+from react_review.schemas.telemetry import RunTelemetry
 from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
 from react_review.schemas.knowledge import KnowledgeImportRecord
 from react_review.schemas.report import AuditReport, FinalVerification
@@ -46,6 +47,10 @@ class EvidencePackage(BaseModel):
     #: without it the reference points at nothing and the claim that several
     #: answers came from one act of reading is unverifiable.
     batch_records: list[BatchReadingRecord] = Field(default_factory=list)
+    #: What this run cost. Absent from every package written before it existed,
+    #: and from any run that measured nothing — a production run should be able
+    #: to say what it spent, and until now only the eval harness could.
+    telemetry: RunTelemetry | None = None
 
     @model_serializer(mode="wrap")
     def _omit_unused_batch_records(self, handler):
@@ -56,8 +61,9 @@ class EvidencePackage(BaseModel):
         package ever recorded is a changed artifact for a fact nothing had.
         """
         body = handler(self)
-        if not body.get("batch_records"):
-            body.pop("batch_records", None)
+        for name in ("batch_records", "telemetry"):
+            if not body.get(name):
+                body.pop(name, None)
         return body
     # The verbatim tables the review claims were read from, as approved at the
     # capture checkpoint — so any audited value can be traced back to its cell.

@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 
 import structlog
 
-from react_review.llm.base import LLMBackend, parse_llm_response
+from react_review.llm.base import LLMBackend, LLMError, parse_llm_response
 from react_review.tools.base import ToolStage
 from react_review.schemas.batch import (
     BatchExecutionId,
@@ -223,27 +223,39 @@ class ExtractSourceBatchTool:
 
     async def _one_attempt(self, prompt: str, key: str):
         """One call or one cache read. Never both, and never a silent fallback."""
+        # An attempt is an attempt whether or not a recording answers it. The
+        # single-target tool has always counted it before the cache lookup, and
+        # `backend_requests` is the counter that means "the model was asked" —
+        # counting only real calls here made a replayed run look like it did no
+        # work at all.
+        if self._telemetry is not None:
+            self._telemetry.attempt(self.name)
         try:
             recorded = (self._cache.get(key)
                         if self._cache_mode in {"record", "replay"} else None)
             if recorded is not None:
                 self._record_cache(hits=1)
                 return recorded, "", "", True
+            # Counted where the lookup failed, and BEFORE the refusal below: a
+            # replay miss is the most interesting miss there is, and raising
+            # first meant it was the one miss nothing recorded.
+            self._record_cache(misses=1)
             if self._cache_mode == "replay":
                 # A run that says replay must mean it. Reaching for the model
                 # here, or dropping to an older profile, would produce an
                 # artifact whose own label is false.
                 raise ExtractionCacheMiss(
                     "no recorded batch for this question and attempt")
-            # A miss is counted once, HERE, when the lookup failed — not again
-            # when the answer is written back, which is the same event seen
-            # from the other side.
-            self._record_cache(misses=1)
-            if self._telemetry is not None:
-                self._telemetry.attempt(self.name)
             assert self._backend is not None
             raw = await self._backend.complete(prompt)
-            payload = parse_llm_response(raw, self._backend.model_id)
+            try:
+                payload = parse_llm_response(raw, self._backend.model_id)
+            except LLMError as exc:
+                # The model answered; it just did not answer in JSON. Recording
+                # that as a transport failure would make a formatting problem
+                # indistinguishable from the network being down, and the two
+                # call for different responses even though both are retried.
+                return None, NOT_JSON, f"{type(exc).__name__}: {exc}"[:300], False
             if not isinstance(payload, dict):
                 return None, NOT_JSON, "the response did not decode to an object", False
             if self._cache_mode == "record" and self._cache is not None:

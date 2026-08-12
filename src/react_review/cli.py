@@ -690,6 +690,13 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
     from react_review.tools.compare import CompareValuesTool
     from react_review.tools.semantic_compare import SemanticCompareTool
     from react_review.tools.extract import FetchFullTextTool
+    from react_review.llm.metered import MeteredBackend
+    from react_review.schemas.telemetry import (
+        BATCH_EXTRACTION,
+        SEMANTIC,
+        SINGLE_EXTRACTION,
+        RunTelemetry,
+    )
     from react_review.tools.extract_batch import ExtractSourceBatchTool
     from react_review.tools.extract_source import ExtractSourceValueTool
     from react_review.contracts import repo_root
@@ -784,10 +791,23 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
     reg.register(FetchFullTextTool(retriever))
     extraction_cache = (None if execution.extraction_mode == "live"
                         else ExtractionCache(execution.extraction_cache))
+    # A production run should be able to say what it spent. Until now only the
+    # eval harness could, so "what did batching cost" was answerable about the
+    # benchmark and not about a real audit. Three labelled views of one backend,
+    # exactly as the harness builds them.
+    telemetry = RunTelemetry()
+    stages = ((SINGLE_EXTRACTION, BATCH_EXTRACTION, SEMANTIC)
+              if contract.batching else ("", "", ""))
+    single_backend = MeteredBackend(backend, telemetry, stages[0])
+    batch_backend = MeteredBackend(backend, telemetry, stages[1])
+    semantic_metered = MeteredBackend(backend, telemetry, stages[2])
     reg.register(ExtractSourceValueTool(
-        backend, cache=extraction_cache, cache_mode=execution.extraction_mode))
+        single_backend, cache=extraction_cache,
+        cache_mode=execution.extraction_mode, telemetry=telemetry,
+        stage=stages[0]))
     reg.register(ExtractSourceBatchTool(
-        backend, cache=extraction_cache, cache_mode=execution.extraction_mode))
+        batch_backend, cache=extraction_cache,
+        cache_mode=execution.extraction_mode, telemetry=telemetry))
     reg.register(ResolveReferenceTool(reconciler))          # no-DOI refs → gated online DOI
     # Text the numeric comparison cannot read ("ICU" vs "intensive care unit")
     # goes to the model, and its answer then goes through the deterministic
@@ -797,7 +817,7 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
     reg.register(CompareValuesTool(
         tol,
         semantic=(SemanticCompareTool(
-            backend, profile=contract.semantic_prompt_profile)
+            semantic_metered, profile=contract.semantic_prompt_profile)
             if args.semantic == "on" else None),
         semantic_mode=args.semantic, semantic_cache=semantic_cache,
         min_confidence=tol.semantic_min_confidence,
@@ -826,9 +846,11 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
         Collector(reg, knowledge=kb, cohorts=parsed.cohorts,
                   contract=contract, aggregation_runtime=runtime,
                   knowledge_fingerprint=parsed.knowledge_fingerprint,
+                  telemetry=telemetry,
                   extraction_profile=contract.extraction_profile),
         AuditOrchestrator(reg), Judge(),
         store=store, reporter=reporter, run_manifest=manifest,
+        telemetry=telemetry,
     )
 
     _safe_print(f"Auditing {len(review_items)} items (run {run_id}) …")

@@ -88,10 +88,17 @@ def group_key_for(review_item) -> ClaimGroupKey:
 
 @dataclass
 class ClaimGroup:
-    """One prompt's worth of claims, in the order they arrived."""
+    """One prompt's worth of claims, and where each came from.
+
+    The positions travel WITH the claims. Recovering them afterwards by looking
+    each claim up in the original list fails silently the moment two claims are
+    equal — `list.index` returns the first match for both, so one result
+    overwrites the other and a later read runs off the end.
+    """
 
     key: ClaimGroupKey
     claims: list = field(default_factory=list)
+    positions: list[int] = field(default_factory=list)
 
     @property
     def kind(self) -> str:
@@ -113,9 +120,11 @@ def group_claims(review_items) -> list[ClaimGroup]:
     records reads it the way it happened.
     """
     groups: dict[str, ClaimGroup] = {}
-    for item in review_items:
+    for position, item in enumerate(review_items):
         key = group_key_for(item)
-        groups.setdefault(key.key(), ClaimGroup(key=key)).claims.append(item)
+        group = groups.setdefault(key.key(), ClaimGroup(key=key))
+        group.claims.append(item)
+        group.positions.append(position)
     return list(groups.values())
 
 

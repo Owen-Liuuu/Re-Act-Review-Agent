@@ -237,14 +237,19 @@ def main(argv: list[str] | None = None) -> None:
     telemetry = RunTelemetry()
     backend = (_create_llm_backend(load_config(args.config))
                if args.config is not None else None)
+    # Per-stage measurement is switched on for a run that HAS more than one
+    # stage to compare. A single-route run has nothing to compare and its global
+    # counters already say what it cost, so labelling it would add a section to
+    # every artifact ever replayed for a measurement nobody was making.
+    batching = bool(profile is not None and profile.run_contract is not None
+                    and profile.run_contract.batching)
+    stages = ((SINGLE_EXTRACTION, BATCH_EXTRACTION, SEMANTIC) if batching
+              else ("", "", ""))
     if backend is not None:
-        # One backend, three labelled views of it. A single set of counters
-        # cannot say whether batching spent more on output than it saved on
-        # calls, because extraction and semantic comparison share the wire.
         raw_backend = backend
-        backend = MeteredBackend(raw_backend, telemetry, SINGLE_EXTRACTION)
-        batch_backend = MeteredBackend(raw_backend, telemetry, BATCH_EXTRACTION)
-        semantic_backend = MeteredBackend(raw_backend, telemetry, SEMANTIC)
+        backend = MeteredBackend(raw_backend, telemetry, stages[0])
+        batch_backend = MeteredBackend(raw_backend, telemetry, stages[1])
+        semantic_backend = MeteredBackend(raw_backend, telemetry, stages[2])
     else:
         batch_backend = semantic_backend = None
     tol = ToleranceTable.from_yaml(args.tolerances) if args.tolerances else ToleranceTable()
@@ -256,7 +261,7 @@ def main(argv: list[str] | None = None) -> None:
                         else ExtractionCache(extraction_cache_path))
     reg.register(ExtractSourceValueTool(
         backend, cache=extraction_cache, cache_mode=args.extraction,
-        telemetry=telemetry))
+        telemetry=telemetry, stage=stages[0]))
     # Registered whatever the contract says: a contract that routes to it must
     # find it, and one that does not never asks. Its absence is a startup
     # failure rather than a quiet fall back to reading one claim at a time.
