@@ -61,9 +61,13 @@ class EvidencePackage(BaseModel):
         package ever recorded is a changed artifact for a fact nothing had.
         """
         body = handler(self)
-        for name in ("batch_records", "telemetry"):
-            if not body.get(name):
-                body.pop(name, None)
+        if not body.get("batch_records"):
+            body.pop("batch_records", None)
+        # By the COUNTS, not by the object. A zero RunTelemetry serialises to a
+        # full dictionary of zeroes and is therefore truthy, so testing the body
+        # decided nothing and every package gained the key regardless.
+        if self.telemetry is None or not self.telemetry.has_measurements():
+            body.pop("telemetry", None)
         return body
     # The verbatim tables the review claims were read from, as approved at the
     # capture checkpoint — so any audited value can be traced back to its cell.

@@ -25,7 +25,7 @@ from __future__ import annotations
 import time
 from contextlib import contextmanager
 
-from pydantic import BaseModel, Field, model_serializer
+from pydantic import BaseModel, Field, computed_field, model_serializer
 
 
 class StageTelemetry(BaseModel):
@@ -55,10 +55,15 @@ class StageTelemetry(BaseModel):
 
 #: The stages a run can spend in. Closed, so a typo becomes a bucket nobody
 #: reads rather than a silent third of the cost.
+#: Reading the REVIEW — the parser and the field resolver, both of which call
+#: the model before a single source paper is opened. Its own stage because
+#: folding it into extraction would attribute the cost of reading the review to
+#: the cost of reading the papers.
+REVIEW_PARSING = "review_parsing"
 SINGLE_EXTRACTION = "single_extraction"
 BATCH_EXTRACTION = "batch_extraction"
 SEMANTIC = "semantic"
-STAGES = (SINGLE_EXTRACTION, BATCH_EXTRACTION, SEMANTIC)
+STAGES = (REVIEW_PARSING, SINGLE_EXTRACTION, BATCH_EXTRACTION, SEMANTIC)
 
 
 class BatchStats(BaseModel):
@@ -70,6 +75,11 @@ class BatchStats(BaseModel):
     numbers that decide whether it bought anything, and what it cost when a
     reading went wrong.
     """
+
+    #: Silently ignoring an unknown key is how a caller comes to believe it set
+    #: something. `claims_per_batch` is derived below, and supplying it is an
+    #: error rather than a no-op.
+    model_config = {"extra": "forbid"}
 
     batches: int = 0
     claims: int = 0
@@ -90,14 +100,20 @@ class BatchStats(BaseModel):
     #: two must never be summed into one "checked" figure.
     explicit_vs_derived_agreements: int = 0
     explicit_vs_derived_conflicts: int = 0
-    #: Recorded, not derived at read time. A property never reaches the JSON, so
-    #: the number the whole cost argument turns on would have been absent from
-    #: every artifact that carried the counts it is computed from.
-    claims_per_batch: float = 0.0
 
-    def _recompute(self) -> None:
-        self.claims_per_batch = round(
-            (self.claims / self.batches) if self.batches else 0.0, 4)
+    @computed_field
+    @property
+    def claims_per_batch(self) -> float:
+        """Derived at serialisation, never supplied.
+
+        It reaches the JSON — a plain property would not, and the number the
+        whole cost argument turns on would have been absent from every artifact
+        carrying the counts it comes from. But it is not WRITABLE: a settable
+        field would let a caller record 999 beside batches=2 and claims=4, which
+        is the second-source-of-truth fault this project has spent four rounds
+        removing everywhere else.
+        """
+        return round((self.claims / self.batches) if self.batches else 0.0, 4)
 
 
 class RunTelemetry(BaseModel):
@@ -133,6 +149,19 @@ class RunTelemetry(BaseModel):
                 body.pop(name, None)
         return body
 
+    def has_measurements(self) -> bool:
+        """Whether anything was actually measured.
+
+        A zero RunTelemetry serialises to a full dictionary of zeroes, which is
+        truthy — so testing the object decided nothing and every package written
+        by a run that measured nothing gained the key anyway. What matters is
+        the counts.
+        """
+        return bool(
+            self.tool_attempts or self.backend_requests or self.cache_hits
+            or self.cache_misses or self.repeated_attempts or self.call_seconds
+            or self.wall_seconds or self.stages or self.batch)
+
     def batch_stats(self) -> BatchStats:
         if self.batch is None:
             self.batch = BatchStats()
@@ -146,7 +175,6 @@ class RunTelemetry(BaseModel):
             stats.singleton_batches += 1
         if failed:
             stats.failed_batches += 1
-        stats._recompute()
 
     def record_projection(self, status: str, aggregation_status: str) -> None:
         """One claim's outcome, and what the aggregation did for it.

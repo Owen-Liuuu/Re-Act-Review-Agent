@@ -617,6 +617,24 @@ def _run_main(argv: list[str] | None = None) -> None:
         _safe_print("[unattended] no one is gating this run; every step is still "
                     f"journalled to {journal.run_dir}")
 
+    # The contract is resolved before anything it governs is built. It decides
+    # the routes, and the routes decide whether this run has more than one stage
+    # to measure — so a parser built before it could not be labelled, which is
+    # why the review parser's model calls went uncounted.
+    from react_review.contracts import repo_root as _repo_root
+    from react_review.production import ProductionBackends, ProductionStages
+    from react_review.run_profile import guard_contract_overrides, load_run_contract
+    from react_review.schemas.telemetry import RunTelemetry, wall_clock
+
+    contract = load_run_contract(
+        args.profile or (_repo_root() / "configs" / "run_profiles" / "legacy.json"))
+    guard_contract_overrides(contract, {"--tolerances": args.tolerances})
+
+    # Created before the FIRST model call of the run, not before the extraction.
+    telemetry = RunTelemetry()
+    stages = ProductionStages.of(contract)
+    backends = ProductionBackends(backend, telemetry, stages)
+
     project_root = Path(__file__).resolve().parents[2]
     seed = project_root / "configs" / "knowledge.seed.json"
     kb = load_runtime_knowledge(seed, project_root / "configs" / "ontology")
@@ -625,16 +643,21 @@ def _run_main(argv: list[str] | None = None) -> None:
         checklist = Checklist.from_yaml(
             args.checklist or project_root / "configs" / "checklists" / "default.yaml")
     # audit mode: KB is read-only — candidates become proposals, not KB writes.
-    resolver = FieldResolver(kb, backend=backend, write_back=False)
+    resolver = FieldResolver(kb, backend=backends.parsing, write_back=False)
     review_parser = ReviewParser(
-        backend, resolver, reporter=reporter,
+        backends.parsing, resolver, reporter=reporter,
         keep_tables=_id_set(args.tables), drop_tables=_id_set(args.drop_tables),
         checklist=checklist,
     )
 
     try:
-        return _run_audit(args, config, backend, kb, resolver, review_parser,
-                          reporter, store, run_id)
+        # One clock around the WHOLE production lifecycle — parsing included,
+        # which is where a real run spends a large part of its time and where
+        # `wall_seconds` was previously left at zero.
+        with wall_clock(telemetry):
+            return _run_audit(args, config, backends, kb, resolver, review_parser,
+                              reporter, store, run_id, contract=contract,
+                              telemetry=telemetry, stages=stages)
     except RunStopped as exc:
         _finalize_partial(store, run_id, "stopped_by_user", exc.stage, exc.reason)
         raise SystemExit(2)
@@ -667,8 +690,9 @@ def _finalize_partial(store, run_id: str, status: str, stage: str, reason: str) 
         _safe_print(f"[PARTIAL]   {partial.resolve()} — evidence collected so far")
 
 
-def _run_audit(args, config, backend, kb, resolver, review_parser,
-               reporter, store, run_id: str) -> None:
+def _run_audit(args, config, backends, kb, resolver, review_parser,
+               reporter, store, run_id: str, *, contract, telemetry,
+               stages) -> None:
     """The audit itself, wrapped so a stop/interrupt can finalise cleanly."""
     from react_review.agents.collector import Collector
     from react_review.audit import ToleranceTable
@@ -690,12 +714,10 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
     from react_review.tools.compare import CompareValuesTool
     from react_review.tools.semantic_compare import SemanticCompareTool
     from react_review.tools.extract import FetchFullTextTool
-    from react_review.llm.metered import MeteredBackend
-    from react_review.schemas.telemetry import (
-        BATCH_EXTRACTION,
-        SEMANTIC,
-        SINGLE_EXTRACTION,
-        RunTelemetry,
+    from react_review.production import (
+        aggregation_runtime,
+        build_collector,
+        record_cache_totals,
     )
     from react_review.tools.extract_batch import ExtractSourceBatchTool
     from react_review.tools.extract_source import ExtractSourceValueTool
@@ -725,16 +747,6 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
     # use it is a CONTRACT decision, because the context reaches the prompt and
     # therefore the cache key — a silent fallback would change the question
     # without changing the profile that is supposed to define it.
-    # Loaded BEFORE anything consults it. It used to be read here and assigned
-    # thirty lines later, so any run without an explicit --context raised
-    # UnboundLocalError before it reached a paper.
-    # The contract decides the answer; the flags below decide only how the model
-    # was reached. A flag that would move a tolerance or a prompt version is
-    # refused rather than silently winning — see react_review.run_profile.
-    contract = load_run_contract(
-        args.profile or (repo_root() / "configs" / "run_profiles" / "legacy.json"))
-    guard_contract_overrides(contract, {"--tolerances": args.tolerances})
-
     research_context, context_source = args.context, "cli"
     if not research_context:
         if contract.context_policy == "cli_then_parsed" and parsed.research_context:
@@ -795,18 +807,12 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
     # eval harness could, so "what did batching cost" was answerable about the
     # benchmark and not about a real audit. Three labelled views of one backend,
     # exactly as the harness builds them.
-    telemetry = RunTelemetry()
-    stages = ((SINGLE_EXTRACTION, BATCH_EXTRACTION, SEMANTIC)
-              if contract.batching else ("", "", ""))
-    single_backend = MeteredBackend(backend, telemetry, stages[0])
-    batch_backend = MeteredBackend(backend, telemetry, stages[1])
-    semantic_metered = MeteredBackend(backend, telemetry, stages[2])
     reg.register(ExtractSourceValueTool(
-        single_backend, cache=extraction_cache,
+        backends.single, cache=extraction_cache,
         cache_mode=execution.extraction_mode, telemetry=telemetry,
-        stage=stages[0]))
+        stage=stages.single))
     reg.register(ExtractSourceBatchTool(
-        batch_backend, cache=extraction_cache,
+        backends.batch, cache=extraction_cache,
         cache_mode=execution.extraction_mode, telemetry=telemetry))
     reg.register(ResolveReferenceTool(reconciler))          # no-DOI refs → gated online DOI
     # Text the numeric comparison cannot read ("ICU" vs "intensive care unit")
@@ -817,12 +823,12 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
     reg.register(CompareValuesTool(
         tol,
         semantic=(SemanticCompareTool(
-            semantic_metered, profile=contract.semantic_prompt_profile)
+            backends.semantic, profile=contract.semantic_prompt_profile)
             if args.semantic == "on" else None),
         semantic_mode=args.semantic, semantic_cache=semantic_cache,
         min_confidence=tol.semantic_min_confidence,
         semantic_profile=contract.semantic_prompt_profile))
-    runtime = _aggregation_runtime(contract)
+    runtime = aggregation_runtime(contract)
     manifest = RunManifest.of(
         contract, execution, context_source=context_source,
         inputs={"review_pdf": str(args.pdf.name),
@@ -843,11 +849,10 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
     if runtime is not None:
         _safe_print(f"Aggregation: {runtime.evaluator.describe()}")
     pipeline = AuditPipeline(
-        Collector(reg, knowledge=kb, cohorts=parsed.cohorts,
-                  contract=contract, aggregation_runtime=runtime,
-                  knowledge_fingerprint=parsed.knowledge_fingerprint,
-                  telemetry=telemetry,
-                  extraction_profile=contract.extraction_profile),
+        build_collector(reg, contract=contract, knowledge=kb,
+                        cohorts=parsed.cohorts,
+                        knowledge_fingerprint=parsed.knowledge_fingerprint,
+                        telemetry=telemetry, runtime=runtime),
         AuditOrchestrator(reg), Judge(),
         store=store, reporter=reporter, run_manifest=manifest,
         telemetry=telemetry,
@@ -864,6 +869,20 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
         knowledge_concept_count=parsed.knowledge_concept_count,
         checklist=parsed.checklist,
     ))
+
+    # Both books, once, now that the run has finished spending. The global
+    # counters are where a cache's hits have always been reported and what every
+    # existing artifact reads; the stage buckets are the only way to say which
+    # half of a mixed run was the cheap one. The package is rewritten afterwards
+    # so the totals it carries are the run's, not a snapshot from before the
+    # last paper.
+    record_cache_totals(telemetry, extraction=extraction_cache,
+                        semantic=semantic_cache, stages=stages)
+    if semantic_cache is not None:
+        semantic_cache.save()
+    pkg = pkg.model_copy(update={"telemetry": telemetry})
+    store.save(pkg)
+    _safe_print(f"Cost:       {telemetry.summary()}")
 
     # AuditPipeline persists the complete package atomically before returning.
     # Reload that exact file for the report so `run` and `report` cannot render

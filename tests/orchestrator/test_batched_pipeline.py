@@ -264,39 +264,99 @@ def test_a_row_that_was_never_batched_names_no_reading(tmp_path):
 
 # --- what the PRODUCTION entry point builds --------------------------------
 
-def test_the_cli_hands_the_collector_the_whole_contract(tmp_path):
-    """Not one field of it.
+def test_the_production_builder_is_what_the_cli_calls():
+    """The assembly is one function, and this is that function.
 
-    A run may read values in batch and arm identities one at a time, and the
-    Collector can only honour that if it holds the routes. Passing a single
-    profile would let a v2 contract be loaded, recorded, and then ignored — and
-    every test that builds a Collector directly would still pass.
+    The previous version of this test read `cli.py` as text and asserted that
+    the argument names appeared. It passed while the telemetry was created after
+    the parsing it was supposed to measure, and it broke the moment the wiring
+    moved into a builder — which is the drift it was supposed to catch and
+    structurally could not.
     """
     import inspect
 
-    from react_review import cli
+    from react_review import cli, production
 
     source = inspect.getsource(cli)
-    start = source.index("pipeline = AuditPipeline(")
-    block = source[start:start + 600]
-    assert "contract=contract" in block
-    assert "aggregation_runtime=runtime" in block
-    assert "knowledge_fingerprint=" in block
+    assert "build_collector(" in source
+    assert "ProductionBackends(" in source
+    assert "record_cache_totals(" in source
+    # And the builder is not a second copy of the wiring.
+    assert "Collector(" in inspect.getsource(production.build_collector)
 
 
-def test_the_cli_loads_its_contract_before_anything_reads_it():
-    """It used to be read thirty lines before it was assigned.
+def test_the_builder_gives_the_collector_everything_its_contract_needs(tmp_path):
+    from react_review.production import build_collector
+    from react_review.schemas.telemetry import RunTelemetry
 
-    Any run without an explicit --context raised UnboundLocalError before it
-    reached a paper.
+    contract = _contract(tmp_path)
+    telemetry = RunTelemetry()
+    registry = ToolRegistry()
+    registry.register(FetchFullTextTool(_Retriever()))
+    registry.register(ExtractSourceValueTool(_Single()))
+    registry.register(ExtractSourceBatchTool(_Batch()))
+    collector = build_collector(registry, contract=contract,
+                                knowledge_fingerprint="KB1", telemetry=telemetry)
+    assert collector.route_for(_claims()[0]) == "targeted_v5_batch"
+    assert collector._runtime is not None
+    assert collector._knowledge_fingerprint == "KB1"
+    assert collector._telemetry is telemetry
+
+
+def test_parsing_gets_its_own_stage(tmp_path):
+    """The parser and the resolver call the model before a paper is opened.
+
+    Folding those into extraction would attribute the cost of reading the
+    REVIEW to the cost of reading the papers.
     """
-    import inspect
+    from react_review.production import ProductionBackends, ProductionStages
+    from react_review.schemas.telemetry import REVIEW_PARSING, RunTelemetry
 
-    from react_review import cli
+    telemetry = RunTelemetry()
+    stages = ProductionStages.of(_contract(tmp_path))
+    assert stages.parsing == REVIEW_PARSING
+    backends = ProductionBackends(_Single(), telemetry, stages)
+    assert backends.parsing is not backends.single
 
-    source = inspect.getsource(cli)
-    assert source.index("contract = load_run_contract(") < \
-        source.index("contract.context_policy")
+
+def test_a_single_route_run_labels_no_stage_at_all(tmp_path):
+    """Its global counters already say what it cost, and labelling it would add
+    a section to every artifact ever replayed."""
+    from react_review.production import ProductionStages
+
+    body = json.loads((tmp_path / "contract.json").read_text(encoding="utf-8"))         if (tmp_path / "contract.json").exists() else None
+    _contract(tmp_path)
+    plain = json.loads((tmp_path / "contract.json").read_text(encoding="utf-8"))
+    plain["extraction_routes"] = {"value": "targeted_v4",
+                                  "arm_identity": "targeted_v4"}
+    del plain["aggregation_policy_id"], plain["evaluator_version"]
+    (tmp_path / "plain.json").write_text(json.dumps(plain), encoding="utf-8")
+    stages = ProductionStages.of(load_run_contract(tmp_path / "plain.json"))
+    assert (stages.parsing, stages.single, stages.batch, stages.semantic) ==         ("", "", "", "")
+
+
+def test_cache_totals_are_recorded_in_both_books_exactly_once():
+    """The globals are what every existing artifact reads; the stage buckets are
+    the only way to say which half was cheap. Both, once."""
+    from react_review.production import ProductionStages, record_cache_totals
+    from react_review.schemas.telemetry import (
+        SEMANTIC,
+        SINGLE_EXTRACTION,
+        RunTelemetry,
+    )
+
+    class _Cache:
+        def __init__(self, hits, misses):
+            self.hits, self.misses = hits, misses
+
+    telemetry = RunTelemetry()
+    stages = ProductionStages(parsing="review_parsing", single=SINGLE_EXTRACTION,
+                              batch="batch_extraction", semantic=SEMANTIC)
+    record_cache_totals(telemetry, extraction=_Cache(7, 2),
+                        semantic=_Cache(3, 1), stages=stages)
+    assert telemetry.cache_hits == 10 and telemetry.cache_misses == 3
+    assert telemetry.stages[SINGLE_EXTRACTION].cache_hits == 7
+    assert telemetry.stages[SEMANTIC].cache_hits == 3
 
 
 def test_the_cli_resolves_a_runtime_only_for_a_batching_contract(tmp_path):

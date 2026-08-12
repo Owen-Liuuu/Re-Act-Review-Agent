@@ -288,3 +288,45 @@ def test_a_contradiction_beside_a_valid_sum_is_a_conflict():
     telemetry.record_projection("contradictory", "derived")
     assert telemetry.batch.explicit_vs_derived_conflicts == 1
     assert telemetry.batch.explicit_vs_derived_agreements == 0
+
+
+# --- 9. an EMPTY telemetry object, which is not the same as none ----------
+
+def test_a_package_given_a_telemetry_that_measured_nothing_omits_it():
+    """The case the previous test missed by passing None.
+
+    A zero RunTelemetry serialises to a full dictionary of zeroes and is
+    therefore truthy, so `if not body.get("telemetry")` decided nothing and
+    every package gained the key. The claim that an unmeasured run carried no
+    telemetry was simply false, and the test that was supposed to prove it never
+    constructed the object it was about.
+    """
+    from react_review.schemas.package import EvidencePackage
+
+    package = EvidencePackage(run_id="r1", telemetry=RunTelemetry())
+    assert "telemetry" not in package.model_dump(mode="json")
+
+
+def test_one_measurement_of_any_kind_brings_it_back():
+    from react_review.schemas.package import EvidencePackage
+
+    for mutate in (lambda t: t.attempt("x"),
+                   lambda t: t.record_cache(hits=1, misses=0),
+                   lambda t: t.record_batch(claims=1, failed=False),
+                   lambda t: setattr(t, "wall_seconds", 0.1)):
+        telemetry = RunTelemetry()
+        mutate(telemetry)
+        assert telemetry.has_measurements()
+        body = EvidencePackage(run_id="r1", telemetry=telemetry).model_dump(mode="json")
+        assert "telemetry" in body
+
+
+def test_claims_per_batch_cannot_be_supplied():
+    """A settable field would let 999 sit beside batches=2 and claims=4."""
+    import pytest as _pytest
+
+    from react_review.schemas.telemetry import BatchStats
+
+    with _pytest.raises(Exception):
+        BatchStats(batches=2, claims=4, claims_per_batch=999)
+    assert BatchStats(batches=2, claims=4).model_dump()["claims_per_batch"] == 2.0
