@@ -57,6 +57,31 @@ version reported a registered, release-eligible run.
 | — | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_profile.json` | `8F13C10443B8BEDE` | the benchmark that runs it |
 
 | v5 | `configs/prompt_contracts/batch_v5.json` | `1A02A44DDE55A797` | what `targeted_v5_batch` ASKS |
+| v1 | `eval/benchmarks/melanoma_checkpoint_2017/excerpt_gold_v1.json` | `030A04D6332A5E2E` | WHERE the evidence is, for excerpt coverage |
+
+| v5 | `configs/aggregation/registry_v5.json` | `B4BFFCB393E581F2` | current |
+| 1.6.2 | `configs/aggregation/evaluators/safe_aggregation_1.6.2.json` | `F01DF1DD72077BA7` | current evaluator |
+| — | `configs/run_profiles/phase8_batch_v2.json` | `AD9F2F180F718BEB` | the contract that selects the batch route under 1.6.2 |
+| — | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v2_profile.json` | `9275079632081DB6` | the benchmark that runs it |
+
+## 1.6.2: recording what was SENT is not reading it back
+
+D1-6.2 added `ExcerptProvenance` to `schemas/batch.py` — which regions of a
+paper reached the model, and which selector chose them — and repointed
+`tools/aggregation_identity.py` at `registry_v5`. Both files are inside the
+evaluator boundary, so the tree stopped matching 1.6.1 and said so in
+`PENDING.json` rather than by regenerating a published manifest.
+
+The record is written by the caller that did the windowing and is read only
+offline, by an answer key. No claim can move between derived, rejected,
+protocol_error and not_applicable because of it. That belief did not decide the
+version: `eval/aggregation_behavior.py --compare` reported 26 of 26 cases
+identical against the frozen corpus, which is what a PATCH means here.
+
+`registry_v5` lists `safe_sum_v5` as cleared by both 1.6.1 and 1.6.2 — the
+policy did not change, and runs already made under 1.6.1 stay interpretable.
+`phase8_batch.json` and `phase8_batch_profile.json` are untouched; a published
+contract that changed retroactively would describe runs it never governed.
 
 ## A rendered prompt that changes is a new prompt version
 

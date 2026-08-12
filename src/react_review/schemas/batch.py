@@ -29,7 +29,7 @@ from __future__ import annotations
 import hashlib
 import json
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_serializer
 
 from react_review.normalize.cohorts import distinguishing_tokens
 from react_review.normalize.population import PopulationScope
@@ -300,6 +300,34 @@ class ClaimGroupKey(BaseModel):
                 f"[{self.target_shape}/{self.target_kind}]")
 
 
+class ExcerptProvenance(BaseModel):
+    """WHICH REGIONS of the paper were sent, and by which rule.
+
+    Not a coverage claim. It says what was shown, never whether what was needed
+    was among it: judging that requires knowing where the answer lives, which is
+    exactly what a run does not have and what an answer key does. A production
+    record that asserted "the evidence was missing" would be asserting something
+    about the paper from inside the run that failed to find it.
+
+    So this is provenance and nothing else. A reading that found nothing and a
+    reading that was never shown the passage produce the same sentence — "the
+    paper does not say" — and only a record of what was sent can separate them
+    later, offline, against a key.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    windowed: bool = False
+    source_chars: int = 0
+    excerpt_chars: int = 0
+    #: Half-open [start, end) offsets into the SOURCE text, in source order.
+    spans: list[tuple[int, int]] = Field(default_factory=list)
+    #: Which selector chose them. A later revision picking different spans
+    #: would otherwise be indistinguishable from a different paper.
+    selection_method_id: str = ""
+    selection_version: str = ""
+
+
 class BatchReadingRecord(BaseModel):
     """One reading of one paper, as it is written down.
 
@@ -333,6 +361,17 @@ class BatchReadingRecord(BaseModel):
     #: the cache has never held. Calling it a raw response would describe a
     #: provenance nobody has.
     model_payload: dict | None = None
+    #: What was actually sent, when the run knows. Omitted rather than defaulted
+    #: so a record written without it gains no key claiming a whole paper was
+    #: shown — the one thing a missing measurement must never be read as.
+    excerpt_provenance: ExcerptProvenance | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_unmeasured_provenance(self, handler):
+        body = handler(self)
+        if body.get("excerpt_provenance") is None:
+            body.pop("excerpt_provenance", None)
+        return body
 
 
 class BatchQuestionId(BaseModel):

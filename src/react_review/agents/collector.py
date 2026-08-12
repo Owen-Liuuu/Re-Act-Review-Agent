@@ -29,7 +29,11 @@ from react_review.study_match import is_resolvable
 from react_review.schemas.agent import AgentRun, StepRecord
 from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
 from react_review.steps.paper_verification.schemas import ReferenceEntry
-from react_review.schemas.batch import ClaimBinding, ProjectionContract
+from react_review.schemas.batch import (
+    ClaimBinding,
+    ExcerptProvenance,
+    ProjectionContract,
+)
 from react_review.schemas.evidence import BatchProjectionProvenance
 from react_review.tools.batch_group import (
     claim_kind,
@@ -46,7 +50,10 @@ from react_review.tools.extract_batch import prompt_sha256
 from react_review.tools.extract_source import (
     ExtractSourceValueInput,
     SourceValueResult,
+    SELECTION_METHOD_ID,
+    SELECTION_VERSION,
     _paper_excerpt,
+    select_excerpt,
 )
 from react_review.tools.extraction_profile import (
     BATCH_PROFILE_NAME,
@@ -440,9 +447,9 @@ class Collector:
         variants = self._concept_variants_for(field_type)
         target = concept or group.key.raw_field_name or field_type
         text = getattr(source.document, "full_text", "") or ""
-        excerpt = _paper_excerpt(text, target=target,
-                                 raw_label=group.key.raw_field_name,
-                                 field_type=field_type, variants=variants)
+        excerpt, spans = select_excerpt(text, target=target,
+                                        raw_label=group.key.raw_field_name,
+                                        field_type=field_type, variants=variants)
         prompt = self._batch.build_prompt(
             target_shape=group.shape, field_type=field_type, concept=target,
             raw_label=group.key.raw_field_name or target,
@@ -465,6 +472,15 @@ class Collector:
         bindings = [self._binding_for(claim, group) for claim in group.claims]
         record.execution = execution_id_for(question, bindings,
                                             self._projection_contract())
+        # What was SENT, beside what came back. Recorded whether or not the
+        # paper was windowed: "not windowed" is an answer to the question, and
+        # a record that only appears when something was cut would leave every
+        # other reading silent about whether anything had been.
+        record.excerpt = ExcerptProvenance(
+            windowed=len(excerpt) != len(text), source_chars=len(text),
+            excerpt_chars=len(excerpt), spans=spans,
+            selection_method_id=SELECTION_METHOD_ID,
+            selection_version=SELECTION_VERSION)
         if self._telemetry is not None:
             # What batching actually did. A run that issued one prompt for four
             # claims and a run that issued four look identical in the backend's

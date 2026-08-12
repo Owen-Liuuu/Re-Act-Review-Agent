@@ -849,6 +849,38 @@ def _same_value(one: str, other: str) -> bool:
     return _normalise(one) == _normalise(other)
 
 
+#: Which selector chose the excerpt, and which revision of it. Recorded beside
+#: every windowed reading: the spans a run sent are only interpretable if the
+#: rule that picked them is named, and a later revision that picks different
+#: spans would otherwise be indistinguishable from a different paper.
+SELECTION_METHOD_ID = "abstract_plus_target_dense_blocks"
+SELECTION_VERSION = "v1"
+
+
+def select_excerpt(text: str, *, target: str, raw_label: str, field_type: str,
+                   variants: list[str] | None = None) -> tuple[str, list[tuple[int, int]]]:
+    """The excerpt, and WHICH REGIONS of the source it was built from.
+
+    The spans are the honest part. A reading that found nothing and a reading
+    that was never shown the passage produce the same answer — "the paper does
+    not say" — and telling them apart afterwards is impossible unless the run
+    wrote down what it sent. Reported, never acted on: nothing here widens a
+    window, retries, or changes a refusal, because a second extraction policy
+    hiding inside a diagnostic is worse than no diagnostic.
+    """
+    excerpt = _paper_excerpt(text, target=target, raw_label=raw_label,
+                             field_type=field_type, variants=variants)
+    if excerpt == text:
+        return excerpt, [(0, len(text))]
+    return excerpt, [(int(a), int(b)) for a, b in _SPAN_RE.findall(excerpt)]
+
+
+#: The markers the selector already writes into the excerpt it returns. Parsed
+#: back rather than returned separately so the spans cannot disagree with the
+#: text actually sent — they are read out of that text.
+_SPAN_RE = re.compile(r"\[SOURCE EXCERPT (\d+):(\d+)\]")
+
+
 def _paper_excerpt(text: str, *, target: str, raw_label: str,
                    field_type: str, variants: list[str] | None = None) -> str:
     """Keep the abstract plus the most target-dense later source blocks.

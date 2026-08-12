@@ -12,6 +12,8 @@ import json
 
 import pytest
 
+from tests.conftest import requires_frozen_evaluator
+
 from react_review.agents.collector import Collector
 from react_review.audit import ToleranceTable
 from react_review.llm.base import LLMBackend
@@ -74,7 +76,7 @@ def _contract(tmp_path):
             "extraction_routes": {"value": "targeted_v5_batch",
                                   "arm_identity": "targeted_v4"},
             "aggregation_policy_id": "safe_sum_v5",
-            "evaluator_version": "1.6.1"}
+            "evaluator_version": "1.6.2"}
     path = tmp_path / "contract.json"
     path.write_text(json.dumps(body), encoding="utf-8")
     return load_run_contract(path)
@@ -330,6 +332,7 @@ def test_the_production_entry_point_calls_the_audit_it_actually_has():
 
 
 def test_the_builder_gives_the_collector_everything_its_contract_needs(tmp_path):
+    requires_frozen_evaluator()
     from react_review.production import build_collector
     from react_review.schemas.telemetry import RunTelemetry
 
@@ -480,14 +483,15 @@ def test_the_cli_resolves_a_runtime_only_for_a_batching_contract(tmp_path):
 
 
 def test_the_manifest_records_the_runtime_that_ran(tmp_path):
+    requires_frozen_evaluator()
     from react_review.schemas.run_manifest import RunManifest
     from react_review.tools.safe_aggregation import AggregationRuntime
 
     runtime = AggregationRuntime.resolve(policy_id="safe_sum_v5",
-                                         evaluator_version="1.6.1")
+                                         evaluator_version="1.6.2")
     body = RunManifest.runtime_of(runtime)
     assert body["policy_id"] == "safe_sum_v5"
-    assert body["evaluator_version"] == "1.6.1"
+    assert body["evaluator_version"] == "1.6.2"
     assert len(body["policy_sha256"]) == 64
     assert "release_eligible" in body
     # And a run that never aggregated records nothing at all.
@@ -555,6 +559,7 @@ def test_a_batched_run_reports_what_batching_bought(tmp_path):
 # --- the production construction chain, executed -------------------------
 
 def test_the_production_pipeline_routes_records_and_measures(tmp_path):
+    requires_frozen_evaluator()
     """Builds what the CLI builds, and RUNS it.
 
     The source-reading tests above prove the arguments are written down. This
@@ -635,7 +640,7 @@ def test_the_production_pipeline_routes_records_and_measures(tmp_path):
     # And what decided is recorded rather than inferred.
     body = RunManifest.runtime_of(runtime)
     assert body["policy_id"] == "safe_sum_v5"
-    assert body["evaluator_version"] == "1.6.1"
+    assert body["evaluator_version"] == "1.6.2"
 
 
 def test_a_package_from_a_run_that_measured_nothing_has_no_telemetry_key(tmp_path):

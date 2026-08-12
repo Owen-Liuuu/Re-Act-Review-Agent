@@ -1,0 +1,34 @@
+{
+  "evaluator_id": "safe_aggregation",
+  "evaluator_version": "1.6.2",
+  "written_on": "2026-08-12",
+  "hash_algorithm": "sha256-path-lf-v1",
+  "purpose": "The code whose behaviour IS this evaluator. A policy hash says what the conditions were; this says what enforced them. Both are recorded on every aggregation outcome, because the wrong totals this phase found were policies that read correctly and code that did not keep them.",
+  "boundary": "Files that can change what the same response becomes, OR whether the verdict may be published. batch_prompt.py stays outside: what is ASKED is versioned by the extraction profile, and folding it in would make every wording change a new evaluator without changing how a response is judged.",
+  "versioning": {
+    "patch": "logging, wording and provenance only; proven not to move any claim between states",
+    "minor": "a new refusal, a safety fix, or any change to scope or set selection",
+    "major": "an incompatible input/output contract or a different aggregation algorithm",
+    "rule": "If the set of claims landing in derived / rejected / protocol_error / not_applicable can change, it is at least a MINOR — including when the author is sure it is only a bug fix."
+  },
+  "source_files": {
+    "src/react_review/audit/scope.py": "sha256:bee073eef8216f04cf2514dc149b949fdc9fa73f90cc518627be1e79c9ba6e05",
+    "src/react_review/normalize/anchors.py": "sha256:c816d4daf0b877c3313ba0e19f67b6708f6366977dc499574a7cb22e05866475",
+    "src/react_review/normalize/cohorts.py": "sha256:22c3f111aa4a910be2345285629e26233801d86d0d170a276c88b7dbf3a991a8",
+    "src/react_review/normalize/population.py": "sha256:e5f71fa85d68ad283c379872b19154714da64a29c05273e06afd000b3351f150",
+    "src/react_review/schemas/batch.py": "sha256:1745d647e4d85fd729543882ec3dc36e6043107510ef5d94e1a21b3f32933606",
+    "src/react_review/schemas/evidence.py": "sha256:90c72cca69e3655a3bf0548d9418376cc23f7b710b64e762233e1997976385b8",
+    "src/react_review/tools/aggregation_identity.py": "sha256:db542d4594274c6cfdc2b13d20dc1b279dcb2b5795f353196cb29285930eaef3",
+    "src/react_review/tools/batch_parse.py": "sha256:c00536544354c1660a82c0183fcac16ed0869da2954d84df8e46713e27e53f2c",
+    "src/react_review/tools/batch_project.py": "sha256:ccf236eb35ca6dfc37206313a0cf950791846483bc9c10586191a62215edd7d1",
+    "src/react_review/tools/batch_result.py": "sha256:074f72331f635bb8d776d516a7491417e297f28038eb672121c74b960eebf618",
+    "src/react_review/tools/evidence_binding.py": "sha256:dd27bf169d7b97275b677d980b4b9218876cc060a2db1f41d5ee9210ab8665a7",
+    "src/react_review/tools/safe_aggregation.py": "sha256:4e09157c1a1aa978300f381109fd15a642b99f7118ec52854f00cc8487b836c1"
+  },
+  "evaluator_hash": "sha256:e3da0c2411bfe090daa389e38d1f1f34dc8c42b06a5d5863b883f1952ff8946d",
+  "supersedes": "1.6.1",
+  "why_1_6_2": "D1-6.2 added ExcerptProvenance to schemas/batch.py — which regions of a paper were sent to the model, and by which selector — and repointed tools/aggregation_identity.py at registry_v5. Both files are inside the boundary. Nothing reads the new record back: it is written by the caller that did the windowing and consumed only offline, by an answer key, so no claim can move between derived, rejected, protocol_error or not_applicable because of it. That belief is not what decided the version. eval/aggregation_behavior.py --compare reported 26 of 26 cases identical against the frozen corpus, which is what a PATCH means here.",
+  "why_1_6_1": "PATCH, and the word is earned rather than asserted. D1-5 edited three files in this boundary: schemas/batch.py gained the question, binding, projection and execution identities and the persistent reading record; schemas/evidence.py gained batch provenance and the conditional serialisation that keeps it out of legacy artifacts; tools/batch_result.py was untouched in behaviour. eval/aggregation_behavior.py --compare reports 26 of 26 cases identical to the f2adc5e baseline on status, value, chosen object, verified scope, applied axes, component counts and refusal stage. Nothing moved between derived, rejected, protocol_error and not_applicable.",
+  "why_1_6_0": "MINOR. The policy and the identity that cleared it are now one object, so a run cannot apply rules readiness never saw; the flag that let a caller declare the scope axes pre-computed is gone, since it skipped the union this policy exists to require; and aggregation_identity.py joins the hashed boundary — it decides whether a verdict may be published, and leaving it out meant changing it and committing produced a clean run under an unchanged evaluator hash.",
+  "why_1_5_0": "MINOR, by the rule below: claims move between states. The printed-total route now applies the same axes as the derived one, so an explicit total whose analysis set nobody checked becomes unresolved instead of ok; readiness computes the policy hash itself instead of believing its caller, and covers the files that decide whether a verdict may be published."
+}

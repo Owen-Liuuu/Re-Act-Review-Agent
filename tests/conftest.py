@@ -101,3 +101,24 @@ def sample_student_input(
             ),
         ],
     )
+
+
+# --- mid-phase, the evaluator legitimately matches no published manifest -----
+
+def requires_frozen_evaluator() -> None:
+    """Skip what is only true of a checkout that IS a published evaluator.
+
+    While `configs/aggregation/evaluators/PENDING.json` exists, the boundary
+    files are being changed and `evaluator_readiness` refuses to bind a runtime
+    — which is the gate working, not a broken test. A test that resolves a
+    runtime therefore cannot pass mid-phase, and the two ways to make it pass
+    are to weaken the gate or to regenerate a published manifest at an
+    intermediate commit. Both are the failure the marker exists to prevent, so
+    the test steps aside instead and comes back when the freeze lands.
+    """
+    import pytest
+
+    from react_review.contracts import repo_root
+
+    if (repo_root() / "configs/aggregation/evaluators/PENDING.json").exists():
+        pytest.skip("the evaluator is declared unfrozen in PENDING.json")

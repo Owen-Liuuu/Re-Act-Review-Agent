@@ -84,6 +84,36 @@ def _aggregation_runtime(contract):
         evaluator_version=contract.evaluator_version)
 
 
+def _excerpt_coverage(benchmark: Path, results, studies):
+    """The four counts, when this benchmark publishes a key that can judge them.
+
+    Silent otherwise. A benchmark with no excerpt gold has not judged its
+    windows, and reporting zeros would read as "nothing was missed".
+    """
+    from react_review.eval_excerpt import assess, load_gold
+
+    gold_path = benchmark / "excerpt_gold_v1.json"
+    readings = list(getattr(results, "batch_readings", []) or [])
+    if not gold_path.is_file() or not readings:
+        return None, []
+
+    # The same extraction the run used. Any other one produces offsets into a
+    # document nothing reads, silently compared against the run's own spans.
+    from react_review.retrieval.local_pdf import _pdf_text
+
+    paths = {s.study_id: (benchmark / s.source_pdf) for s in studies
+             if getattr(s, "source_pdf", "")}
+    texts: dict[str, str] = {}
+
+    def text_for(study_id: str):
+        if study_id not in texts:
+            path = paths.get(study_id)
+            texts[study_id] = _pdf_text(path) if path and path.is_file() else ""
+        return texts[study_id] or None
+
+    return assess(readings, load_gold(gold_path), text_for)
+
+
 def _cohort_registry(profile, rows: list[dict[str, str]]):
     """The review's own arm labels, keyed exactly as the answer key groups them.
 
@@ -351,8 +381,20 @@ def main(argv: list[str] | None = None) -> None:
               f"pred={r.predicted_label} exp={r.expected_label} | "
               f"src '{r.extracted_source}' vs '{r.expected_source}' [{r.outcome}]")
 
+    # Was the evidence even sent? Benchmark-only, and it changes no answer: it
+    # separates "the paper does not report it" from "the passage was never in
+    # the window", which are the same sentence from the extractor and different
+    # problems with different owners.
+    coverage, coverage_detail = _excerpt_coverage(benchmark, results, studies)
+
     metrics = score_rows(results)
     print(format_report(metrics))
+    if coverage is not None:
+        counts = coverage.as_dict()
+        print(f"excerpt: {counts['gold_covered_batches']}/"
+              f"{counts['gold_text_assessable_batches']} gold-assessable batches "
+              f"covered, {counts['gold_missing_batches']} missing "
+              f"({counts['windowed_batches']} windowed)")
     print(f"cost: {telemetry.summary()}")
     diagnostics = benchmark_diagnostics(results)
     diagnostic_report = format_benchmark_diagnostics(diagnostics)
@@ -377,6 +419,9 @@ def main(argv: list[str] | None = None) -> None:
             # answers to code that never ran.
             **({"aggregation_runtime": run_meta_runtime} if run_meta_runtime
                else {}),
+            **({"excerpt_coverage": {**coverage.as_dict(),
+                                     "batches": coverage_detail}}
+               if coverage is not None else {}),
             "studies_file": str(studies_path.resolve()),
             "research_context": context,
             "extraction_mode": args.extraction,

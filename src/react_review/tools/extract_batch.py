@@ -38,6 +38,7 @@ from react_review.schemas.batch import (
     BatchExecutionId,
     BatchQuestionId,
     BatchReadingRecord,
+    ExcerptProvenance,
 )
 from react_review.tools.batch_parse import BatchReading, parse_batch
 from react_review.tools.batch_prompt import aggregation_applies, build_batch_prompt
@@ -93,6 +94,10 @@ class BatchRecord:
     execution: BatchExecutionId | None = None
     model_payload: dict | None = None
     reading: BatchReading | None = None
+    #: What was SENT — which regions of the paper, chosen by which selector.
+    #: Set by the caller that did the windowing, because the tool is handed a
+    #: document and cannot know what was left out of it.
+    excerpt: ExcerptProvenance | None = None
     attempts: list[BatchAttempt] = field(default_factory=list)
     failure: str = ""
     detail: str = ""
@@ -137,7 +142,8 @@ class BatchRecord:
                           (reading.rejected if reading else [])],
             usable_readings=len(reading.usable) if reading else 0,
             rejected_readings=len(reading.rejected) if reading else 0,
-            model_payload=self.model_payload)
+            model_payload=self.model_payload,
+            excerpt_provenance=self.excerpt)
 
 
 class ExtractSourceBatchTool:

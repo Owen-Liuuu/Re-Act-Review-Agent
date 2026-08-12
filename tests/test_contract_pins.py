@@ -46,6 +46,16 @@ PINNED = {
     # editing the contract to make an edited prompt pass is a visible decision
     # and not a hash quietly retyped.
     "configs/prompt_contracts/batch_v5.json": "1A02A44DDE55A797",
+    # WHERE the evidence for each batched claim is. An answer key, so it is
+    # frozen like one: a coverage number computed against a key that moved is
+    # not comparable to the number before it moved.
+    "eval/benchmarks/melanoma_checkpoint_2017/excerpt_gold_v1.json":
+        "030A04D6332A5E2E",
+    "configs/aggregation/registry_v5.json": "B4BFFCB393E581F2",
+    "configs/aggregation/evaluators/safe_aggregation_1.6.2.json": "F01DF1DD72077BA7",
+    "configs/run_profiles/phase8_batch_v2.json": "AD9F2F180F718BEB",
+    "eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v2_profile.json":
+        "9275079632081DB6",
 }
 
 
