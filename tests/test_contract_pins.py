@@ -56,6 +56,10 @@ PINNED = {
     "configs/run_profiles/phase8_batch_v2.json": "AD9F2F180F718BEB",
     "eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v2_profile.json":
         "9275079632081DB6",
+    "eval/benchmarks/melanoma_checkpoint_2017/excerpt_gold_v2.json":
+        "9F67F418E245E656",
+    "eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v3_profile.json":
+        "779E9F1C97D5B9A9",
 }
 
 

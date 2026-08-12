@@ -21,4 +21,6 @@ configs/run_profiles/phase8_batch_v2.json text eol=lf
 eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_profile.json text eol=lf
 eval/benchmarks/melanoma_checkpoint_2017/excerpt_gold_v1.json text eol=lf
 eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v2_profile.json text eol=lf
+eval/benchmarks/melanoma_checkpoint_2017/excerpt_gold_v2.json text eol=lf
+eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v3_profile.json text eol=lf
 configs/prompt_contracts/*.json text eol=lf

@@ -1,0 +1,24 @@
+{
+  "schema_version": 3,
+  "profile_id": "melanoma_checkpoint_2017_phase8_v3",
+  "written_on": "2026-08-12",
+  "purpose": "The Phase 8 benchmark, read in batch, judged against excerpt gold v2. Same run contract, same answer key, same target gold as the v2 profile; only the excerpt key changed, because v1 described a batch the run does not make.",
+  "base_manifest_sha256": "83118EE9EBC08332F3D7ADA34396570B496442301689C23CCB93FD9D116C8D21",
+  "base_audit_template_sha256": "3D4E3899DC5B97DB2351BCE14C2E0A083818D394D315D8B632B444BFB6584496",
+  "run_profile": "configs/run_profiles/phase8_batch_v2.json",
+  "run_profile_sha256": "AD9F2F180F718BEB55C1FF7220E0DD20D56431EB0404656030673CC3FC8F9104",
+  "semantic_prompt_profile": "semantic_v2_specificity",
+  "semantic_expectation_overlay": "phase7_semantic_overlay.csv",
+  "semantic_expectation_overlay_sha256": "98F9B2BBF3DF8248210B7EA9E21399E17A685755CA711608D8888C1E7F2B0367",
+  "target_contract": "phase8_target_contract.csv",
+  "target_contract_sha256": "BC01250DBB823B3A79565B9D21D857FBB5038574B5C16238E633B5C3DB62F92A",
+  "target_gold": "phase8_target_gold.csv",
+  "target_gold_sha256": "2674A36EEA556EC38C7E9D80BACA65DFC3E3A7E1218BBEBC14132F049894E6A5",
+  "extraction_routes": {
+    "value": "targeted_v5_batch",
+    "arm_identity": "targeted_v4"
+  },
+  "supersedes": "phase8_batch_v2_profile.json",
+  "excerpt_gold": "excerpt_gold_v2.json",
+  "excerpt_gold_sha256": "9F67F418E245E6563A5CAF8ACF726A61C9F56DB8995793578F6F957A86A2052A"
+}

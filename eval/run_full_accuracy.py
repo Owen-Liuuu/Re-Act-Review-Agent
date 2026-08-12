@@ -39,6 +39,7 @@ from react_review.eval_benchmark import (
     format_benchmark_diagnostics,
     validate_frozen_benchmark,
 )
+from react_review.eval_excerpt import coverage_for_run
 from react_review.eval_profile import ProfileError, load_profile
 from react_review.dkb import load_runtime_knowledge
 from react_review.llm.metered import MeteredBackend
@@ -82,36 +83,6 @@ def _aggregation_runtime(contract):
     return AggregationRuntime.resolve(
         policy_id=contract.aggregation_policy_id,
         evaluator_version=contract.evaluator_version)
-
-
-def _excerpt_coverage(benchmark: Path, results, studies):
-    """The four counts, when this benchmark publishes a key that can judge them.
-
-    Silent otherwise. A benchmark with no excerpt gold has not judged its
-    windows, and reporting zeros would read as "nothing was missed".
-    """
-    from react_review.eval_excerpt import assess, load_gold
-
-    gold_path = benchmark / "excerpt_gold_v1.json"
-    readings = list(getattr(results, "batch_readings", []) or [])
-    if not gold_path.is_file() or not readings:
-        return None, []
-
-    # The same extraction the run used. Any other one produces offsets into a
-    # document nothing reads, silently compared against the run's own spans.
-    from react_review.retrieval.local_pdf import _pdf_text
-
-    paths = {s.study_id: (benchmark / s.source_pdf) for s in studies
-             if getattr(s, "source_pdf", "")}
-    texts: dict[str, str] = {}
-
-    def text_for(study_id: str):
-        if study_id not in texts:
-            path = paths.get(study_id)
-            texts[study_id] = _pdf_text(path) if path and path.is_file() else ""
-        return texts[study_id] or None
-
-    return assess(readings, load_gold(gold_path), text_for)
 
 
 def _cohort_registry(profile, rows: list[dict[str, str]]):
@@ -385,16 +356,24 @@ def main(argv: list[str] | None = None) -> None:
     # separates "the paper does not report it" from "the passage was never in
     # the window", which are the same sentence from the extractor and different
     # problems with different owners.
-    coverage, coverage_detail = _excerpt_coverage(benchmark, results, studies)
+    coverage = coverage_for_run(
+        results, studies, benchmark,
+        (profile.excerpt_gold_path if profile is not None else None))
 
     metrics = score_rows(results)
     print(format_report(metrics))
-    if coverage is not None:
-        counts = coverage.as_dict()
-        print(f"excerpt: {counts['gold_covered_batches']}/"
-              f"{counts['gold_text_assessable_batches']} gold-assessable batches "
-              f"covered, {counts['gold_missing_batches']} missing "
-              f"({counts['windowed_batches']} windowed)")
+    if coverage is not None and not coverage.assessable:
+        print(f"excerpt: NOT ASSESSABLE — {coverage.reason}")
+    elif coverage is not None:
+        counts = coverage.tally
+        print(f"excerpt: {counts.gold_covered_batches}/"
+              f"{counts.gold_text_assessable_batches} gold-assessable batches "
+              f"covered, {counts.gold_missing_batches} missing "
+              f"({counts.windowed_batches} windowed)")
+        if coverage.unjudged_run_batches:
+            print(f"         {len(coverage.unjudged_run_batches)} batch(es) the "
+                  "key says nothing about: "
+                  f"{', '.join(coverage.unjudged_run_batches[:4])}")
     print(f"cost: {telemetry.summary()}")
     diagnostics = benchmark_diagnostics(results)
     diagnostic_report = format_benchmark_diagnostics(diagnostics)
@@ -419,8 +398,7 @@ def main(argv: list[str] | None = None) -> None:
             # answers to code that never ran.
             **({"aggregation_runtime": run_meta_runtime} if run_meta_runtime
                else {}),
-            **({"excerpt_coverage": {**coverage.as_dict(),
-                                     "batches": coverage_detail}}
+            **({"excerpt_coverage": coverage.as_dict()}
                if coverage is not None else {}),
             "studies_file": str(studies_path.resolve()),
             "research_context": context,

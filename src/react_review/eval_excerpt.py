@@ -110,21 +110,36 @@ class WitnessOutcome:
         return self.outcome in (COVERED, WINDOW_MISSED)
 
 
+def locate_all(text: str, quote: str) -> list[tuple[int, int]]:
+    """EVERY place the quote occurs, in source coordinates.
+
+    Every, not the first. Papers repeat themselves — an abstract states a
+    hazard ratio and the results state it again — and a window that kept the
+    results but not the abstract is a window that showed the evidence. Taking
+    only the first occurrence would call that a miss and blame the selector for
+    a passage it did include.
+    """
+    needle = _needle(quote)
+    if not needle:
+        return []
+    flat = _flatten(text)
+    found: list[tuple[int, int]] = []
+    at = flat.text.find(needle)
+    while at >= 0:
+        found.append((flat.offsets[at], flat.offsets[at + len(needle) - 1] + 1))
+        at = flat.text.find(needle, at + 1)
+    return found
+
+
 def locate(text: str, quote: str) -> tuple[int, int] | None:
-    """Where a quote sits in the SOURCE text, or nothing.
+    """The first place the quote occurs, or nothing.
 
     Nothing is a real answer here, not a failure to try harder: a fuzzier
     matcher would turn "the key's quote is not in what we extracted" — a fact
     worth reporting — into a coordinate somebody would then treat as evidence.
     """
-    needle = _needle(quote)
-    if not needle:
-        return None
-    flat = _flatten(text)
-    at = flat.text.find(needle)
-    if at < 0:
-        return None
-    return flat.offsets[at], flat.offsets[at + len(needle) - 1] + 1
+    found = locate_all(text, quote)
+    return found[0] if found else None
 
 
 def classify(text: str, *, quote: str, modality: str, spans, witness_id: str = "",
@@ -132,13 +147,15 @@ def classify(text: str, *, quote: str, modality: str, spans, witness_id: str = "
     """One witness against one run's windows."""
     if (modality or "text").lower() in NON_TEXT_MODALITIES:
         return WitnessOutcome(witness_id, witness_type, NON_TEXT_UNASSESSABLE)
-    found = locate(text, quote)
-    if found is None:
+    found = locate_all(text, quote)
+    if not found:
         return WitnessOutcome(witness_id, witness_type, FULLTEXT_UNLOCATABLE)
-    start, end = found
-    inside = any(int(a) <= start and end <= int(b) for a, b in spans or ())
-    return WitnessOutcome(witness_id, witness_type,
-                          COVERED if inside else WINDOW_MISSED, start, end)
+    windows = [(int(a), int(b)) for a, b in spans or ()]
+    for start, end in found:
+        if any(a <= start and end <= b for a, b in windows):
+            return WitnessOutcome(witness_id, witness_type, COVERED, start, end)
+    start, end = found[0]
+    return WitnessOutcome(witness_id, witness_type, WINDOW_MISSED, start, end)
 
 
 @dataclass(frozen=True)
@@ -199,31 +216,129 @@ def load_gold(path) -> dict:
     return json.loads(Path(path).read_text(encoding="utf-8-sig"))
 
 
-def assess(batch_readings, gold: dict, text_for) -> tuple[CoverageTally, list[dict]]:
+def _claim_key(ids) -> tuple[str, ...]:
+    """The identity a run and a key can be joined on.
+
+    The claims a reading answered, normalised. Not (study, field, shape): that
+    triple is not an identity — one study reports one field at several
+    timepoints, under several column labels, in several units, and every one of
+    those is a separate batch that would collide into a single gold entry and be
+    judged against the wrong witnesses.
+
+    `claim_ids` and `audit_ids` are the two ends of the same fact, and the
+    benchmark already carries both.
+    """
+    return tuple(sorted(str(i).strip() for i in (ids or ()) if str(i).strip()))
+
+
+@dataclass(frozen=True)
+class CoverageReport:
+    """Either four counts, or a reason there are none.
+
+    Never zeros standing in for a reason. All-zero counts read as "no window
+    problem", which is the most dangerous thing this could say when what
+    actually happened is that no batch could be judged at all.
+    """
+
+    assessable: bool
+    reason: str = ""
+    tally: CoverageTally | None = None
+    batches: tuple = ()
+    #: Readings the key says nothing about. Reported rather than skipped: a key
+    #: that silently covers half a run yields a coverage figure computed over a
+    #: sample nobody chose.
+    unjudged_run_batches: tuple = ()
+
+    def as_dict(self) -> dict:
+        if not self.assessable:
+            return {"assessable": False, "reason": self.reason,
+                    "unjudged_run_batches": list(self.unjudged_run_batches)}
+        return {"assessable": True, **self.tally.as_dict(),
+                "unjudged_run_batches": list(self.unjudged_run_batches),
+                "batches": list(self.batches)}
+
+
+class GoldError(ValueError):
+    """An excerpt key that cannot be used as given."""
+
+
+def index_gold(gold: dict) -> dict[tuple[str, ...], dict]:
+    """Gold entries by the claims they judge, refusing an ambiguous key."""
+    index: dict[tuple[str, ...], dict] = {}
+    for entry in gold.get("batches") or ():
+        key = _claim_key(entry.get("audit_ids"))
+        if not key:
+            raise GoldError(
+                f"gold batch {entry.get('batch_id', '?')!r} names no audit_ids, "
+                "so nothing in a run can be matched to it")
+        if key in index:
+            raise GoldError(
+                f"gold batches {index[key].get('batch_id', '?')!r} and "
+                f"{entry.get('batch_id', '?')!r} both claim {list(key)}. One set "
+                "of claims has one reading, so one of these would silently judge "
+                "the other's witnesses")
+        index[key] = entry
+    return index
+
+
+def assess(batch_readings, gold: dict, text_for, *, sha_for=None) -> CoverageReport:
     """Classify every batch this run made that the key has something to say about.
 
-    Joined on (study, field, shape) — the identity of what was READ, not of the
-    claims that consumed it. A batch answering three claims and a batch
-    answering four put the same question to the same document, and the window
-    was the same decision either way.
+    Joined on the claims, then CHECKED against study, field and shape: the claim
+    set is the identity, and a disagreement about what those claims are means the
+    key describes a different reading than the one that happened.
 
-    Batches the key does not cover are skipped rather than counted as covered:
-    a key silent about a batch has not judged it, and folding silence into the
-    numerator is how a coverage figure comes to mean nothing.
+    The document is bound by hash, not by name. Offsets are only meaningful
+    against the exact text they were computed from, and a PDF extractor that
+    changes its output between versions would otherwise move every witness while
+    every number still looked plausible.
     """
-    by_key = {(b.get("study_id", ""), b.get("field_type", ""),
-               b.get("target_shape", "")): b for b in gold.get("batches") or ()}
+    index = index_gold(gold)
+    expected_sha = str(gold.get("document_sha256") or "")
     counted: list[tuple[list[WitnessOutcome], bool]] = []
     detail: list[dict] = []
+    unjudged: list[str] = []
+
+    def refuse(reason: str) -> "CoverageReport":
+        return CoverageReport(False, reason,
+                              unjudged_run_batches=tuple(unjudged))
+
     for reading in batch_readings:
-        entry = by_key.get((reading.study_id, reading.field_type,
-                            reading.target_shape))
+        key = _claim_key(getattr(reading, "claim_ids", ()))
+        entry = index.get(key)
         provenance = getattr(reading, "excerpt_provenance", None)
-        if entry is None or provenance is None:
+        if entry is None:
+            unjudged.append(reading.execution_id
+                            or f"{reading.study_id}/{reading.field_type}")
             continue
+        batch_id = entry.get("batch_id", "?")
+        if provenance is None:
+            return refuse(f"batch {batch_id} recorded no excerpt provenance, so "
+                          "what it sent is unknown")
+        for field, expected in (("study_id", entry.get("study_id")),
+                                ("field_type", entry.get("field_type")),
+                                ("target_shape", entry.get("target_shape"))):
+            actual = getattr(reading, field, "")
+            if expected and actual != expected:
+                return refuse(
+                    f"gold batch {batch_id} judges claims {list(key)} as "
+                    f"{field}={expected!r}, and the run read them as {actual!r}. "
+                    "The key describes a different reading")
+
         text = text_for(reading.study_id)
-        if text is None:
-            continue
+        if not text:
+            return refuse(f"no extracted text for {reading.study_id}, so no "
+                          "witness can be located and nothing about the window "
+                          "can be said")
+        if expected_sha and sha_for is not None:
+            actual_sha = str(sha_for(reading.study_id) or "")
+            if actual_sha != expected_sha:
+                return refuse(
+                    f"the gold's offsets were computed from document "
+                    f"{expected_sha[:16]} and {reading.study_id} extracted to "
+                    f"{actual_sha[:16] or '(nothing)'}. Comparing them would "
+                    "judge one document's spans against another's witnesses")
+
         outcomes = [
             classify(text, quote=w.get("source_quote", ""),
                      modality=w.get("modality", "text"),
@@ -232,8 +347,9 @@ def assess(batch_readings, gold: dict, text_for) -> tuple[CoverageTally, list[di
             for w in entry.get("witnesses") or ()]
         counted.append((outcomes, bool(provenance.windowed)))
         detail.append({
-            "batch_id": entry.get("batch_id", ""),
+            "batch_id": batch_id,
             "execution_id": reading.execution_id,
+            "claim_ids": list(key),
             "windowed": bool(provenance.windowed),
             "source_chars": provenance.source_chars,
             "excerpt_chars": provenance.excerpt_chars,
@@ -244,4 +360,118 @@ def assess(batch_readings, gold: dict, text_for) -> tuple[CoverageTally, list[di
                            "witness_type": o.witness_type,
                            "outcome": o.outcome} for o in outcomes],
         })
-    return tally(counted), detail
+
+    if not counted:
+        return refuse("no batch this run made appears in the excerpt key")
+    return CoverageReport(True, tally=tally(counted), batches=tuple(detail),
+                          unjudged_run_batches=tuple(unjudged))
+
+
+# --- what a run, or a run that has not happened yet, would be judged on ------
+
+def coverage_for_run(results, studies, benchmark, gold_path) -> "CoverageReport | None":
+    """The four counts for a finished run, or nothing when there is no key.
+
+    Lives here rather than in the runner because a test cannot import that
+    module: it replaces `sys.stdout` at import time, which destroys pytest's
+    capture for the whole session. That is reason enough on its own, but the
+    join between a run's readings and an answer key is also not a property of
+    one script.
+    """
+    from pathlib import Path
+
+    from react_review.agents.collector import _document_sha256
+    from react_review.retrieval.local_pdf import _pdf_text
+
+    readings = list(getattr(results, "batch_readings", []) or [])
+    if gold_path is None or not Path(gold_path).is_file() or not readings:
+        return None
+
+    paths = {s.study_id: (Path(benchmark) / s.source_pdf) for s in studies
+             if getattr(s, "source_pdf", "")}
+    texts: dict[str, str] = {}
+
+    def text_for(study_id: str):
+        if study_id not in texts:
+            path = paths.get(study_id)
+            # The same extraction the run used. Any other one produces offsets
+            # into a document nothing reads, silently compared against the run's
+            # own spans.
+            texts[study_id] = _pdf_text(path) if path and path.is_file() else ""
+        return texts[study_id] or None
+
+    def sha_for(study_id: str):
+        text = text_for(study_id)
+        return _document_sha256(text) if text else ""
+
+    return assess(readings, load_gold(gold_path), text_for, sha_for=sha_for)
+
+
+def benchmark_reviews(rows, targets):
+    """The claims the accuracy harness builds, from the same two files.
+
+    Shared so that a dry run and a real run group the same claims. A second copy
+    would drift, and the whole point of computing what WOULD be sent is that it
+    is what would be sent.
+    """
+    from react_review.eval_accuracy import _target_scope
+    from react_review.schemas.evidence import ReviewDataItem
+
+    built = []
+    for row in rows:
+        target = (targets or {}).get(row.get("audit_id", ""))
+        extra = {} if target is None else {
+            "raw_field_name": target.raw_field_name,
+            "cohort_label": target.cohort_label,
+            "timepoint": target.timepoint or "single",
+            "population_scope": _target_scope(target),
+            "population_scope_source": getattr(target, "population_scope_source", ""),
+        }
+        built.append(ReviewDataItem(
+            review_data_id=row.get("audit_id") or "", study_id=row["study_id"],
+            group=(row.get("group") or "-"), field_type=row["field_type"],
+            value=(row.get("review_value") or None), unit=(row.get("unit") or ""),
+            column_header=(row.get("column_header") or ""), **extra))
+    return built
+
+
+class _Unreachable:
+    """A tool endpoint a dry run must never touch, so it says so if reached."""
+
+    model_id = "dry-run"
+
+    async def complete(self, prompt: str, *, seed: int = 42) -> str:
+        raise AssertionError(
+            "a dry run computes what WOULD be sent and never sends it")
+
+    async def retrieve(self, reference):
+        raise AssertionError("a dry run reads its papers from disk")
+
+
+def dry_run_collector(contract, knowledge):
+    """A Collector wired exactly as production wires it, minus any way out.
+
+    The selector's terms come from the knowledge base's concept and variants,
+    from the target contract's raw field name and from the review's own column
+    label. Approximating any of them — an early version used
+    `field_type.replace("_", " ")` — makes the resulting coverage figure a
+    property of the approximation rather than of the run.
+    """
+    from react_review.production import build_collector
+    from react_review.tools.extract import FetchFullTextTool
+    from react_review.tools.extract_batch import ExtractSourceBatchTool
+    from react_review.tools.extract_source import ExtractSourceValueTool
+    from react_review.tools.registry import ToolRegistry
+
+    registry = ToolRegistry()
+    registry.register(FetchFullTextTool(_Unreachable()))
+    registry.register(ExtractSourceValueTool(_Unreachable()))
+    registry.register(ExtractSourceBatchTool(_Unreachable()))
+    return build_collector(registry, contract=contract, knowledge=knowledge)
+
+
+def planned_batches(collector, claims, route):
+    """Which batches a run over these claims would make, in order."""
+    from react_review.tools.batch_group import group_claims
+
+    return group_claims([c for c in claims if collector.route_for(c) == route])

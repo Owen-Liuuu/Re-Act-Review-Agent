@@ -63,6 +63,29 @@ version reported a registered, release-eligible run.
 | 1.6.2 | `configs/aggregation/evaluators/safe_aggregation_1.6.2.json` | `F01DF1DD72077BA7` | current evaluator |
 | — | `configs/run_profiles/phase8_batch_v2.json` | `AD9F2F180F718BEB` | the contract that selects the batch route under 1.6.2 |
 | — | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v2_profile.json` | `9275079632081DB6` | the benchmark that runs it |
+| v2 | `eval/benchmarks/melanoma_checkpoint_2017/excerpt_gold_v2.json` | `9F67F418E245E656` | WHERE the evidence is, keyed on the batches the run makes |
+| — | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v3_profile.json` | `779E9F1C97D5B9A9` | the benchmark that judges against gold v2 |
+
+## excerpt_gold v1 → v2: a key that described a reading nobody makes
+
+v1 assumed Larkin's three arm counts would be read in one batch. They are not.
+They come from three different review columns — "Intervention arm drug, dose,
+n", "Control arm …", "Additional arm …" — and the batch group key includes the
+raw field name, so each is its own reading with one claim in it. Batching buys
+nothing for that field in this benchmark, which is a fact about the benchmark
+and not about the route.
+
+The error was invisible while coverage joined on `(study_id, field_type,
+target_shape)`: that triple collapsed all three readings into v1's single entry
+and judged them against its witnesses. The join is now `audit_ids ↔ claim_ids`,
+checked against study, field and shape, and a duplicate key is refused rather
+than resolved. `eval/excerpt_dry_run.py` computes the real grouping with the
+real Collector, the real knowledge base and the real selector, without asking a
+model — every batch in v2 came from it.
+
+v1 stays exactly as published, and `phase8_batch_v2_profile.json` still names
+it: a benchmark profile that changed retroactively would describe runs it never
+governed.
 
 ## 1.6.2: recording what was SENT is not reading it back
 

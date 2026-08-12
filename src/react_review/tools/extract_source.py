@@ -854,12 +854,18 @@ def _same_value(one: str, other: str) -> bool:
 #: rule that picked them is named, and a later revision that picks different
 #: spans would otherwise be indistinguishable from a different paper.
 SELECTION_METHOD_ID = "abstract_plus_target_dense_blocks"
-SELECTION_VERSION = "v1"
+#: v2 reports what was SENT rather than what the markers declare. v1 parsed the
+#: markers back, and the marker on a truncated block names the region it was cut
+#: from — so a 20,000-character excerpt declared 21,000 characters of source and
+#: coverage computed from it could call a passage included that had been cut off
+#: before it. The prompt is byte-identical between the two; only the reporting
+#: changed, which is why this is a selector version and not a prompt version.
+SELECTION_VERSION = "v2"
 
 
 def select_excerpt(text: str, *, target: str, raw_label: str, field_type: str,
                    variants: list[str] | None = None) -> tuple[str, list[tuple[int, int]]]:
-    """The excerpt, and WHICH REGIONS of the source it was built from.
+    """The excerpt, and WHICH REGIONS of the source it actually carries.
 
     The spans are the honest part. A reading that found nothing and a reading
     that was never shown the passage produce the same answer — "the paper does
@@ -868,17 +874,11 @@ def select_excerpt(text: str, *, target: str, raw_label: str, field_type: str,
     window, retries, or changes a refusal, because a second extraction policy
     hiding inside a diagnostic is worse than no diagnostic.
     """
-    excerpt = _paper_excerpt(text, target=target, raw_label=raw_label,
-                             field_type=field_type, variants=variants)
-    if excerpt == text:
-        return excerpt, [(0, len(text))]
-    return excerpt, [(int(a), int(b)) for a, b in _SPAN_RE.findall(excerpt)]
-
-
-#: The markers the selector already writes into the excerpt it returns. Parsed
-#: back rather than returned separately so the spans cannot disagree with the
-#: text actually sent — they are read out of that text.
-_SPAN_RE = re.compile(r"\[SOURCE EXCERPT (\d+):(\d+)\]")
+    if len(text) <= _MAX_TEXT:
+        return text, [(0, len(text))]
+    return _render_excerpt(text, sorted(_selected_blocks(
+        text, target=target, raw_label=raw_label, field_type=field_type,
+        variants=variants)))
 
 
 def _paper_excerpt(text: str, *, target: str, raw_label: str,
@@ -892,6 +892,15 @@ def _paper_excerpt(text: str, *, target: str, raw_label: str,
     """
     if len(text) <= _MAX_TEXT:
         return text
+    return _render_excerpt(text, sorted(_selected_blocks(
+        text, target=target, raw_label=raw_label, field_type=field_type,
+        variants=variants)))[0]
+
+
+def _selected_blocks(text: str, *, target: str, raw_label: str,
+                     field_type: str,
+                     variants: list[str] | None = None) -> set[tuple[int, int]]:
+    """Which regions of the source this query wants, before the ceiling is applied."""
     generic = {
         "and", "data", "field", "mean", "source", "study", "table", "the",
         "total", "value", "values",
@@ -925,17 +934,37 @@ def _paper_excerpt(text: str, *, target: str, raw_label: str,
         selected.add((start, end))
         if sum(e - s for s, e in selected) >= _MAX_TEXT - 500:
             break
+    return selected
+
+
+def _render_excerpt(text: str, blocks) -> tuple[str, list[tuple[int, int]]]:
+    """Assemble the excerpt, and report which regions it ACTUALLY carries.
+
+    The marker keeps declaring the block it came from — those bytes are part of
+    the prompt and changing them would invalidate every recording. But the piece
+    beneath it is cut to the room left under the ceiling, so the marker on the
+    last block routinely names an end the text never reached: a 20,000-character
+    excerpt was declaring 21,000 characters of source.
+
+    Parsing the markers back therefore over-reported what had been sent, and
+    coverage computed from that could call a passage covered because the marker
+    said the region was included when the region had been truncated before it.
+    The second return value is what was really there.
+    """
     pieces: list[str] = []
+    sent: list[tuple[int, int]] = []
     used = 0
-    for start, end in sorted(selected):
+    for start, end in blocks:
         marker = f"\n\n[SOURCE EXCERPT {start}:{end}]\n"
         room = _MAX_TEXT - used - len(marker)
         if room <= 0:
             break
-        piece = text[start:min(end, start + room)]
+        stop = min(end, start + room)
+        piece = text[start:stop]
         pieces.append(marker + piece)
         used += len(marker) + len(piece)
-    return "".join(pieces)
+        sent.append((start, stop))
+    return "".join(pieces), sent
 
 
 def _derive_whole_study_count(

@@ -1,0 +1,240 @@
+{
+  "gold_id": "excerpt_gold_v2",
+  "supersedes": "excerpt_gold_v1.json",
+  "benchmark": "melanoma_checkpoint_2017",
+  "written_on": "2026-08-12",
+  "source_document": "raw/sources/larkin_2015.pdf",
+  "document_sha256": "F1A499768E5CEC3A8D637DF40C02D9BB9E4494AADA6AC5DF7111D496F07F02E8",
+  "text_extraction": "react_review.retrieval.local_pdf._pdf_text — the same function the run uses. Offsets from any other extraction are offsets into a document nothing reads.",
+  "text_extraction_library": "1.27.2",
+  "locator_version": "lexical_v1",
+  "join_key": "audit_ids, matched against a reading's claim_ids. Not (study, field, shape): that triple is not an identity — the same study reports the same field under several column labels, and each is its own batch with its own window.",
+  "why_v2": "v1 assumed the three arm counts were read together. They are not: they come from three different review columns, the group key includes the raw field name, and each is its own batch with one claim. v1 described a reading that never happens, which the old (study, field, shape) join hid by collapsing all three into it. Every batch here was produced by eval/excerpt_dry_run.py from the real grouping.",
+  "purpose": "Where the evidence for each batched claim actually is, so that a refusal caused by the window can be told from a refusal caused by the paper. A run cannot make this distinction: 'the paper does not report it' and 'the passage was never sent' are the same sentence from the extractor.",
+  "not_derived_from": "audit_template.csv's `derivation` column, which records how a REVIEW CELL was split ('split trailing n from explicit arm cell') and says nothing about the paper. And not from `source_quote` alone: MA002's quote establishes an explicit total and cannot establish a partition, which is a different claim needing a different sentence.",
+  "scope": "Batched routes only. Under phase8_batch the arm_identity route is targeted_v4, one call per claim, so treatment_arm rows (MA003, MA005, MA007) form no batch and are deliberately absent.",
+  "batches": [
+    {
+      "batch_id": "larkin_2015/study_design/study/Design",
+      "study_id": "larkin_2015",
+      "field_type": "study_design",
+      "target_shape": "study",
+      "raw_field_name": "Design",
+      "timepoint_label": "",
+      "unit_signature": "",
+      "audit_ids": [
+        "MA001"
+      ],
+      "why": "A text field, to keep the set from being only numbers.",
+      "witnesses": [
+        {
+          "witness_id": "MA001-explicit",
+          "witness_type": "explicit",
+          "source_quote": "In this randomized, double-blind, phase 3 study",
+          "modality": "text",
+          "expected_scope": ""
+        }
+      ]
+    },
+    {
+      "batch_id": "larkin_2015/sample_size/study/Randomized patients, n",
+      "study_id": "larkin_2015",
+      "field_type": "sample_size",
+      "target_shape": "study",
+      "raw_field_name": "Randomized patients, n",
+      "timepoint_label": "",
+      "unit_signature": "count",
+      "audit_ids": [
+        "MA002"
+      ],
+      "why": "The only aggregable batch. Its witnesses are deliberately not one quote: the explicit total proves 945 was reported and proves nothing about a partition, while safe_sum_v5 additionally requires that the arms cover the population once each with the census READ from an anchored passage.",
+      "witnesses": [
+        {
+          "witness_id": "MA002-explicit",
+          "witness_type": "explicit",
+          "source_quote": "A total of 945 patients underwent randomization",
+          "modality": "text",
+          "expected_scope": "allocated"
+        },
+        {
+          "witness_id": "MA002-partition",
+          "witness_type": "partition",
+          "source_quote": "A total of 945 patients underwent randomization: 316 patients were assigned to the nivolumab group, 314 to the nivolumab-plus-ipilimumab group, and 315 to the ipilimumab group",
+          "modality": "text",
+          "expected_scope": "allocated"
+        },
+        {
+          "witness_id": "MA002-component3",
+          "witness_type": "component",
+          "source_quote": "316 patients were assigned to the nivolumab group",
+          "modality": "text",
+          "expected_scope": "allocated"
+        },
+        {
+          "witness_id": "MA002-component4",
+          "witness_type": "component",
+          "source_quote": "314 to the nivolumab-plus-ipilimumab group",
+          "modality": "text",
+          "expected_scope": "allocated"
+        },
+        {
+          "witness_id": "MA002-component5",
+          "witness_type": "component",
+          "source_quote": "315 to the ipilimumab group",
+          "modality": "text",
+          "expected_scope": "allocated"
+        }
+      ]
+    },
+    {
+      "batch_id": "larkin_2015/cohort_n/arm/Intervention arm drug, dose, n",
+      "study_id": "larkin_2015",
+      "field_type": "cohort_n",
+      "target_shape": "arm",
+      "raw_field_name": "Intervention arm drug, dose, n",
+      "timepoint_label": "",
+      "unit_signature": "count",
+      "audit_ids": [
+        "MA004"
+      ],
+      "why": "One claim, one batch — the three arm counts come from three different review columns, so the group key separates them. Batching buys nothing here, which is a fact about this benchmark rather than about the route.",
+      "witnesses": [
+        {
+          "witness_id": "MA004-explicit",
+          "witness_type": "explicit",
+          "source_quote": "314 to the nivolumab-plus-ipilimumab group",
+          "modality": "text",
+          "expected_scope": "allocated"
+        }
+      ]
+    },
+    {
+      "batch_id": "larkin_2015/cohort_n/arm/Control arm drug, dose, n",
+      "study_id": "larkin_2015",
+      "field_type": "cohort_n",
+      "target_shape": "arm",
+      "raw_field_name": "Control arm drug, dose, n",
+      "timepoint_label": "",
+      "unit_signature": "count",
+      "audit_ids": [
+        "MA006"
+      ],
+      "why": "One claim, one batch — the three arm counts come from three different review columns, so the group key separates them. Batching buys nothing here, which is a fact about this benchmark rather than about the route.",
+      "witnesses": [
+        {
+          "witness_id": "MA006-explicit",
+          "witness_type": "explicit",
+          "source_quote": "315 to the ipilimumab group",
+          "modality": "text",
+          "expected_scope": "allocated"
+        }
+      ]
+    },
+    {
+      "batch_id": "larkin_2015/cohort_n/arm/Additional arm drug, dose, n",
+      "study_id": "larkin_2015",
+      "field_type": "cohort_n",
+      "target_shape": "arm",
+      "raw_field_name": "Additional arm drug, dose, n",
+      "timepoint_label": "",
+      "unit_signature": "count",
+      "audit_ids": [
+        "MA008"
+      ],
+      "why": "One claim, one batch — the three arm counts come from three different review columns, so the group key separates them. Batching buys nothing here, which is a fact about this benchmark rather than about the route.",
+      "witnesses": [
+        {
+          "witness_id": "MA008-explicit",
+          "witness_type": "explicit",
+          "source_quote": "316 patients were assigned to the nivolumab group",
+          "modality": "text",
+          "expected_scope": "allocated"
+        }
+      ]
+    },
+    {
+      "batch_id": "larkin_2015/progression_free_survival/arm/PFS",
+      "study_id": "larkin_2015",
+      "field_type": "progression_free_survival",
+      "target_shape": "arm",
+      "raw_field_name": "PFS",
+      "timepoint_label": "",
+      "unit_signature": "months",
+      "audit_ids": [
+        "MA009",
+        "MA010",
+        "MA011"
+      ],
+      "why": "Three claims in one reading. Two of these sit in the abstract and one in the results, so this batch distinguishes a window that keeps the front of the paper from one that reaches the tables.",
+      "witnesses": [
+        {
+          "witness_id": "MA009-explicit",
+          "witness_type": "explicit",
+          "source_quote": "11.5 months (95% CI, 8.9 to 16.7)",
+          "modality": "text",
+          "expected_scope": ""
+        },
+        {
+          "witness_id": "MA010-explicit",
+          "witness_type": "explicit",
+          "source_quote": "2.9 months (95% CI, 2.8 to 3.4)",
+          "modality": "text",
+          "expected_scope": ""
+        },
+        {
+          "witness_id": "MA011-explicit",
+          "witness_type": "explicit",
+          "source_quote": "6.9 months (95% CI, 4.3 to 9.5)",
+          "modality": "text",
+          "expected_scope": ""
+        }
+      ]
+    },
+    {
+      "batch_id": "larkin_2015/hazard_ratio/comparison/HR",
+      "study_id": "larkin_2015",
+      "field_type": "hazard_ratio",
+      "target_shape": "comparison",
+      "raw_field_name": "HR",
+      "timepoint_label": "",
+      "unit_signature": "ratio",
+      "audit_ids": [
+        "MA012",
+        "MA013",
+        "MA014",
+        "MA015"
+      ],
+      "why": "Four claims over three distinct quotes: MA012 and MA013 read the same sentence, listed once per claim because the window either contains that sentence or does not.",
+      "witnesses": [
+        {
+          "witness_id": "MA012-explicit",
+          "witness_type": "explicit",
+          "source_quote": "0.42; 99.5% CI, 0.31 to 0.57",
+          "modality": "text",
+          "expected_scope": ""
+        },
+        {
+          "witness_id": "MA013-explicit",
+          "witness_type": "explicit",
+          "source_quote": "0.42; 99.5% CI, 0.31 to 0.57",
+          "modality": "text",
+          "expected_scope": ""
+        },
+        {
+          "witness_id": "MA014-explicit",
+          "witness_type": "explicit",
+          "source_quote": "0.74 (95% CI, 0.60 to 0.92)",
+          "modality": "text",
+          "expected_scope": ""
+        },
+        {
+          "witness_id": "MA015-explicit",
+          "witness_type": "explicit",
+          "source_quote": "0.57; 99.5% CI, 0.43 to 0.76",
+          "modality": "text",
+          "expected_scope": ""
+        }
+      ]
+    }
+  ]
+}

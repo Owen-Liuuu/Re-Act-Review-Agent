@@ -167,6 +167,11 @@ class BenchmarkProfile(BaseModel):
     target_gold_path: Path | None = None
     target_gold_sha256: str = ""
     gold: dict[str, TargetGoldRow] = Field(default_factory=dict)
+    #: WHERE the evidence for each batched claim is, for excerpt coverage. Its
+    #: hash is verified like every other declared file: a declared hash nobody
+    #: checks is how a published pin turned out never to have been computed.
+    excerpt_gold_path: Path | None = None
+    excerpt_gold_sha256: str = ""
 
     def gold_for(self, audit_id: str) -> TargetGoldRow | None:
         return self.gold.get(audit_id)
@@ -396,6 +401,11 @@ def load_profile(
         gold_sha = _verify_declared(body, "target_gold_sha256", gold_path)
         gold = load_target_gold(gold_path, answer_key_ids)
 
+    excerpt_path = excerpt_sha = ""
+    if body.get("excerpt_gold"):
+        excerpt_path = benchmark / str(body["excerpt_gold"])
+        excerpt_sha = _verify_declared(body, "excerpt_gold_sha256", excerpt_path)
+
     return BenchmarkProfile(
         path=path, sha256=sha256_file(path), schema_version=version,
         extraction_profile=extraction,
@@ -406,7 +416,8 @@ def load_profile(
         target_contract_path=(target_path or None),
         target_contract_sha256=target_sha,
         semantic=semantic, targets=targets, run_contract=run_contract,
-        target_gold_path=(gold_path or None), target_gold_sha256=gold_sha, gold=gold)
+        target_gold_path=(gold_path or None), target_gold_sha256=gold_sha, gold=gold,
+        excerpt_gold_path=(excerpt_path or None), excerpt_gold_sha256=excerpt_sha)
 
 
 def _profile_routes(body: dict, version: int, path: Path) -> dict[str, str]:
