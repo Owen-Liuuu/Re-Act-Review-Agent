@@ -43,6 +43,7 @@
 |---|---|---|---|---|
 | **L9** | **近值与多臂 target drift** —— Phase 7 后模型仍会选错,但**选错不再被接受**:枚举项必须各自带原文引文,指派唯一才采纳 | 代价转为能力损失:melanoma 有 2 行因模型改写引文被证据守卫拒绝(`missing_source`),而非错值入库 | `tools/target_assignment.py`、`tools/extract_source.py` | 双模型交叉校验仍是治本方向;引文改写可考虑要求模型给出字符区间 |
 | **L16** | **模型会改写自己的引文** —— 把论文缩写的 `95% CI` 拼成 `95% confidence interval [CI]`,引文因此不再是原文连续子串 | 守卫正确拒绝(安全),但正确的值也一并丢失 | `tools/target_assignment.py`、`normalize/anchors.py` | 值的**数字序列**已放宽为可接受措辞规整;引文本身仍要求逐字,不打算放宽 |
+| **L17** | **解析阶段模型全程失败 ≠ 综述没有可抽表格** —— `ReviewParser._call` 捕获一切异常并返回空结果,于是"供应商整段不可用"与"这篇综述没有可解析的表"产出同一个结果:`status: complete`、0 条 items | 一次完全失败的运行会以"成功"发布。包里确实写着 0 items、0 match,可读者要自己推断原因;`stop_reason` 不会出现,因为没有异常传出 | `parser/review_parser.py:484`(`_call`)、`parser/table_capture.py` | 记录每个阶段的失败次数,并在"全部模型调用失败"时把 run 判为 `error` 而非 `complete`。**D1-6.3 只记录,未改行为**——改它属于行为变更,需单独决定。已由 `tests/test_production_run_offline.py` 固定当前行为,以免无声改变 |
 
 ### E. 评测
 

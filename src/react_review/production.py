@@ -132,6 +132,47 @@ def snapshot_cache_totals(telemetry: RunTelemetry, *, extraction=None,
     telemetry.set_cache_totals(hits=hits, misses=misses)
 
 
+@dataclass
+class ProductionDependencies:
+    """The three things a production run reaches OUTSIDE itself for.
+
+    The model, the papers, and the person. `_run_main` builds everything else —
+    the contract, the telemetry, the parser, the resolver, the collector, the
+    session — and a test that replaced any of those would be testing its own
+    wiring, which is how a signature and its only call site drifted apart twice
+    while the suite stayed green. Substituting these three is enough to run the
+    whole entry point offline, and leaves the parsing, the field resolution and
+    the extraction to the code that does them in production.
+
+    The gate is here because it is the human operator rather than a component of
+    the pipeline, and because it is the only way to reach the stop path from
+    outside: `RunStopped` is raised nowhere but the reporter, on a gate's
+    decision, so without this the entry point's stop branch could only ever be
+    tested on a session a test constructed for itself.
+
+    Not a place to grow beyond that. A `parser` field here would turn the one
+    test that exercises review parsing end to end into a lifecycle test that
+    never parses anything.
+    """
+
+    backend: Any = None
+    retriever: Any = None
+    gate: Any = None
+
+    def llm(self, config):
+        if self.backend is not None:
+            return self.backend
+        from react_review.pipeline.factory import _create_llm_backend
+
+        return _create_llm_backend(config)
+
+    def papers(self, build):
+        return self.retriever if self.retriever is not None else build()
+
+    def checkpoint(self, build):
+        return self.gate if self.gate is not None else build()
+
+
 # --- the end of a run, which happens exactly once ---------------------------
 
 RUNNING = "running"

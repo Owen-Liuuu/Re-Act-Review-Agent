@@ -565,7 +565,7 @@ def run_parser() -> argparse.ArgumentParser:
     return ap
 
 
-def _run_main(argv: list[str] | None = None) -> None:
+def _run_main(argv: list[str] | None = None, *, dependencies=None) -> None:
     """Full LLM pipeline: review PDF → Parser → Collector → Auditor → Judge.
 
     Parses the review PDF, resolves each study to the included-studies registry,
@@ -587,7 +587,7 @@ def _run_main(argv: list[str] | None = None) -> None:
         StepReporter,
     )
     from react_review.parser.review_parser import ReviewParser
-    from react_review.pipeline.factory import _create_llm_backend
+    from react_review.production import ProductionDependencies
     from react_review.store import EvidencePackageStore
 
     ap = run_parser()
@@ -601,7 +601,11 @@ def _run_main(argv: list[str] | None = None) -> None:
 
     config = load_config(args.config)
     setup_logging(log_file=config.paths.log_file)
-    backend = _create_llm_backend(config)
+    # The model and the paper supply are the only things this entry point
+    # reaches outside itself for, and the only things a test may substitute.
+    # Everything below is built here, in production, by the code under test.
+    dependencies = dependencies or ProductionDependencies()
+    backend = dependencies.llm(config)
 
     # The run id is needed BEFORE parsing: the parser's first checkpoint already
     # writes into this run's journal directory.
@@ -609,8 +613,10 @@ def _run_main(argv: list[str] | None = None) -> None:
     journal = RunJournal(args.journal_dir or (args.out / run_id))
     interactive = sys.stdin.isatty() and not args.non_interactive
     policy = CheckpointPolicy.from_name(args.checkpoints if interactive else "none")
-    gate = (ConsoleCheckpoint(policy, journal=journal, allow_skip=args.allow_skip)
-            if interactive else AutoContinue())
+    gate = dependencies.checkpoint(
+        lambda: (ConsoleCheckpoint(policy, journal=journal,
+                                   allow_skip=args.allow_skip)
+                 if interactive else AutoContinue()))
     reporter = StepReporter(run_id, gate=gate, journal=journal)
     store = EvidencePackageStore(args.out)
     if not interactive:
@@ -694,7 +700,7 @@ def _run_main(argv: list[str] | None = None) -> None:
             return _run_audit(args, config, backends, kb, resolver, review_parser,
                               reporter, store, run_id, contract=contract,
                               telemetry=telemetry, stages=stages, session=session,
-                              execution=execution)
+                              execution=execution, dependencies=dependencies)
     except RunStopped as exc:
         session.finalise_stopped(stage=exc.stage, reason=exc.reason)
         raise SystemExit(2)
@@ -720,7 +726,7 @@ def _id_set(raw: str) -> set[str] | None:
 
 def _run_audit(args, config, backends, kb, resolver, review_parser,
                reporter, store, run_id: str, *, contract, telemetry,
-               stages, session, execution) -> None:
+               stages, session, execution, dependencies) -> None:
     """The audit itself, wrapped so a stop/interrupt can finalise cleanly."""
     from react_review.agents.collector import Collector
     from react_review.audit import ToleranceTable
@@ -783,16 +789,17 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
             review_items, sid_map, kb, parsed.field_resolutions)
         base_dir = args.pdf_dir or args.studies.parent
         doi_to_path = {s.doi: s.source_pdf for s in studies if s.doi and s.source_pdf}
-        retriever = LocalPdfRetriever(doi_to_path, base_dir=base_dir)
+        retriever = dependencies.papers(
+            lambda: LocalPdfRetriever(doi_to_path, base_dir=base_dir))
         reference_resolver = build_reference_resolver(sid_map)
     else:
         _safe_print(f"  online mode: references from the review's {len(parsed.studies)} "
                     "extracted citations; full text fetched online")
         review_items = parsed.items
-        retriever = FullTextRetriever(
+        retriever = dependencies.papers(lambda: FullTextRetriever(
             pubmed_settings=config.pubmed,
             unpaywall_email=config.unpaywall.email or config.pubmed.email,
-        )
+        ))
         reference_resolver = build_reference_resolver_from_parsed(parsed.studies)
     if args.limit:
         review_items = review_items[: args.limit]
