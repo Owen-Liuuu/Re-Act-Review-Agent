@@ -68,6 +68,10 @@ class EvidencePackage(BaseModel):
         # decided nothing and every package gained the key regardless.
         if self.telemetry is None or not self.telemetry.has_measurements():
             body.pop("telemetry", None)
+        # Only a run that ended early has a reason to give. Writing an empty one
+        # into every completed package would change bytes that nothing changed.
+        if not body.get("stop_reason"):
+            body.pop("stop_reason", None)
         return body
     # The verbatim tables the review claims were read from, as approved at the
     # capture checkpoint — so any audited value can be traced back to its cell.
@@ -90,3 +94,8 @@ class EvidencePackage(BaseModel):
     # A partial package is still evidence — it records what HAD been checked.
     status: str = "complete"
     stopped_at_stage: str = ""
+    #: WHY it ended there, in the artifact rather than only on the terminal.
+    #: The reason was printed and then lost, so a stopped run's file could say
+    #: where it stopped but never what stopped it — which is the part a reader
+    #: coming back to the directory a day later actually needs.
+    stop_reason: str = ""

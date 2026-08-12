@@ -622,13 +622,34 @@ def _run_main(argv: list[str] | None = None) -> None:
     # to measure — so a parser built before it could not be labelled, which is
     # why the review parser's model calls went uncounted.
     from react_review.contracts import repo_root as _repo_root
-    from react_review.production import ProductionBackends, ProductionStages
-    from react_review.run_profile import guard_contract_overrides, load_run_contract
-    from react_review.schemas.telemetry import RunTelemetry, wall_clock
+    from react_review.production import (
+        ProductionBackends,
+        ProductionSession,
+        ProductionStages,
+    )
+    from react_review.run_profile import (
+        ExecutionMode,
+        RunManifest,
+        guard_contract_overrides,
+        load_run_contract,
+    )
+    from react_review.schemas.telemetry import RunTelemetry
 
     contract = load_run_contract(
         args.profile or (_repo_root() / "configs" / "run_profiles" / "legacy.json"))
     guard_contract_overrides(contract, {"--tolerances": args.tolerances})
+    # The modes are decided by the flags, not by anything the parser finds, so
+    # they are settled here — where an interrupt during parsing can still be
+    # recorded under the identity the run was actually using.
+    execution = ExecutionMode(
+        extraction_mode=args.extraction,
+        extraction_cache=(args.extraction_cache
+                          or (args.out / run_id / "extraction_cache.json")
+                          if args.extraction != "live" else None),
+        semantic_mode=args.semantic,
+        semantic_cache=(args.semantic_cache or (args.out / run_id / "semantic_cache.json")
+                        if args.semantic != "off" else None),
+    ).validate_modes()
 
     # Created before the FIRST model call of the run, not before the extraction.
     telemetry = RunTelemetry()
@@ -650,20 +671,44 @@ def _run_main(argv: list[str] | None = None) -> None:
         checklist=checklist,
     )
 
+    # Every way this run can end goes through one object, so all four leave the
+    # same three things behind: an artifact saying how it ended, telemetry for
+    # the whole execution, and a saved cache.
+    session = ProductionSession(store, run_id, telemetry=telemetry,
+                                emit=_safe_print)
+    # Provisional, so a run interrupted during PARSING still leaves an artifact
+    # that names its contract and modes. `context_source` is not knowable yet —
+    # it depends on what the review turns out to contain — so it says what is
+    # true before parsing, and _run_audit replaces this with the settled one.
+    session.manifest = RunManifest.of(
+        contract, execution, context_source="cli",
+        inputs={"review_pdf": str(args.pdf.name),
+                "studies": str(args.studies.name) if args.studies else ""})
     try:
-        # One clock around the WHOLE production lifecycle — parsing included,
-        # which is where a real run spends a large part of its time and where
-        # `wall_seconds` was previously left at zero.
-        with wall_clock(telemetry):
+        # The clock covers EXECUTION — parsing and the audit, which is where a
+        # real run spends its time and where `wall_seconds` was left at zero.
+        # It stops at finalisation, before the report is rendered: rendering a
+        # finished package is not part of what the audit cost.
+        with session:
             return _run_audit(args, config, backends, kb, resolver, review_parser,
                               reporter, store, run_id, contract=contract,
-                              telemetry=telemetry, stages=stages)
+                              telemetry=telemetry, stages=stages, session=session,
+                              execution=execution)
     except RunStopped as exc:
-        _finalize_partial(store, run_id, "stopped_by_user", exc.stage, exc.reason)
+        session.finalise_stopped(stage=exc.stage, reason=exc.reason)
         raise SystemExit(2)
     except KeyboardInterrupt:
-        _finalize_partial(store, run_id, "interrupted", "", "interrupted (Ctrl-C)")
+        session.finalise_interrupted()
         raise SystemExit(130)
+    except SystemExit:
+        raise
+    except BaseException as exc:                                   # noqa: BLE001
+        # A crash is an outcome, and an artifact that still says `in_progress`
+        # claims the run is going. If the package was already finalised, this
+        # changes nothing — a report that fails to render must not restate a
+        # validated result as a failed audit.
+        session.finalise_error(exc)
+        raise
 
 
 def _id_set(raw: str) -> set[str] | None:
@@ -672,27 +717,9 @@ def _id_set(raw: str) -> set[str] | None:
     return ids or None
 
 
-def _finalize_partial(store, run_id: str, status: str, stage: str, reason: str) -> None:
-    """Record why a run ended early and point at the evidence it did collect."""
-    run_dir = store.run_dir(run_id)
-    partial = run_dir / "package.partial.json"
-    if partial.is_file():
-        try:
-            data = json.loads(partial.read_text(encoding="utf-8-sig"))
-            data["status"], data["stopped_at_stage"] = status, stage
-            partial.write_text(json.dumps(data, indent=2, ensure_ascii=False),
-                               encoding="utf-8")
-        except Exception:                                      # noqa: BLE001
-            pass
-    _safe_print(f"\n[{status}] {reason}")
-    _safe_print(f"[ARTIFACTS] {run_dir.resolve()}")
-    if partial.is_file():
-        _safe_print(f"[PARTIAL]   {partial.resolve()} — evidence collected so far")
-
-
 def _run_audit(args, config, backends, kb, resolver, review_parser,
                reporter, store, run_id: str, *, contract, telemetry,
-               stages) -> None:
+               stages, session, execution) -> None:
     """The audit itself, wrapped so a stop/interrupt can finalise cleanly."""
     from react_review.agents.collector import Collector
     from react_review.audit import ToleranceTable
@@ -714,20 +741,11 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
     from react_review.tools.compare import CompareValuesTool
     from react_review.tools.semantic_compare import SemanticCompareTool
     from react_review.tools.extract import FetchFullTextTool
-    from react_review.production import (
-        aggregation_runtime,
-        build_collector,
-        record_cache_totals,
-    )
+    from react_review.production import aggregation_runtime, build_collector
     from react_review.tools.extract_batch import ExtractSourceBatchTool
     from react_review.tools.extract_source import ExtractSourceValueTool
     from react_review.contracts import repo_root
-    from react_review.run_profile import (
-        ExecutionMode,
-        RunManifest,
-        guard_contract_overrides,
-        load_run_contract,
-    )
+    from react_review.run_profile import RunManifest
     from react_review.tools.extraction_cache import ExtractionCache
     from react_review.tools.registry import ToolRegistry
     from react_review.tools.search import (
@@ -778,16 +796,6 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
     if args.limit:
         review_items = review_items[: args.limit]
 
-    execution = ExecutionMode(
-        extraction_mode=args.extraction,
-        extraction_cache=(args.extraction_cache
-                          or (args.out / run_id / "extraction_cache.json")
-                          if args.extraction != "live" else None),
-        semantic_mode=args.semantic,
-        semantic_cache=(args.semantic_cache or (args.out / run_id / "semantic_cache.json")
-                        if args.semantic != "off" else None),
-    ).validate_modes()
-
     if contract.tolerances_path is not None:
         tol = ToleranceTable.from_yaml(contract.tolerances_path)
     else:
@@ -820,6 +828,11 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
     # controls. Every judgement is recorded so the run can be replayed offline.
     semantic_cache = (SemanticCache(execution.semantic_cache)
                       if execution.semantic_cache is not None else None)
+    # Handed to the session as they are built, so an interrupt at any point
+    # after this line still writes the totals and saves the judgements.
+    session.extraction_cache, session.semantic_cache = extraction_cache, semantic_cache
+    if semantic_cache is not None:
+        semantic_cache.measure_into(telemetry, stages.semantic)
     reg.register(CompareValuesTool(
         tol,
         semantic=(SemanticCompareTool(
@@ -836,6 +849,9 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
     # What decided, recorded beside what it decided under — including on the
     # partial manifest a stopped run leaves behind.
     manifest.aggregation_runtime = RunManifest.runtime_of(runtime)
+    # So a run interrupted before the first paper still leaves an artifact that
+    # says which contract it was running under.
+    session.manifest = manifest
     _safe_print(f"Contract:   {contract.profile_id} "
                 f"[extraction={contract.extraction_profile} "
                 f"semantic={contract.semantic_prompt_profile} "
@@ -856,6 +872,10 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
         AuditOrchestrator(reg), Judge(),
         store=store, reporter=reporter, run_manifest=manifest,
         telemetry=telemetry,
+        # Per-study partials still come from the pipeline; the finished package
+        # does not. It belongs to the session, which saves it once, after the
+        # books are closed.
+        owns_final_save=False,
     )
 
     _safe_print(f"Auditing {len(review_items)} items (run {run_id}) …")
@@ -870,23 +890,12 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
         checklist=parsed.checklist,
     ))
 
-    # Both books, once, now that the run has finished spending. The global
-    # counters are where a cache's hits have always been reported and what every
-    # existing artifact reads; the stage buckets are the only way to say which
-    # half of a mixed run was the cheap one. The package is rewritten afterwards
-    # so the totals it carries are the run's, not a snapshot from before the
-    # last paper.
-    record_cache_totals(telemetry, extraction=extraction_cache,
-                        semantic=semantic_cache, stages=stages)
-    if semantic_cache is not None:
-        semantic_cache.save()
-    pkg = pkg.model_copy(update={"telemetry": telemetry})
-    store.save(pkg)
+    # One save, by the object that owns it, after the clock has stopped and the
+    # books are closed — and the reloaded file is what everything downstream
+    # reads, so `run` and `report` cannot render different object states.
+    pkg = session.finalise_success(pkg)
     _safe_print(f"Cost:       {telemetry.summary()}")
 
-    # AuditPipeline persists the complete package atomically before returning.
-    # Reload that exact file for the report so `run` and `report` cannot render
-    # different object states. A report failure leaves package.json intact.
     pkg_path = store.package_path(run_id)
     _safe_print(f"\n[PACKAGE] {pkg_path.resolve()}")
     report_path = _render_saved_package_html(
@@ -898,7 +907,7 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
     for f in fv.human_review_flags[:40]:
         _safe_print(f"  [{f.label}] {f.study_id}/{f.group}/{f.field_type}: {f.reason}")
     if semantic_cache is not None:
-        path = semantic_cache.save()
+        path = execution.semantic_cache
         _safe_print(
             f"[SEMANTIC] mode={args.semantic}  min_confidence={tol.semantic_min_confidence}"
             f"  {len(semantic_cache)} judgement(s), "

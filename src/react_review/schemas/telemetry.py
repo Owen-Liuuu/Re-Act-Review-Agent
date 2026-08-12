@@ -25,7 +25,13 @@ from __future__ import annotations
 import time
 from contextlib import contextmanager
 
-from pydantic import BaseModel, Field, computed_field, model_serializer
+from pydantic import (
+    BaseModel,
+    Field,
+    computed_field,
+    model_serializer,
+    model_validator,
+)
 
 
 class StageTelemetry(BaseModel):
@@ -76,9 +82,8 @@ class BatchStats(BaseModel):
     reading went wrong.
     """
 
-    #: Silently ignoring an unknown key is how a caller comes to believe it set
-    #: something. `claims_per_batch` is derived below, and supplying it is an
-    #: error rather than a no-op.
+    #: Unknown keys are still refused. `claims_per_batch` is the one exception
+    #: and is handled below: it must be readable back, because it is written.
     model_config = {"extra": "forbid"}
 
     batches: int = 0
@@ -100,6 +105,37 @@ class BatchStats(BaseModel):
     #: two must never be summed into one "checked" figure.
     explicit_vs_derived_agreements: int = 0
     explicit_vs_derived_conflicts: int = 0
+
+    @model_validator(mode="before")
+    @classmethod
+    def _derived_value_is_a_checksum(cls, data):
+        """`claims_per_batch` may arrive, but only as the value it must have.
+
+        It is written into every artifact, so refusing it outright made a
+        package that saved cleanly fail to load — which broke the report, since
+        the report renders from the reloaded file. But accepting it as state
+        would put a second source of truth beside `batches` and `claims`, which
+        is the fault this project has spent five rounds removing.
+
+        So it is neither: on the way in it is checked against the value it is
+        derived from and then discarded. Agreement means nothing was lost in the
+        round trip; disagreement means the file has been edited, and a
+        disagreement silently corrected is worse than one that stops the load.
+        """
+        if not isinstance(data, dict) or "claims_per_batch" not in data:
+            return data
+        body = dict(data)
+        supplied = body.pop("claims_per_batch")
+        batches = int(body.get("batches") or 0)
+        claims = int(body.get("claims") or 0)
+        expected = round((claims / batches) if batches else 0.0, 4)
+        if supplied is not None and round(float(supplied), 4) != expected:
+            raise ValueError(
+                f"claims_per_batch is {supplied}, and {claims} claims over "
+                f"{batches} batch(es) is {expected}. It is derived from those "
+                "two numbers, so a value that disagrees means the record was "
+                "edited")
+        return body
 
     @computed_field
     @property
@@ -263,6 +299,16 @@ class RunTelemetry(BaseModel):
     def record_cache(self, *, hits: int, misses: int) -> None:
         self.cache_hits += hits
         self.cache_misses += misses
+
+    def set_cache_totals(self, *, hits: int, misses: int) -> None:
+        """The run's cache totals, ASSIGNED rather than added.
+
+        Finalisation can be reached more than once — a clean finish, a stop, an
+        interrupt and an error do not share one path — and a total that
+        accumulates would count the same run twice on the second visit. A
+        snapshot cannot: writing the same numbers again writes the same numbers.
+        """
+        self.cache_hits, self.cache_misses = hits, misses
 
     @property
     def attempts_total(self) -> int:

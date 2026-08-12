@@ -68,6 +68,7 @@ class AuditPipeline:
         reporter: StepReporter | None = None,
         run_manifest=None,
         telemetry=None,
+        owns_final_save: bool = True,
     ) -> None:
         self._collector = collector
         self._auditor = auditor
@@ -80,6 +81,12 @@ class AuditPipeline:
         # the partial one, where a reader most needs to know what had already
         # been spent when it stopped.
         self._telemetry = telemetry
+        # Whether saving the FINISHED package is this object's job. It is for a
+        # library caller, who has nothing else; it is not for a production run,
+        # which has a session that closes the books first. Saving here in that
+        # case wrote a package whose telemetry stopped before the last paper,
+        # and left the caller to save a second time over the same filename.
+        self._owns_final_save = owns_final_save
         # Default reporter never blocks and never writes — library/CI behaviour.
         self._reporter = reporter or StepReporter()
 
@@ -225,7 +232,7 @@ class AuditPipeline:
             knowledge_concept_count=knowledge_concept_count,
             checklist=checklist,
         )
-        if self._store is not None:
+        if self._store is not None and self._owns_final_save:
             self._store.save(package)
 
         logger.info(

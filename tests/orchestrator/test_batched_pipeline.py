@@ -280,9 +280,53 @@ def test_the_production_builder_is_what_the_cli_calls():
     source = inspect.getsource(cli)
     assert "build_collector(" in source
     assert "ProductionBackends(" in source
-    assert "record_cache_totals(" in source
+    assert "ProductionSession(" in source
     # And the builder is not a second copy of the wiring.
     assert "Collector(" in inspect.getsource(production.build_collector)
+
+
+def test_the_cli_does_not_let_the_pipeline_save_the_finished_package():
+    """The authority to write package.json belongs to ONE object.
+
+    While it was the Pipeline's, the file was written before the run had
+    finished spending — so the telemetry inside it was a snapshot from before
+    the last paper, and the fix was to save a second time over the same
+    filename. Two writes, two different files' worth of bytes, one name.
+    """
+    import inspect
+
+    from react_review import cli
+
+    source = inspect.getsource(cli._run_audit)
+    assert "owns_final_save=False" in source
+    assert "store.save(pkg)" not in source
+    assert "session.finalise_success(" in source
+
+
+def test_the_production_entry_point_calls_the_audit_it_actually_has():
+    """Nothing else in the suite runs `react-review run`.
+
+    It needs a review PDF and a model, so the whole production entry point is
+    covered by no test at all — a signature and its one call site drifted apart
+    twice while 1210 tests stayed green, and only a linter noticed. This binds
+    the call as written to the function as defined, which is the part that
+    silently rots.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    from react_review import cli
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(cli._run_main)))
+    calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
+             and getattr(n.func, "id", "") == "_run_audit"]
+    assert len(calls) == 1, "one production entry point, one call"
+
+    call = calls[0]
+    inspect.signature(cli._run_audit).bind(
+        *["x"] * len(call.args),
+        **{kw.arg: "x" for kw in call.keywords})
 
 
 def test_the_builder_gives_the_collector_everything_its_contract_needs(tmp_path):
@@ -335,28 +379,89 @@ def test_a_single_route_run_labels_no_stage_at_all(tmp_path):
     assert (stages.parsing, stages.single, stages.batch, stages.semantic) ==         ("", "", "", "")
 
 
-def test_cache_totals_are_recorded_in_both_books_exactly_once():
-    """The globals are what every existing artifact reads; the stage buckets are
-    the only way to say which half was cheap. Both, once."""
-    from react_review.production import ProductionStages, record_cache_totals
+class _Cache:
+    def __init__(self, hits, misses):
+        self.hits, self.misses = hits, misses
+
+    def save(self):
+        return None
+
+
+def test_the_global_cache_book_is_the_sum_of_the_caches():
+    """The globals are what every existing artifact reads."""
+    from react_review.production import snapshot_cache_totals
+    from react_review.schemas.telemetry import RunTelemetry
+
+    telemetry = RunTelemetry()
+    snapshot_cache_totals(telemetry, extraction=_Cache(7, 2), semantic=_Cache(3, 1))
+    assert telemetry.cache_hits == 10 and telemetry.cache_misses == 3
+
+
+def test_a_shared_cache_is_never_attributed_to_one_stage():
+    """Its hits belong to whichever tool did the looking up, and only that tool
+    knows.
+
+    One extraction cache serves both routes. Adding its whole total to the
+    single-target bucket at the end of the run reported three hits in a stage
+    where one had happened, and left the batch stage understating its own — the
+    exact comparison the buckets exist to make.
+    """
+    from react_review.production import snapshot_cache_totals
     from react_review.schemas.telemetry import (
-        SEMANTIC,
+        BATCH_EXTRACTION,
         SINGLE_EXTRACTION,
         RunTelemetry,
     )
 
-    class _Cache:
-        def __init__(self, hits, misses):
-            self.hits, self.misses = hits, misses
+    telemetry = RunTelemetry()
+    telemetry.record_stage_cache(SINGLE_EXTRACTION, hits=1, misses=0)
+    telemetry.record_stage_cache(BATCH_EXTRACTION, hits=1, misses=0)
+    snapshot_cache_totals(telemetry, extraction=_Cache(2, 0))
+
+    assert telemetry.stages[SINGLE_EXTRACTION].cache_hits == 1
+    assert telemetry.stages[BATCH_EXTRACTION].cache_hits == 1
+    assert telemetry.cache_hits == 2
+
+
+def test_the_cache_book_is_a_snapshot_so_closing_twice_changes_nothing():
+    """Finalisation is reachable four ways, and totals that add count twice."""
+    from react_review.production import snapshot_cache_totals
+    from react_review.schemas.telemetry import RunTelemetry
 
     telemetry = RunTelemetry()
-    stages = ProductionStages(parsing="review_parsing", single=SINGLE_EXTRACTION,
-                              batch="batch_extraction", semantic=SEMANTIC)
-    record_cache_totals(telemetry, extraction=_Cache(7, 2),
-                        semantic=_Cache(3, 1), stages=stages)
-    assert telemetry.cache_hits == 10 and telemetry.cache_misses == 3
-    assert telemetry.stages[SINGLE_EXTRACTION].cache_hits == 7
-    assert telemetry.stages[SEMANTIC].cache_hits == 3
+    for _ in range(3):
+        snapshot_cache_totals(telemetry, extraction=_Cache(7, 2))
+    assert (telemetry.cache_hits, telemetry.cache_misses) == (7, 2)
+
+
+def test_a_run_with_no_cache_activity_creates_no_stage():
+    """0/0 is not a measurement, and a bucket of zeroes is a section in every
+    artifact for a fact nobody has."""
+    from react_review.production import snapshot_cache_totals
+    from react_review.schemas.telemetry import RunTelemetry
+
+    telemetry = RunTelemetry()
+    snapshot_cache_totals(telemetry, extraction=_Cache(0, 0))
+    assert telemetry.stages is None
+    assert "stages" not in telemetry.model_dump(mode="json")
+
+
+def test_the_semantic_cache_records_its_own_lookups(tmp_path):
+    """Where the lookup happens, not inferred from a total afterwards."""
+    from react_review.audit.semantic_cache import SemanticCache
+    from react_review.schemas.semantic import SemanticVerdict
+    from react_review.schemas.telemetry import SEMANTIC, RunTelemetry
+
+    telemetry = RunTelemetry()
+    cache = SemanticCache(tmp_path / "semantic.json")
+    cache.measure_into(telemetry, SEMANTIC)
+    assert cache.get("k") is None                                   # a miss
+    cache.put("k", SemanticVerdict(relation="same", equivalent=True,
+                                   confidence=0.9))
+    assert cache.get("k") is not None                               # a hit
+
+    assert telemetry.stages[SEMANTIC].cache_hits == 1
+    assert telemetry.stages[SEMANTIC].cache_misses == 1
 
 
 def test_the_cli_resolves_a_runtime_only_for_a_batching_contract(tmp_path):

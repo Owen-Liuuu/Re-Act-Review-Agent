@@ -48,12 +48,31 @@ class SemanticCache:
         total = self.hits + self.misses
         return self.hits / total if total else 0.0
 
+    def measure_into(self, telemetry, stage: str) -> None:
+        """Record this cache's own lookups against a stage, as they happen.
+
+        Inferring them afterwards from the cache's totals cannot work once two
+        tools share one cache: the shared extraction cache's hits belong partly
+        to the batch path and partly to the single one, and attributing the
+        whole book to either is how a stage came to report three hits where one
+        happened.
+        """
+        self._telemetry, self._stage = telemetry, stage
+
+    def _measure(self, *, hit: bool) -> None:
+        telemetry = getattr(self, "_telemetry", None)
+        if telemetry is not None and getattr(self, "_stage", ""):
+            telemetry.record_stage_cache(self._stage, hits=int(hit),
+                                         misses=int(not hit))
+
     def get(self, key: str) -> SemanticVerdict | None:
         body = self._entries.get(key)
         if body is None:
             self.misses += 1
+            self._measure(hit=False)
             return None
         self.hits += 1
+        self._measure(hit=True)
         return SemanticVerdict(**body)
 
     def verdicts(self) -> list[SemanticVerdict]:
