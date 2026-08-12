@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_serializer
 
 from react_review.contracts import ContractError, one_of, sha256_file
 
@@ -63,7 +63,38 @@ class RunManifest(BaseModel):
     # what has been written so far, not a hash of a file still being appended to.
     extraction_cache_sha256: str = ""
     semantic_cache_sha256: str = ""
+    #: The aggregation policy and the evaluator that cleared it, resolved once
+    #: at startup. Present only for a run that batches — a run that never
+    #: aggregated anything must not name an evaluator, or it attributes its
+    #: answers to code that never ran. Omitted from the serialised form when
+    #: empty, so every manifest already written is unchanged.
+    aggregation_runtime: dict[str, Any] = Field(default_factory=dict)
     complete: bool = False
+
+    @model_serializer(mode="wrap")
+    def _omit_unused_runtime(self, handler):
+        body = handler(self)
+        if not body.get("aggregation_runtime"):
+            body.pop("aggregation_runtime", None)
+        return body
+
+    @staticmethod
+    def runtime_of(runtime) -> dict[str, Any]:
+        """The bound policy-and-identity, as a manifest records it."""
+        if runtime is None:
+            return {}
+        who = runtime.evaluator
+        return {
+            "policy_id": runtime.policy.policy_id,
+            "policy_sha256": runtime.policy.sha256,
+            "evaluator_id": who.evaluator_id,
+            "evaluator_version": who.evaluator_version,
+            "evaluator_hash": who.evaluator_hash,
+            "git_commit": who.git_commit,
+            "git_commit_matches_evaluator": who.git_commit_matches_evaluator,
+            "status": who.status,
+            "release_eligible": runtime.release_eligible,
+        }
 
     @classmethod
     def of(cls, contract: RunContractProfile, execution: ExecutionMode, *,

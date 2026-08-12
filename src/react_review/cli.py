@@ -674,6 +674,7 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
     from react_review.tools.compare import CompareValuesTool
     from react_review.tools.semantic_compare import SemanticCompareTool
     from react_review.tools.extract import FetchFullTextTool
+    from react_review.tools.extract_batch import ExtractSourceBatchTool
     from react_review.tools.extract_source import ExtractSourceValueTool
     from react_review.contracts import repo_root
     from react_review.run_profile import (
@@ -764,6 +765,8 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
     extraction_cache = (None if execution.extraction_mode == "live"
                         else ExtractionCache(execution.extraction_cache))
     reg.register(ExtractSourceValueTool(
+        backend, cache=extraction_cache, cache_mode=execution.extraction_mode))
+    reg.register(ExtractSourceBatchTool(
         backend, cache=extraction_cache, cache_mode=execution.extraction_mode))
     reg.register(ResolveReferenceTool(reconciler))          # no-DOI refs → gated online DOI
     # Text the numeric comparison cannot read ("ICU" vs "intensive care unit")

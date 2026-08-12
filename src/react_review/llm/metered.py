@@ -19,10 +19,20 @@ from react_review.schemas.telemetry import RunTelemetry
 class MeteredBackend(LLMBackend):
     """Delegates to a real backend and records the cost of each call."""
 
-    def __init__(self, backend: LLMBackend, telemetry: RunTelemetry) -> None:
+    def __init__(self, backend: LLMBackend, telemetry: RunTelemetry,
+                 stage: str = "") -> None:
+        """Optionally labelled with the STAGE whose cost this wrapper measures.
+
+        One backend serves extraction and semantic comparison alike, so a single
+        set of counters cannot answer whether batching spent more on output than
+        it saved on calls — the question batching exists to settle. Wrapping the
+        same backend two or three times, each with a fixed label, keeps that
+        answerable without threading a stage through every call site.
+        """
         super().__init__()
         self._backend = backend
         self._telemetry = telemetry
+        self._stage = stage
 
     @property
     def model_id(self) -> str:
@@ -43,10 +53,11 @@ class MeteredBackend(LLMBackend):
         except Exception:
             self._telemetry.record_call(
                 prompt=prompt, output="", failed=True,
-                seconds=time.perf_counter() - started)
+                seconds=time.perf_counter() - started, stage=self._stage)
             raise
         self._telemetry.record_call(
             prompt=prompt, output=output or "",
             seconds=time.perf_counter() - started,
-            usage=getattr(self._backend, "last_usage", None))
+            usage=getattr(self._backend, "last_usage", None),
+            stage=self._stage)
         return output

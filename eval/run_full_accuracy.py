@@ -42,6 +42,13 @@ from react_review.eval_benchmark import (
 from react_review.eval_profile import ProfileError, load_profile
 from react_review.dkb import load_runtime_knowledge
 from react_review.llm.metered import MeteredBackend
+from react_review.schemas.run_manifest import RunManifest
+from react_review.schemas.telemetry import (
+    BATCH_EXTRACTION,
+    SEMANTIC,
+    SINGLE_EXTRACTION,
+)
+from react_review.tools.extract_batch import ExtractSourceBatchTool
 from react_review.schemas.telemetry import RunTelemetry, wall_clock
 from react_review.pipeline.factory import _create_llm_backend
 from react_review.retrieval.local_pdf import LocalPdfRetriever
@@ -60,6 +67,21 @@ ROOT = DEFAULT_BENCH.parent.parent
 def _load_answer_key(path: Path) -> list[dict[str, str]]:
     with open(path, encoding="utf-8-sig", newline="") as f:
         return [r for r in csv.DictReader(f) if (r.get("study_id") or "").strip()]
+
+
+def _aggregation_runtime(contract):
+    """The policy and the identity that cleared it, bound, or nothing.
+
+    Nothing when the contract does not batch: recording an identity a run never
+    used would attribute its answers to code that never ran.
+    """
+    if contract is None or not getattr(contract, "batching", False):
+        return None
+    from react_review.tools.safe_aggregation import AggregationRuntime
+
+    return AggregationRuntime.resolve(
+        policy_id=contract.aggregation_policy_id,
+        evaluator_version=contract.evaluator_version)
 
 
 def _cohort_registry(profile, rows: list[dict[str, str]]):
@@ -216,7 +238,15 @@ def main(argv: list[str] | None = None) -> None:
     backend = (_create_llm_backend(load_config(args.config))
                if args.config is not None else None)
     if backend is not None:
-        backend = MeteredBackend(backend, telemetry)
+        # One backend, three labelled views of it. A single set of counters
+        # cannot say whether batching spent more on output than it saved on
+        # calls, because extraction and semantic comparison share the wire.
+        raw_backend = backend
+        backend = MeteredBackend(raw_backend, telemetry, SINGLE_EXTRACTION)
+        batch_backend = MeteredBackend(raw_backend, telemetry, BATCH_EXTRACTION)
+        semantic_backend = MeteredBackend(raw_backend, telemetry, SEMANTIC)
+    else:
+        batch_backend = semantic_backend = None
     tol = ToleranceTable.from_yaml(args.tolerances) if args.tolerances else ToleranceTable()
     retriever = LocalPdfRetriever(
         {s.doi: s.source_pdf for s in studies if s.doi and s.source_pdf}, base_dir=benchmark)
@@ -227,14 +257,28 @@ def main(argv: list[str] | None = None) -> None:
     reg.register(ExtractSourceValueTool(
         backend, cache=extraction_cache, cache_mode=args.extraction,
         telemetry=telemetry))
+    # Registered whatever the contract says: a contract that routes to it must
+    # find it, and one that does not never asks. Its absence is a startup
+    # failure rather than a quiet fall back to reading one claim at a time.
+    reg.register(ExtractSourceBatchTool(
+        batch_backend, cache=extraction_cache, cache_mode=args.extraction,
+        telemetry=telemetry))
     kb = load_runtime_knowledge(
         ROOT / "configs" / "knowledge.seed.json", ROOT / "configs" / "ontology")
     # The cohorts come from the profile's target contract — the review's own
     # words for its arms. Without them the Collector had no cohort registry at
     # all, so its wrong-arm guard was inert for the whole benchmark.
     cohorts = _cohort_registry(profile, all_rows) if profile is not None else None
+    # The run contract, and — only when it batches — the bound policy and
+    # evaluator identity that clears it. Resolved ONCE here, because readiness
+    # shells out to git and a check that runs per claim is a check somebody
+    # eventually removes for being slow.
+    contract = profile.run_contract if profile is not None else None
+    runtime = _aggregation_runtime(contract)
+    run_meta_runtime = RunManifest.runtime_of(runtime)
     collector = Collector(
-        reg, knowledge=kb, cohorts=cohorts,
+        reg, knowledge=kb, cohorts=cohorts, contract=contract,
+        aggregation_runtime=runtime,
         extraction_profile=(profile.extraction_profile if profile is not None
                             else "legacy_v3"))
 
@@ -319,6 +363,11 @@ def main(argv: list[str] | None = None) -> None:
             "benchmark_id": str(manifest.get("benchmark_id") or benchmark.name),
             "benchmark_gate": gate,
             **(profile.provenance() if profile is not None else {}),
+            # Present only when this run resolved one. A run that never
+            # aggregated must not name an evaluator, or it attributes its
+            # answers to code that never ran.
+            **({"aggregation_runtime": run_meta_runtime} if run_meta_runtime
+               else {}),
             "studies_file": str(studies_path.resolve()),
             "research_context": context,
             "extraction_mode": args.extraction,

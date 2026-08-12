@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 import structlog
 
 from react_review.llm.base import LLMBackend, parse_llm_response
+from react_review.tools.base import ToolStage
 from react_review.schemas.batch import (
     BatchExecutionId,
     BatchQuestionId,
@@ -45,7 +46,11 @@ from react_review.tools.extraction_cache import (
     ExtractionCacheMiss,
     extraction_cache_key,
 )
-from react_review.tools.extraction_profile import BATCH_PROFILE_NAME, prompt_version
+from react_review.schemas.telemetry import BATCH_EXTRACTION
+from react_review.tools.extraction_profile import (
+    BATCH_PROFILE_NAME,
+    prompt_version,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -139,6 +144,11 @@ class ExtractSourceBatchTool:
     """One prompt, every reading of one field, under the v5 contract."""
 
     name = "extract_source_batch"
+    #: Registered beside the single-target extractor. Not a `Tool` subclass:
+    #: its entry point takes a question and a prompt rather than one typed
+    #: payload, and pretending otherwise would mean inventing a payload shape
+    #: that nothing sends.
+    stage = ToolStage.EXTRACT
 
     def __init__(self, backend: LLMBackend | None, *,
                  cache: ExtractionCache | None = None, cache_mode: str = "live",
@@ -208,6 +218,7 @@ class ExtractSourceBatchTool:
             recorded = (self._cache.get(key)
                         if self._cache_mode in {"record", "replay"} else None)
             if recorded is not None:
+                self._record_cache(hits=1)
                 return recorded, "", "", True
             if self._cache_mode == "replay":
                 # A run that says replay must mean it. Reaching for the model
@@ -215,6 +226,10 @@ class ExtractSourceBatchTool:
                 # artifact whose own label is false.
                 raise ExtractionCacheMiss(
                     "no recorded batch for this question and attempt")
+            # A miss is counted once, HERE, when the lookup failed — not again
+            # when the answer is written back, which is the same event seen
+            # from the other side.
+            self._record_cache(misses=1)
             if self._telemetry is not None:
                 self._telemetry.attempt(self.name)
             assert self._backend is not None
@@ -230,6 +245,18 @@ class ExtractSourceBatchTool:
         except Exception as exc:                     # transport, decode, provider
             logger.warning("extract_source_batch_failed", error=str(exc)[:160])
             return None, TRANSPORT, f"{type(exc).__name__}: {exc}"[:300], False
+
+    def _record_cache(self, *, hits: int = 0, misses: int = 0) -> None:
+        """Only the batch stage's bucket.
+
+        The accuracy harness folds each cache's own totals into the global
+        counters when a run ends, so touching those here would double every
+        number it reports.
+        """
+        if self._telemetry is None or self._cache_mode == "live":
+            return
+        self._telemetry.record_stage_cache(BATCH_EXTRACTION, hits=hits,
+                                           misses=misses)
 
     def _key(self, prompt: str, attempt: int) -> str:
         """The address a recording lives at.

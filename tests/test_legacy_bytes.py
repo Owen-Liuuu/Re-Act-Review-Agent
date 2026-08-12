@@ -195,3 +195,51 @@ def test_every_claim_reference_resolves_to_a_recorded_reading():
         provenance = row.batch_provenance
         if provenance and provenance.batch_execution_id:
             assert provenance.batch_execution_id in known
+
+
+# --- 7. per-stage telemetry ------------------------------------------------
+
+def test_a_run_that_used_no_stage_has_no_stages_key():
+    assert "stages" not in RunTelemetry().model_dump(mode="json")
+
+
+def test_a_stage_bucket_appears_only_for_the_stage_that_was_used():
+    from react_review.schemas.telemetry import BATCH_EXTRACTION
+
+    telemetry = RunTelemetry()
+    telemetry.record_call(prompt="p", output="o", seconds=0.5,
+                          stage=BATCH_EXTRACTION)
+    body = telemetry.model_dump(mode="json")
+    assert set(body["stages"]) == {BATCH_EXTRACTION}
+
+
+def test_a_stage_call_still_counts_once_globally():
+    """The globals were always updated exactly once per call, and still are."""
+    from react_review.schemas.telemetry import SEMANTIC
+
+    telemetry = RunTelemetry()
+    telemetry.record_call(prompt="pp", output="ooo", seconds=1.0, stage=SEMANTIC)
+    assert telemetry.backend_requests == 1
+    assert telemetry.prompt_chars == 2 and telemetry.output_chars == 3
+    assert telemetry.stages[SEMANTIC].requests == 1
+
+
+def test_stage_cache_counting_never_touches_the_global_totals():
+    """The harness folds each cache's own totals in when a run ends.
+
+    Adding to them here would double every cache number it reports.
+    """
+    from react_review.schemas.telemetry import BATCH_EXTRACTION
+
+    telemetry = RunTelemetry()
+    telemetry.record_stage_cache(BATCH_EXTRACTION, hits=3, misses=1)
+    assert telemetry.cache_hits == 0 and telemetry.cache_misses == 0
+    assert telemetry.stages[BATCH_EXTRACTION].cache_hits == 3
+
+
+def test_an_unknown_stage_is_refused():
+    """A typo would become a bucket nobody reads, not a visible cost."""
+    import pytest as _pytest
+
+    with _pytest.raises(ValueError, match="unknown telemetry stage"):
+        RunTelemetry().record_stage_cache("extractoin", hits=1)

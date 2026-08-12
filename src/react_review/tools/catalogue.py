@@ -19,6 +19,7 @@ from react_review.steps.search_validation.multi_db_count import IdentificationCo
 from react_review.tools.base import Tool
 from react_review.tools.compare import CompareValuesTool
 from react_review.tools.extract import ExtractFieldsTool, FetchFullTextTool
+from react_review.tools.extract_batch import ExtractSourceBatchTool
 from react_review.tools.extract_source import ExtractSourceValueTool
 from react_review.tools.registry import ToolRegistry
 from react_review.tools.search import (
@@ -136,6 +137,10 @@ def build_catalogue(
         FetchFullTextTool(retriever),
         ExtractFieldsTool(extractor),
         ExtractSourceValueTool(norm_backend),
+        # Registered here too, so a contract that routes to it finds
+        # it. This module builds tools; the runtime that clears an
+        # aggregation is injected where a Collector is built.
+        ExtractSourceBatchTool(norm_backend),
         ResolveReferenceTool(reconciler),
         CompareValuesTool(tol),
     ]
