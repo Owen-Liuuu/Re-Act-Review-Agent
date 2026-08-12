@@ -194,6 +194,22 @@ def _build_demo_input() -> StudentReviewInput:
 from react_review.hitl.render import safe_print as _safe_print  # noqa: E402
 
 
+def _aggregation_runtime(contract):
+    """The policy and the identity that cleared it, bound — or nothing.
+
+    Nothing when the contract does not batch. Recording an identity a run never
+    used would attribute its answers to code that never ran, and resolving one
+    costs a git subprocess that a non-batching run has no reason to pay.
+    """
+    if contract is None or not getattr(contract, "batching", False):
+        return None
+    from react_review.tools.safe_aggregation import AggregationRuntime
+
+    return AggregationRuntime.resolve(
+        policy_id=contract.aggregation_policy_id,
+        evaluator_version=contract.evaluator_version)
+
+
 def _print_result(result: PipelineRunResult) -> None:
     """Print a human-readable summary of the pipeline result."""
     si = result.student_input
@@ -702,6 +718,16 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
     # use it is a CONTRACT decision, because the context reaches the prompt and
     # therefore the cache key — a silent fallback would change the question
     # without changing the profile that is supposed to define it.
+    # Loaded BEFORE anything consults it. It used to be read here and assigned
+    # thirty lines later, so any run without an explicit --context raised
+    # UnboundLocalError before it reached a paper.
+    # The contract decides the answer; the flags below decide only how the model
+    # was reached. A flag that would move a tolerance or a prompt version is
+    # refused rather than silently winning — see react_review.run_profile.
+    contract = load_run_contract(
+        args.profile or (repo_root() / "configs" / "run_profiles" / "legacy.json"))
+    guard_contract_overrides(contract, {"--tolerances": args.tolerances})
+
     research_context, context_source = args.context, "cli"
     if not research_context:
         if contract.context_policy == "cli_then_parsed" and parsed.research_context:
@@ -733,12 +759,6 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
     if args.limit:
         review_items = review_items[: args.limit]
 
-    # The contract decides the answer; the flags below decide only how the model
-    # was reached. A flag that would move a tolerance or a prompt version is
-    # refused rather than silently winning — see react_review.run_profile.
-    contract = load_run_contract(
-        args.profile or (repo_root() / "configs" / "run_profiles" / "legacy.json"))
-    guard_contract_overrides(contract, {"--tolerances": args.tolerances})
     execution = ExecutionMode(
         extraction_mode=args.extraction,
         extraction_cache=(args.extraction_cache
@@ -782,18 +802,30 @@ def _run_audit(args, config, backend, kb, resolver, review_parser,
         semantic_mode=args.semantic, semantic_cache=semantic_cache,
         min_confidence=tol.semantic_min_confidence,
         semantic_profile=contract.semantic_prompt_profile))
+    runtime = _aggregation_runtime(contract)
     manifest = RunManifest.of(
         contract, execution, context_source=context_source,
         inputs={"review_pdf": str(args.pdf.name),
                 "studies": str(args.studies.name) if args.studies else ""})
+    # What decided, recorded beside what it decided under — including on the
+    # partial manifest a stopped run leaves behind.
+    manifest.aggregation_runtime = RunManifest.runtime_of(runtime)
     _safe_print(f"Contract:   {contract.profile_id} "
                 f"[extraction={contract.extraction_profile} "
                 f"semantic={contract.semantic_prompt_profile} "
                 f"scope={contract.scope_policy} context={context_source}]")
     _safe_print(f"Execution:  extraction={execution.extraction_mode} "
                 f"semantic={execution.semantic_mode}")
+    # The whole contract, not one field of it. A run may legitimately read
+    # values in batch and arm identities one at a time, and the Collector can
+    # only honour that if it holds the routes — handing it a single profile
+    # would let a v2 contract be loaded, recorded, and then ignored.
+    if runtime is not None:
+        _safe_print(f"Aggregation: {runtime.evaluator.describe()}")
     pipeline = AuditPipeline(
         Collector(reg, knowledge=kb, cohorts=parsed.cohorts,
+                  contract=contract, aggregation_runtime=runtime,
+                  knowledge_fingerprint=parsed.knowledge_fingerprint,
                   extraction_profile=contract.extraction_profile),
         AuditOrchestrator(reg), Judge(),
         store=store, reporter=reporter, run_manifest=manifest,

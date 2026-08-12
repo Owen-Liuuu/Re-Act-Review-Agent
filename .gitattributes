@@ -11,3 +11,10 @@ configs/aggregation/*.json text eol=lf
 configs/aggregation/evaluators/*.json text eol=lf
 eval/baselines/*.json text eol=lf
 eval/aggregation_behavior.py text eol=lf
+
+# Named one file at a time, deliberately. `configs/run_profiles/*.json` would
+# renormalise phase8.json, whose bytes a frozen benchmark pins, and
+# `eval/benchmarks/**` would do the same to phase8_profile.json — which is
+# exactly how a benchmark was made unrunnable once already.
+configs/run_profiles/phase8_batch.json text eol=lf
+eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_profile.json text eol=lf

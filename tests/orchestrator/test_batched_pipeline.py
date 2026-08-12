@@ -260,3 +260,128 @@ def test_a_row_that_was_never_batched_names_no_reading(tmp_path):
         _rows(), collector, ToleranceTable(), lambda _: REFERENCE))
     assert all(r.batch_execution_id == "" for r in results)
     assert not getattr(results, "batch_readings", [])
+
+
+# --- what the PRODUCTION entry point builds --------------------------------
+
+def test_the_cli_hands_the_collector_the_whole_contract(tmp_path):
+    """Not one field of it.
+
+    A run may read values in batch and arm identities one at a time, and the
+    Collector can only honour that if it holds the routes. Passing a single
+    profile would let a v2 contract be loaded, recorded, and then ignored — and
+    every test that builds a Collector directly would still pass.
+    """
+    import inspect
+
+    from react_review import cli
+
+    source = inspect.getsource(cli)
+    start = source.index("pipeline = AuditPipeline(")
+    block = source[start:start + 600]
+    assert "contract=contract" in block
+    assert "aggregation_runtime=runtime" in block
+    assert "knowledge_fingerprint=" in block
+
+
+def test_the_cli_loads_its_contract_before_anything_reads_it():
+    """It used to be read thirty lines before it was assigned.
+
+    Any run without an explicit --context raised UnboundLocalError before it
+    reached a paper.
+    """
+    import inspect
+
+    from react_review import cli
+
+    source = inspect.getsource(cli)
+    assert source.index("contract = load_run_contract(") < \
+        source.index("contract.context_policy")
+
+
+def test_the_cli_resolves_a_runtime_only_for_a_batching_contract(tmp_path):
+    from react_review.cli import _aggregation_runtime
+
+    assert _aggregation_runtime(None) is None
+    single = _contract(tmp_path)
+    assert single.batching
+    body = json.loads((tmp_path / "contract.json").read_text(encoding="utf-8"))
+    body["extraction_routes"] = {"value": "targeted_v4",
+                                 "arm_identity": "targeted_v4"}
+    del body["aggregation_policy_id"], body["evaluator_version"]
+    (tmp_path / "plain.json").write_text(json.dumps(body), encoding="utf-8")
+    plain = load_run_contract(tmp_path / "plain.json")
+    assert _aggregation_runtime(plain) is None
+
+
+def test_the_manifest_records_the_runtime_that_ran(tmp_path):
+    from react_review.schemas.run_manifest import RunManifest
+    from react_review.tools.safe_aggregation import AggregationRuntime
+
+    runtime = AggregationRuntime.resolve(policy_id="safe_sum_v5",
+                                         evaluator_version="1.6.1")
+    body = RunManifest.runtime_of(runtime)
+    assert body["policy_id"] == "safe_sum_v5"
+    assert body["evaluator_version"] == "1.6.1"
+    assert len(body["policy_sha256"]) == 64
+    assert "release_eligible" in body
+    # And a run that never aggregated records nothing at all.
+    assert RunManifest.runtime_of(None) == {}
+
+
+def test_the_semantic_stage_is_measured_by_the_semantic_wrapper():
+    """Both wrap the same backend; the label is the whole point of having two."""
+    import inspect
+    import pathlib
+
+    source = pathlib.Path("eval/run_full_accuracy.py").read_text(encoding="utf-8")
+    start = source.index("semantic=(SemanticCompareTool(")
+    assert "semantic_backend" in source[start:start + 120]
+
+
+def test_a_retried_batch_is_counted_as_a_repeated_attempt(tmp_path):
+    """A batch that failed twice must not look as cheap as one that did not."""
+    import asyncio
+
+    from react_review.schemas.telemetry import RunTelemetry
+    from react_review.tools.extract_batch import ExtractSourceBatchTool
+    from react_review.schemas.batch import ARM, BatchQuestionId
+
+    class _FlakyThenFine(_Batch):
+        async def complete(self, prompt: str, *, seed: int = 42) -> str:
+            self.calls += 1
+            if self.calls == 1:
+                raise TimeoutError("gateway")
+            return await super().complete(prompt, seed=seed)
+
+    telemetry = RunTelemetry()
+    tool = ExtractSourceBatchTool(_FlakyThenFine(), telemetry=telemetry)
+    record = asyncio.run(tool.read(
+        question=BatchQuestionId(study_id="larkin", target_shape=ARM),
+        prompt="PROMPT", document=PAPER))
+    assert record.usable and len(record.attempts) == 2
+    assert telemetry.repeated_attempts == 1
+
+
+def test_a_batched_run_reports_what_batching_bought(tmp_path):
+    import asyncio
+
+    from react_review.schemas.telemetry import RunTelemetry
+
+    telemetry = RunTelemetry()
+    registry = ToolRegistry()
+    registry.register(FetchFullTextTool(_Retriever()))
+    registry.register(ExtractSourceValueTool(_Single()))
+    registry.register(ExtractSourceBatchTool(_Batch()))
+    collector = Collector(
+        registry, contract=_contract(tmp_path), telemetry=telemetry,
+        cohorts=CohortRegistry(labels=[
+            CohortLabel(key="nivolumab_plus_placebo",
+                        display="Nivolumab (3 mg/kg) + placebo"),
+            CohortLabel(key="ipilimumab_plus_placebo",
+                        display="Ipilimumab (3 mg/kg) + placebo")]))
+    asyncio.run(collector.collect_study(_claims(), REFERENCE))
+    stats = telemetry.batch
+    assert stats.batches == 1 and stats.claims == 2
+    assert stats.singleton_batches == 0
+    assert stats.projections.get("ok") == 2

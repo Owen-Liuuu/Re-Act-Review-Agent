@@ -243,3 +243,48 @@ def test_an_unknown_stage_is_refused():
 
     with _pytest.raises(ValueError, match="unknown telemetry stage"):
         RunTelemetry().record_stage_cache("extractoin", hits=1)
+
+
+# --- 8. batch statistics ---------------------------------------------------
+
+def test_a_run_that_never_batched_has_no_batch_section():
+    assert "batch" not in RunTelemetry().model_dump(mode="json")
+
+
+def test_batch_statistics_count_what_batching_actually_did():
+    telemetry = RunTelemetry()
+    telemetry.record_batch(claims=3, failed=False)
+    telemetry.record_batch(claims=1, failed=False)
+    telemetry.record_batch(claims=2, failed=True)
+    stats = telemetry.batch
+    assert stats.batches == 3 and stats.claims == 6
+    assert stats.singleton_batches == 1 and stats.failed_batches == 1
+    assert round(stats.claims_per_batch, 2) == 2.0
+
+
+def test_projection_outcomes_are_counted_by_name():
+    """"Unresolved" as one number cannot say which way a run is failing."""
+    telemetry = RunTelemetry()
+    telemetry.record_projection("scope_unresolved", "rejected")
+    telemetry.record_projection("scope_unresolved", "rejected")
+    telemetry.record_projection("not_reported", "not_applicable")
+    stats = telemetry.batch
+    assert stats.projections == {"scope_unresolved": 2, "not_reported": 1}
+    assert stats.aggregation_rejected == 2
+    # `not_applicable` is not an attempt: nothing was offered to add up.
+    assert stats.aggregation_attempts == 2
+
+
+def test_a_printed_total_beside_a_valid_sum_is_corroboration():
+    telemetry = RunTelemetry()
+    telemetry.record_projection("ok", "derived")
+    assert telemetry.batch.explicit_vs_derived_agreements == 1
+    assert telemetry.batch.explicit_vs_derived_conflicts == 0
+
+
+def test_a_contradiction_beside_a_valid_sum_is_a_conflict():
+    """Agreement and conflict must never be summed into one 'checked' figure."""
+    telemetry = RunTelemetry()
+    telemetry.record_projection("contradictory", "derived")
+    assert telemetry.batch.explicit_vs_derived_conflicts == 1
+    assert telemetry.batch.explicit_vs_derived_agreements == 0

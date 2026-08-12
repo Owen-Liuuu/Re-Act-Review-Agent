@@ -61,6 +61,41 @@ SEMANTIC = "semantic"
 STAGES = (SINGLE_EXTRACTION, BATCH_EXTRACTION, SEMANTIC)
 
 
+class BatchStats(BaseModel):
+    """What batching actually did, as counts rather than as a design claim.
+
+    Batching was justified by an argument about cost and consistency. Neither is
+    checkable from the backend's totals: a run that issued one prompt for four
+    claims and a run that issued four look identical there. These are the
+    numbers that decide whether it bought anything, and what it cost when a
+    reading went wrong.
+    """
+
+    batches: int = 0
+    claims: int = 0
+    #: Batches that answered exactly one claim. The number that decides whether
+    #: batching is buying anything at all.
+    singleton_batches: int = 0
+    failed_batches: int = 0
+    #: Every projection outcome, by name. A run whose claims mostly land in
+    #: `scope_unresolved` is failing in a different way from one landing in
+    #: `not_reported`, and a single "unresolved" count cannot say which.
+    projections: dict[str, int] = Field(default_factory=dict)
+    aggregation_attempts: int = 0
+    aggregation_derived: int = 0
+    aggregation_rejected: int = 0
+    aggregation_protocol_errors: int = 0
+    #: A printed total and a computed one, where both existed. Agreement is
+    #: corroboration; a conflict is the paper disagreeing with itself, and the
+    #: two must never be summed into one "checked" figure.
+    explicit_vs_derived_agreements: int = 0
+    explicit_vs_derived_conflicts: int = 0
+
+    @property
+    def claims_per_batch(self) -> float:
+        return (self.claims / self.batches) if self.batches else 0.0
+
+
 class RunTelemetry(BaseModel):
     """Counters for one run. Every field is measured, none is inferred."""
 
@@ -83,13 +118,52 @@ class RunTelemetry(BaseModel):
     #: all — every recorded artifact would otherwise change shape for a fact it
     #: does not have. See tests/test_legacy_bytes.py.
     stages: dict[str, StageTelemetry] | None = None
+    #: Present only for a run that batched. Same rule, same reason.
+    batch: BatchStats | None = None
 
     @model_serializer(mode="wrap")
-    def _omit_unused_stages(self, handler):
+    def _omit_unused_sections(self, handler):
         body = handler(self)
-        if not body.get("stages"):
-            body.pop("stages", None)
+        for name in ("stages", "batch"):
+            if not body.get(name):
+                body.pop(name, None)
         return body
+
+    def batch_stats(self) -> BatchStats:
+        if self.batch is None:
+            self.batch = BatchStats()
+        return self.batch
+
+    def record_batch(self, *, claims: int, failed: bool) -> None:
+        stats = self.batch_stats()
+        stats.batches += 1
+        stats.claims += claims
+        if claims == 1:
+            stats.singleton_batches += 1
+        if failed:
+            stats.failed_batches += 1
+
+    def record_projection(self, status: str, aggregation_status: str) -> None:
+        """One claim's outcome, and what the aggregation did for it.
+
+        Agreement and conflict are read structurally rather than from prose: a
+        printed total released while a valid sum existed is corroboration, and a
+        contradiction beside a valid sum is the paper disagreeing with itself.
+        """
+        stats = self.batch_stats()
+        stats.projections[status] = stats.projections.get(status, 0) + 1
+        if aggregation_status and aggregation_status != "not_applicable":
+            stats.aggregation_attempts += 1
+        if aggregation_status == "derived":
+            stats.aggregation_derived += 1
+            if status == "ok":
+                stats.explicit_vs_derived_agreements += 1
+            elif status == "contradictory":
+                stats.explicit_vs_derived_conflicts += 1
+        elif aggregation_status == "rejected":
+            stats.aggregation_rejected += 1
+        elif aggregation_status == "protocol_error":
+            stats.aggregation_protocol_errors += 1
 
     def _stage(self, name: str) -> StageTelemetry:
         if name not in STAGES:

@@ -444,6 +444,12 @@ class Collector:
         bindings = [self._binding_for(claim, group) for claim in group.claims]
         record.execution = execution_id_for(question, bindings,
                                             self._projection_contract())
+        if self._telemetry is not None:
+            # What batching actually did. A run that issued one prompt for four
+            # claims and a run that issued four look identical in the backend's
+            # totals, so the cost argument has to be counted where it happens.
+            self._telemetry.record_batch(claims=len(group.claims),
+                                         failed=record.reading is None)
         produced = [self._project_one(claim, group, record, source, binding)
                     for claim, binding in zip(group.claims, bindings)]
         return produced, record
@@ -523,6 +529,9 @@ class Collector:
 
         result = to_source_result(projection)
         outcome = outcome_for(projection, reading)
+        if self._telemetry is not None:
+            self._telemetry.record_projection(projection.status,
+                                              projection.aggregation_status)
         entry = projection.entry
         provenance = BatchProjectionProvenance(
             batch_question_id=record.question.identity(),

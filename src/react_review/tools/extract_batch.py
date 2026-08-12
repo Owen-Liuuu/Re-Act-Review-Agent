@@ -188,6 +188,13 @@ class ExtractSourceBatchTool:
                 attempt=attempt, cache_key=key, served_from_cache=cached,
                 failure=failure, detail=detail))
             if failure:
+                # A retry costs a call, and the run's own repeated-attempt
+                # counter is where that has always been recorded. Leaving it out
+                # would make a batch that failed twice look as cheap as one that
+                # answered first time.
+                if (failure in RETRYABLE and attempt < self._max_attempts - 1
+                        and self._telemetry is not None):
+                    self._telemetry.repeated_attempts += 1
                 if failure not in RETRYABLE or attempt == self._max_attempts - 1:
                     record.failure, record.detail = failure, detail
                     return record
@@ -203,6 +210,8 @@ class ExtractSourceBatchTool:
                     record.model_payload = payload
                     record.failure, record.detail = BAD_SHAPE, reading.batch_error
                     return record
+                if self._telemetry is not None:
+                    self._telemetry.repeated_attempts += 1
                 record.attempts[-1].failure = BAD_SHAPE
                 record.attempts[-1].detail = reading.batch_error
                 continue

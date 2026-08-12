@@ -25,6 +25,8 @@ DOC = Path("docs/acceptance/gate_versions.md")
 #: Changing one of these values is a decision, not a fix: it means a file that
 #: was supposed to be immutable has moved.
 PINNED = {
+    "configs/run_profiles/phase8_batch.json": "17C65B8C07A45898",
+    "eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_profile.json": "8F13C10443B8BEDE",
     "configs/gates/cross_domain_v1.json": "AE182D0097A67A18",
     "configs/gates/cross_domain_v2.json": "E29CF4F803BA0F8A",
     "configs/aggregation/safe_sum_v1.json": "1C99DCE79E4FDD3A",
@@ -53,7 +55,7 @@ def test_the_governance_document_publishes_the_hash_the_file_actually_has(
         path, expected):
     """The failure that started this: a pin nobody ever compared to a file."""
     text = (repo_root() / DOC).read_text(encoding="utf-8")
-    rows = dict(re.findall(r"`(configs/\S+?\.json)`\s*\|\s*`([0-9A-F]{16})`", text))
+    rows = dict(re.findall(r"`(\S+?\.json)`\s*\|\s*`([0-9A-F]{16})`", text))
     assert path in rows, f"{path} is frozen but {DOC} does not publish its hash"
     assert rows[path] == expected
 
@@ -61,8 +63,14 @@ def test_the_governance_document_publishes_the_hash_the_file_actually_has(
 def test_contract_files_are_pinned_to_lf_so_the_hashes_are_reproducible():
     """A Windows checkout renormalises to CRLF and changes every hash."""
     attributes = (repo_root() / ".gitattributes").read_text(encoding="utf-8")
-    for directory in {Path(p).parent.as_posix() for p in PINNED}:
-        assert f"{directory}/*.json text eol=lf" in attributes, directory
+    for path in PINNED:
+        # Either the directory is covered, or the file is named. Naming one file
+        # is not a lesser rule: a blanket pattern over `configs/run_profiles` or
+        # `eval/benchmarks` would renormalise a file a frozen benchmark pins,
+        # which is how one was made unrunnable already.
+        directory = Path(path).parent.as_posix()
+        assert (f"{directory}/*.json text eol=lf" in attributes
+                or f"{path} text eol=lf" in attributes), path
     for path in PINNED:
         assert b"\r\n" not in (repo_root() / path).read_bytes(), path
 

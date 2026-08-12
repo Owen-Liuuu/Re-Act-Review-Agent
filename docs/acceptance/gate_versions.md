@@ -47,11 +47,34 @@ file and bytes, so readiness computes the policy hash itself rather than
 accepting one from its caller; handed the string "not-a-hash", the previous
 version reported a registered, release-eligible run.
 
-| v3 | `configs/aggregation/registry_v3.json` | `7B439CBDA99D54D4` | current |
+| v3 | `configs/aggregation/registry_v3.json` | `7B439CBDA99D54D4` | superseded |
 | 1.6.0 | `configs/aggregation/evaluators/safe_aggregation_1.6.0.json` | `E2514A771F246A1C` | superseded |
 
 | v4 | `configs/aggregation/registry_v4.json` | `83AB58639A50D8EE` | current |
 | 1.6.1 | `configs/aggregation/evaluators/safe_aggregation_1.6.1.json` | `A49941F1458D43B4` | current evaluator |
+
+| — | `configs/run_profiles/phase8_batch.json` | `17C65B8C07A45898` | the contract that selects the batch route |
+| — | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_profile.json` | `8F13C10443B8BEDE` | the benchmark that runs it |
+
+## Erratum: what registry_v4 says it changed
+
+`registry_v4.json` and `safe_aggregation_1.6.1.json` describe the D1-5 boundary
+change as "the batch schemas, the evidence schemas and the result mapping". The
+third is wrong and one is missing. The files inside the evaluator boundary that
+actually changed between `f2adc5e` and `ddbeafc` are:
+
+    src/react_review/schemas/batch.py
+    src/react_review/schemas/evidence.py
+    src/react_review/tools/aggregation_identity.py
+
+`tools/batch_result.py` did not change; `aggregation_identity.py` did, because
+its registry pointer moved to `registry_v4`. Neither file is edited to correct
+this — that is the rule these documents exist to keep — and neither the hash nor
+the 1.6.1 decision is affected: the behaviour comparison is computed from the
+code, not from the prose, and reported 26 of 26 identical either way.
+
+An earlier draft of this table also left `registry_v3` marked current beside
+`registry_v4`. Only `registry_v4` is current.
 
 ## A version is decided by measurement, not by reading the diff
 

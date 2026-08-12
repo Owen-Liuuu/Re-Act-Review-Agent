@@ -296,7 +296,11 @@ def main(argv: list[str] | None = None) -> None:
                   if run_contract is not None and run_contract.scope_enabled else {})
     comparator = CompareValuesTool(
         tol,
-        semantic=(SemanticCompareTool(backend, profile=semantic_profile)
+        # The SEMANTIC wrapper, not the extraction one. Both wrap the same
+        # backend; passing the wrong label put every semantic request, token and
+        # second into the single-extraction bucket and left the semantic stage
+        # empty, which is worse than no per-stage numbers at all.
+        semantic=(SemanticCompareTool(semantic_backend, profile=semantic_profile)
                   if args.semantic == "on" else None),
         semantic_mode=args.semantic, semantic_cache=cache,
         min_confidence=tol.semantic_min_confidence,
