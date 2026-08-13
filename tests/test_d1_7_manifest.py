@@ -92,14 +92,34 @@ def test_retries_are_reported_at_the_level_they_happened():
         "7 logical complete() calls is not a claim about HTTP requests")
 
 
-def test_the_gate_verdict_is_recorded_as_not_evaluable():
+def test_both_gate_verdicts_are_computed_by_the_classifier():
     """v1 defines wrong_released as a wrong value released WITHOUT review, and
     MA015 was review_required. The FAIL reported on the day came from an ad-hoc
     classifier that contradicted the gate's own text."""
     gate = _body()["gate"]
-    assert gate["gate_v1_verdict"].startswith("NOT EVALUABLE")
-    assert "review_required=True" in gate["why"]
-    assert "capability floor" in gate["v1_second_defect"]
+    assert gate["classifier"] == "src/react_review/acceptance_transitions.py"
+    assert gate["gate_v1_verdict"] == "NOT_EVALUABLE"
+    assert "MA015" in gate["gate_v1_reason"]
+    assert "review_required=True" in gate["gate_v1_note"]
+    assert "capability floor" in gate["gate_v1_second_defect"]
+
+
+def test_the_v2_verdict_cannot_be_read_as_the_route_working():
+    """Its floor is unset, so the strongest thing it can say is that nothing
+    forbidden happened."""
+    gate = _body()["gate"]
+    assert gate["gate_v2_verdict"] == "PASS_PROHIBITIONS_ONLY"
+    assert gate["gate_v2_capability_judged"] is False
+    assert gate["gate_v2_states"]["wrong_released"] == 0
+    assert gate["gate_v2_states"]["wrong_but_flagged"] == 1
+
+
+def test_applying_v2_to_this_run_is_labelled_post_hoc():
+    """The gate was changed after the run by someone who knew the verdict it
+    would change. That has to be on the artifact, not only in a commit."""
+    note = _body()["gate"]["gate_v2_note"]
+    assert "POST-HOC REANALYSIS" in note
+    assert "exactly 8" in note
 
 
 def test_no_secret_reaches_the_manifest():

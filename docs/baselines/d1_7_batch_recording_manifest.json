@@ -3,7 +3,7 @@
   "supersedes": "d1_7_batch_recording_v1 (hand-written; see corrections)",
   "recorded_on": "2026-08-13",
   "what": "The one live recording of the targeted_v5_batch route. The cache and the result artifacts live under output/, which is gitignored, so this manifest is what enters the repository — and it hashes them, so a copy obtained elsewhere can be shown to be the same one.",
-  "commit": "e77d5aaa0e3e8ab780d1c73d6d796572bd1c73cd",
+  "commit": "e96d0b646794d9a87ad553a09378cc663b844fe9",
   "model": {
     "provider": "glm",
     "model_id": "glm-4.5-flash",
@@ -25,6 +25,7 @@
   "command": "python eval/run_full_accuracy.py --config configs/config.local.yaml --benchmark eval/benchmarks/melanoma_checkpoint_2017 --benchmark-profile phase8_batch_v3_profile.json --extraction record --extraction-cache output/baselines/melanoma_checkpoint_2017/phase8_batch_extraction_cache.json --semantic off --out output/baselines/melanoma_checkpoint_2017/d1_7_record.json --html output/baselines/melanoma_checkpoint_2017/d1_7_record.html",
   "contracts": {
     "run_profile": "AD9F2F180F718BEB55C1FF7220E0DD20D56431EB0404656030673CC3FC8F9104",
+    "feature_gate_v2": "1221EC40F789F04C030303064661A0B01C4C0BE0339133842772A3378932BA53",
     "benchmark_profile": "779E9F1C97D5B9A95638E4F663C34A932CD58396D83BEF1D2E67E126B9D9A7AE",
     "prompt_contract": "1A02A44DDE55A7975E4D7A0ABE362C62F1267CA425715F81E8C86709CC42B70D",
     "excerpt_gold": "9F67F418E245E6563A5CAF8ACF726A61C9F56DB8995793578F6F957A86A2052A",
@@ -172,9 +173,22 @@
     "excerpt_coverage_covered_batches": 7
   },
   "gate": {
-    "gate_v1_verdict": "NOT EVALUABLE (protocol error)",
-    "why": "v1 defines `wrong_released` as a wrong value released WITHOUT review. MA015 carries review_required=True, so it does not meet that definition and v1's state space has no term for what it is. The FAIL reported on the day was computed by an ad-hoc classifier that contradicted the gate's own text, and no executable v1 classifier exists in the repository. The earlier FAIL stands as a record of what was reported, not as a verdict of the frozen gate.",
-    "v1_second_defect": "v1 has no capability floor: a system that refused every row would satisfy every hard condition and pass."
+    "classifier": "src/react_review/acceptance_transitions.py",
+    "gate_v1_verdict": "NOT_EVALUABLE",
+    "gate_v1_reason": "the gate's state space does not express what happened: MA015: correct -> wrong_but_flagged. Judging it anyway would report a verdict the gate never defined",
+    "gate_v1_note": "v1 defines `wrong_released` as a wrong value released WITHOUT review, and MA015 carries review_required=True — wrong AND escalated, which v1 has no term for. The FAIL reported on the day was computed by an ad-hoc classifier that contradicted the gate's own text; no executable v1 classifier existed. That FAIL stands as a record of what was reported, not as a verdict v1 ever issued.",
+    "gate_v1_second_defect": "v1 has no capability floor. Every one of its hard conditions is a prohibition, so a system that refused every row would satisfy all of them and pass.",
+    "gate_v2_verdict": "PASS_PROHIBITIONS_ONLY",
+    "gate_v2_capability_judged": false,
+    "gate_v2_states": {
+      "rows": 15,
+      "correct": 8,
+      "refused": 6,
+      "wrong_but_flagged": 1,
+      "wrong_released": 0,
+      "baseline_correct": 10
+    },
+    "gate_v2_note": "POST-HOC REANALYSIS. v2 was written after this run by an author who knew which verdict it would change; it is published because v1 could not judge the run at all, not because v1's verdict was inconvenient. Its capability floor is deliberately UNSET — a draft set 0.8 and this run keeps exactly 8 of the baseline's 10 correct rows — so the strongest verdict available is PASS (PROHIBITIONS ONLY), which is not a claim that the route works."
   },
   "replay_check": {
     "result": "identical",

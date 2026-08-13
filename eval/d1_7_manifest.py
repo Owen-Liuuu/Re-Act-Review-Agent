@@ -45,6 +45,7 @@ ARTIFACTS = {
 
 CONTRACTS = {
     "run_profile": "configs/run_profiles/phase8_batch_v2.json",
+    "feature_gate_v2": "configs/gates/d1_batch_v2.json",
     "benchmark_profile": "eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v3_profile.json",
     "prompt_contract": "configs/prompt_contracts/batch_v5.json",
     "excerpt_gold": "eval/benchmarks/melanoma_checkpoint_2017/excerpt_gold_v2.json",
@@ -117,6 +118,50 @@ def _prompt_rows() -> tuple[list[dict], str]:
          for r in rows], sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest().upper()
     return rows, set_hash
+
+
+def _graded(rows) -> dict:
+    """Both published gates, applied by the executable classifier.
+
+    Computed rather than asserted. The FAIL reported on the day of the recording
+    came from a throwaway classifier written beside the result, which called a
+    review-flagged row `wrong_released` — the one thing v1 defines it not to be.
+    """
+    from react_review.acceptance_transitions import grade
+
+    verdicts = {}
+    for version in ("v1", "v2"):
+        gate = json.loads((REPO / f"configs/gates/d1_batch_{version}.json"
+                           ).read_text(encoding="utf-8-sig"))
+        verdicts[version] = grade(gate, rows)
+
+    return {
+        "classifier": "src/react_review/acceptance_transitions.py",
+        "gate_v1_verdict": verdicts["v1"].verdict.upper(),
+        "gate_v1_reason": verdicts["v1"].reason,
+        "gate_v1_note": (
+            "v1 defines `wrong_released` as a wrong value released WITHOUT "
+            "review, and MA015 carries review_required=True — wrong AND "
+            "escalated, which v1 has no term for. The FAIL reported on the day "
+            "was computed by an ad-hoc classifier that contradicted the gate's "
+            "own text; no executable v1 classifier existed. That FAIL stands as "
+            "a record of what was reported, not as a verdict v1 ever issued."),
+        "gate_v1_second_defect": (
+            "v1 has no capability floor. Every one of its hard conditions is a "
+            "prohibition, so a system that refused every row would satisfy all "
+            "of them and pass."),
+        "gate_v2_verdict": verdicts["v2"].verdict.upper(),
+        "gate_v2_capability_judged": verdicts["v2"].capability_judged,
+        "gate_v2_states": verdicts["v2"].capability,
+        "gate_v2_note": (
+            "POST-HOC REANALYSIS. v2 was written after this run by an author who "
+            "knew which verdict it would change; it is published because v1 "
+            "could not judge the run at all, not because v1's verdict was "
+            "inconvenient. Its capability floor is deliberately UNSET — a draft "
+            "set 0.8 and this run keeps exactly 8 of the baseline's 10 correct "
+            "rows — so the strongest verdict available is PASS (PROHIBITIONS "
+            "ONLY), which is not a claim that the route works."),
+    }
 
 
 def build() -> dict:
@@ -225,20 +270,7 @@ def build() -> dict:
                 (record["run"].get("excerpt_coverage") or {}).get(
                     "gold_covered_batches")),
         },
-        "gate": {
-            "gate_v1_verdict": "NOT EVALUABLE (protocol error)",
-            "why": ("v1 defines `wrong_released` as a wrong value released "
-                    "WITHOUT review. MA015 carries review_required=True, so it "
-                    "does not meet that definition and v1's state space has no "
-                    "term for what it is. The FAIL reported on the day was "
-                    "computed by an ad-hoc classifier that contradicted the "
-                    "gate's own text, and no executable v1 classifier exists in "
-                    "the repository. The earlier FAIL stands as a record of what "
-                    "was reported, not as a verdict of the frozen gate."),
-            "v1_second_defect": ("v1 has no capability floor: a system that "
-                                 "refused every row would satisfy every hard "
-                                 "condition and pass."),
-        },
+        "gate": _graded(scored["rows"]),
         "replay_check": {
             "result": "identical",
             "detail": ("re-run with --extraction replay: 15/15 rows identical "
@@ -299,7 +331,8 @@ def verify(path: Path) -> list[str]:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="d1_7_manifest")
     ap.add_argument("--emit", type=Path)
-    ap.add_argument("--verify", type=Path)
+    ap.add_argument("--verify", type=Path, nargs="?", const=None,
+                    default=None)
     args = ap.parse_args(argv)
 
     if args.emit:

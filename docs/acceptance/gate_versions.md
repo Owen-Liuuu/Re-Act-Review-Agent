@@ -66,7 +66,41 @@ version reported a registered, release-eligible run.
 | v2 | `eval/benchmarks/melanoma_checkpoint_2017/excerpt_gold_v2.json` | `9F67F418E245E656` | WHERE the evidence is, keyed on the batches the run makes |
 | — | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v3_profile.json` | `779E9F1C97D5B9A9` | the benchmark that judges against gold v2 |
 | v1 | `eval/benchmarks/melanoma_checkpoint_2017/d1_7_expected_plan.json` | `72AD64CBE18447AD` | what a D1-7 recording is expected to ask for |
-| v1 | `configs/gates/d1_batch_v1.json` | `B624742F31536742` | what the batch route has to achieve; **provisional** |
+| v1 | `configs/gates/d1_batch_v1.json` | `B624742F31536742` | superseded; **could not judge the run it was written for** |
+| v2 | `configs/gates/d1_batch_v2.json` | `1221EC40F789F04C` | current; **provisional**, capability floor deliberately UNSET |
+
+## d1_batch v1 → v2: a gate that could not express what happened
+
+v1 defines `wrong_released` as a wrong value released WITHOUT review. The D1-7
+recording produced MA015: predicted `match`, expected `mismatch`, and
+`review_required=True` — wrong AND escalated, which v1 has no term for.
+
+The FAIL reported on the day was not v1's verdict. It came from a throwaway
+classifier written beside the result, which called a review-flagged row
+`wrong_released` in direct contradiction of the gate's own text, and no
+executable v1 classifier existed in the repository at all. The correct record is
+**NOT EVALUABLE (protocol error)**, and the earlier FAIL stands only as a record
+of what was reported.
+
+v2 adds the fourth state, an executable classifier
+(`src/react_review/acceptance_transitions.py`) so a verdict is computed rather
+than argued, and the mechanism for a capability floor — because every one of
+v1's hard conditions is a prohibition, and a system that refused every row
+satisfied all of them.
+
+**The floor's VALUE is deliberately unset.** A draft of v2 set it at 0.8, and
+the recording keeps 8 of the baseline's 10 correct rows — exactly 0.8. That
+number was chosen after seeing the result and would have been a threshold fitted
+to pass it, which is the failure this whole apparatus exists to prevent. So the
+mechanism ships and the value does not; like the 0.70 recall bar in
+`cross_domain`, it is blocked on a human stating what capability loss is
+tolerable. Until then a run can only reach `PASS (PROHIBITIONS ONLY)`, which must
+never be read as "the route works".
+
+Applying v2 to the D1-7 recording is a **post-hoc reanalysis** — the gate was
+changed after the run, by an author who knew the verdict it would change. It is
+published because v1 could not judge the run at all, not because v1's verdict
+was inconvenient.
 
 ## excerpt_gold v1 → v2: a key that described a reading nobody makes
 

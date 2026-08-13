@@ -66,6 +66,7 @@ PINNED = {
     "eval/benchmarks/melanoma_checkpoint_2017/d1_7_expected_plan.json":
         "72AD64CBE18447AD",
     "configs/gates/d1_batch_v1.json": "B624742F31536742",
+    "configs/gates/d1_batch_v2.json": "1221EC40F789F04C",
 }
 
 
