@@ -375,3 +375,24 @@ Unlike the aggregation evaluator, a mismatch here does not raise at startup. The
 comparator runs in every audit, including ones that never aggregate, so a
 development checkout stays runnable and simply may not publish: the refusal is
 carried on the result instead of thrown.
+| v3 | `configs/gates/d1_batch_v3.json` | `BF991151137EE376` | current; **retrospective diagnostic** |
+
+## d1_batch v2 → v3: a gate that contradicted itself about its own status
+
+v2 kept v1's sentence — "fixed before the recording exists" — which was true of
+v1 and false of v2: v2 was written after the D1-7 recording by an author who
+already knew which verdict its new state would change. It also carried a
+`retrospective_note` saying exactly that. A file that contradicts itself about
+whether it is a pre-registration is worse than one that overclaims plainly,
+because a reader can only tell which half to believe by knowing the history.
+
+v3 says it in the file's own voice: `status` is "provisional; RETROSPECTIVE
+DIAGNOSTIC", and a `what_this_gate_is` block states that it is not
+pre-registered, that a pass means no prohibition was broken on a gate written
+with the answer visible, and what a real pre-registration would require instead.
+
+**No verdict moves because of this version.** The hard conditions, the
+transitions, the baseline rows, the unset capability floor and the
+reported-never-gated list are byte-identical to v2 — checked when v3 was
+generated. v2 is not edited: it is published, and a published file that changes
+retroactively describes runs it did not govern.

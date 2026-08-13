@@ -28,6 +28,9 @@ from react_review.retrieval.local_pdf import _pdf_text  # noqa: E402
 from react_review.tools.extraction_cache import ExtractionCache  # noqa: E402
 
 REPO = repo_root()
+#: Line endings are normalised before hashing a blob out of git, so a
+#: recording contract keeps one hash whichever platform checked it out.
+CRLF, LF = b'\r\n', b'\n'
 BENCH = REPO / "eval/benchmarks/melanoma_checkpoint_2017"
 RUNS = REPO / "output/baselines/melanoma_checkpoint_2017"
 CACHE = RUNS / "phase8_batch_extraction_cache.json"
@@ -43,14 +46,27 @@ ARTIFACTS = {
     "scored": RUNS / "d1_7_scored.json",
 }
 
-CONTRACTS = {
+#: The commit the LIVE RECORDING ran under, and the contracts that were in
+#: force THEN. Not the contracts in force now: a gate published after a run did
+#: not govern it, and listing it among the recording's contracts reads as though
+#: it had.
+RECORDING_COMMIT = "aafa20a"
+RECORDING_CONTRACTS = {
     "run_profile": "configs/run_profiles/phase8_batch_v2.json",
-    "feature_gate_v2": "configs/gates/d1_batch_v2.json",
     "benchmark_profile": "eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v3_profile.json",
     "prompt_contract": "configs/prompt_contracts/batch_v5.json",
     "excerpt_gold": "eval/benchmarks/melanoma_checkpoint_2017/excerpt_gold_v2.json",
     "expected_plan": "eval/benchmarks/melanoma_checkpoint_2017/d1_7_expected_plan.json",
     "feature_gate": "configs/gates/d1_batch_v1.json",
+}
+
+#: The contracts a REANALYSIS runs under. Separate, because they are.
+REANALYSIS_CONTRACTS = {
+    "run_profile": "configs/run_profiles/phase8_batch_v4.json",
+    "benchmark_profile": "eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v5_profile.json",
+    "feature_gate": "configs/gates/d1_batch_v3.json",
+    "aggregation_evaluator": "configs/aggregation/evaluators/safe_aggregation_1.8.0.json",
+    "compare_evaluator": "configs/compare/evaluators/deterministic_compare_1.0.0.json",
 }
 
 COMMAND = (
@@ -61,6 +77,19 @@ COMMAND = (
     "phase8_batch_extraction_cache.json --semantic off "
     "--out output/baselines/melanoma_checkpoint_2017/d1_7_record.json "
     "--html output/baselines/melanoma_checkpoint_2017/d1_7_record.html")
+
+
+def _at_commit(commit: str, path: str) -> str:
+    """A file's hash AS IT WAS at a commit, so the recording's contracts are the
+    ones it actually ran under."""
+    import subprocess
+
+    blob = subprocess.run(["git", "show", f"{commit}:{path}"], cwd=REPO,
+                          capture_output=True)
+    if blob.returncode != 0:
+        return ""
+    normalised = blob.stdout.replace(CRLF, LF)
+    return hashlib.sha256(normalised).hexdigest().upper()
 
 
 def _digest(path: Path) -> str:
@@ -178,16 +207,48 @@ def _reanalyses() -> list[dict]:
     """
     from react_review.acceptance_transitions import grade
 
-    path = RUNS / "d1_7_3_scored.json"
+    entries = []
+    for name, gate_version, note in (
+        ("d1_7_3_component_verification", "d1_batch_v2",
+         "generated BEFORE its own freeze commit, so it carries git_commit '' "
+         "and status unregistered. It is kept as the development reading that "
+         "located the defect, and it is NOT release-eligible."),
+        ("d1_7_5_component_and_identity", "d1_batch_v3",
+         "run on the frozen commit: aggregation 1.8.0 and comparator 1.0.0 both "
+         "registered, both release-eligible, commit matching."),
+    ):
+        entry = _one_reanalysis(name, gate_version, note)
+        if entry is not None:
+            entries.append(entry)
+    return entries
+
+
+def _one_reanalysis(name: str, gate_version: str, note: str):
+    from react_review.acceptance_transitions import grade
+
+    path = RUNS / f"{name.split('_component')[0]}_scored.json"
     if not path.is_file():
-        return []
+        return None
     scored = json.loads(path.read_text(encoding="utf-8-sig"))
-    gate = json.loads((REPO / "configs/gates/d1_batch_v2.json"
+    gate = json.loads((REPO / f"configs/gates/{gate_version}.json"
                        ).read_text(encoding="utf-8-sig"))
-    result = grade(gate, scored["rows"])
+    # The whole gate, including the prohibitions it declares. Grading on rows
+    # alone read the transition table and nothing else, and answered
+    # PASS_PROHIBITIONS_ONLY while no prohibition had been consulted.
+    result = grade(gate, scored["rows"], artifact=scored)
     telemetry = scored["run"].get("telemetry") or {}
-    return [{
-        "id": "d1_7_3_component_verification",
+    runtime = scored["run"].get("aggregation_runtime") or {}
+    compare = scored["run"].get("compare_runtime") or {}
+    return {
+        "id": name,
+        "gate": gate_version,
+        "status_note": note,
+        "aggregation_runtime": {k: runtime.get(k) for k in
+                                ("evaluator_version", "status", "release_eligible",
+                                 "git_commit_matches_evaluator")},
+        "compare_runtime": {k: compare.get(k) for k in
+                            ("compare_version", "status", "release_eligible")},
+        "unmet_hard_conditions": list(result.unmet_hard_conditions),
         "what": ("The same recording, replayed under evaluator 1.7.0, which "
                  "verifies each reading's numeric components against its own "
                  "quote and carries the survivors to the result. No model was "
@@ -200,13 +261,13 @@ def _reanalyses() -> list[dict]:
         "label_accuracy_before_fix": 8 / 15,
         "baseline_label_accuracy": 10 / 15,
         "silent_releases": scored["metrics"]["safety"]["silent_release_count"],
-        "gate_v2_verdict": result.verdict.upper(),
-        "gate_v2_states": result.capability,
+        "gate_verdict": result.verdict.upper(),
+        "gate_states": result.capability,
         "note": ("MA015 moves from `match` to `mismatch` — the baseline's own "
                  "verdict — because the source's 99.5% confidence level is now "
                  "compared against the review's 95%. The components were in the "
                  "response all along; nothing carried them to the result."),
-    }]
+    }
 
 
 def build() -> dict:
@@ -230,8 +291,28 @@ def build() -> dict:
                  "gitignored, so this manifest is what enters the repository — "
                  "and it hashes them, so a copy obtained elsewhere can be shown "
                  "to be the same one."),
-        "commit": subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True,
-                                 text=True, cwd=REPO).stdout.strip(),
+        # Three identities, never one. The recording, the manifest that
+        # describes it and the reanalyses that re-read it happened at three
+        # different commits under three different sets of contracts, and one
+        # `commit` field made them look like one event.
+        "recording": {
+            "code_commit": subprocess.run(
+                ["git", "rev-parse", RECORDING_COMMIT], capture_output=True,
+                text=True, cwd=REPO).stdout.strip(),
+            "what": "the one live run; the only step that asked a model",
+            "contracts_in_force_then": {
+                name: _at_commit(RECORDING_COMMIT, path)
+                for name, path in RECORDING_CONTRACTS.items()},
+            "note": ("d1_batch_v2 and v3, evaluator 1.7.0 and 1.8.0 and the "
+                     "comparator identity did not exist yet and are NOT listed "
+                     "here. They govern the reanalyses below."),
+        },
+        "manifest_generation": {
+            "code_commit": subprocess.run(
+                ["git", "rev-parse", "HEAD"], capture_output=True, text=True,
+                cwd=REPO).stdout.strip(),
+            "generator": "eval/d1_7_manifest.py",
+        },
         "model": {
             "provider": plan["model_settings"].get("provider"),
             "model_id": plan["model_id"],
@@ -240,9 +321,9 @@ def build() -> dict:
             "note": "no api key is read, recorded or hashed here",
         },
         "command": COMMAND,
-        "contracts": {name: sha256_file(REPO / path)
-                      for name, path in CONTRACTS.items()},
-        "evaluator": "safe_aggregation 1.6.2 under safe_sum_v5 (the evaluator this recording ran under; 1.7.0 supersedes it)",
+        "reanalysis_contracts": {name: sha256_file(REPO / path)
+                                 for name, path in REANALYSIS_CONTRACTS.items()
+                                 if (REPO / path).is_file()},
         "documents": {
             "larkin_2015": _document_sha256(
                 _pdf_text(BENCH / "raw/sources/larkin_2015.pdf")),
@@ -262,6 +343,24 @@ def build() -> dict:
                                "conclusion here is reproducible by the author "
                                "alone."),
             "location": "",
+            "what_would_close_it": {
+                "option_a": ("an immutable location the reviewer can read — a "
+                             "release asset, an archive DOI, anything whose "
+                             "content cannot change under its own address. Put "
+                             "it in `location` and the verifier stops "
+                             "objecting."),
+                "option_b": ("commit a sanitised recording. The cache holds the "
+                             "model's decoded answers about a copyrighted "
+                             "paper, including verbatim quotes from it. The "
+                             "publishing policy allows an answer key to carry "
+                             "SHORT attributed snippets and keeps raw model "
+                             "responses out of the repository, so this needs a "
+                             "decision about what 'sanitised' means before it "
+                             "can be done — it is not a mechanical step."),
+                "not_an_option": ("declaring it closed. The verifier fails on an "
+                                  "empty location on purpose, and a test asserts "
+                                  "that the failure is still there."),
+            },
         },
         "cache": {
             "path": CACHE.relative_to(REPO).as_posix(),
@@ -355,9 +454,16 @@ def verify(path: Path) -> list[str]:
                             "sha256 is 64, and a truncated one still looks like "
                             "a hash")
 
-    for name, digest in (body.get("contracts") or {}).items():
-        if len(digest) != 64:
-            problems.append(f"contracts.{name} is not a full sha256")
+    for section in ("recording", "reanalysis_contracts"):
+        node = body.get(section) or {}
+        digests = (node.get("contracts_in_force_then") if section == "recording"
+                   else node)
+        for name, digest in (digests or {}).items():
+            if len(digest) != 64:
+                problems.append(f"{section}.{name} is not a full sha256")
+    if not (body.get("recording") or {}).get("code_commit"):
+        problems.append("the manifest does not say which commit the recording "
+                        "ran under, so its contracts cannot be checked")
 
     for row in body.get("prompts") or ():
         for field in ("question_id", "prompt_sha256", "attempt", "cache_key"):

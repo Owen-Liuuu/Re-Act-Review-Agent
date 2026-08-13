@@ -51,7 +51,9 @@ def test_the_unreachable_recording_is_declared_and_not_quietly_dropped():
 def test_every_hash_is_a_whole_sha256():
     """A truncated hash still looks like a hash, which is why it survived."""
     body = _body()
-    for name, digest in body["contracts"].items():
+    for name, digest in body["recording"]["contracts_in_force_then"].items():
+        assert len(digest) == 64, name
+    for name, digest in body["reanalysis_contracts"].items():
         assert len(digest) == 64, name
     assert len(body["cache"]["sha256_after"]) == 64
     assert len(body["cache"]["seeded_from_sha256"]) == 64
@@ -106,14 +108,36 @@ def test_both_gate_verdicts_are_computed_by_the_classifier():
     assert "capability floor" in gate["gate_v1_second_defect"]
 
 
-def test_the_v2_verdict_cannot_be_read_as_the_route_working():
-    """Its floor is unset, so the strongest thing it can say is that nothing
-    forbidden happened."""
-    gate = _body()["gate"]
-    assert gate["gate_v2_verdict"] == "PASS_PROHIBITIONS_ONLY"
-    assert gate["gate_v2_capability_judged"] is False
-    assert gate["gate_v2_states"]["wrong_released"] == 0
-    assert gate["gate_v2_states"]["wrong_but_flagged"] == 1
+def test_the_three_identities_are_kept_apart():
+    """The recording, the manifest describing it and the reanalyses re-reading
+    it happened at three commits under three sets of contracts. One `commit`
+    field made them look like one event, and listed a gate published after the
+    run among the run's own contracts."""
+    body = _body()
+    assert body["recording"]["code_commit"].startswith("aafa20a")
+    assert body["manifest_generation"]["code_commit"] !=         body["recording"]["code_commit"]
+    # The gates and evaluators that did not exist yet are not listed as the
+    # recording's.
+    named = set(body["recording"]["contracts_in_force_then"])
+    assert "aggregation_evaluator" not in named
+    assert body["recording"]["contracts_in_force_then"]["feature_gate"] !=         body["reanalysis_contracts"]["feature_gate"]
+
+
+def test_each_reanalysis_carries_its_own_gate_and_release_status():
+    """A development reading and a release-eligible one must not be one row."""
+    entries = {r["id"]: r for r in _body()["reanalyses"]}
+    early = entries["d1_7_3_component_verification"]
+    assert early["aggregation_runtime"]["release_eligible"] is False
+    assert early["gate_verdict"] == "FAIL"
+    assert any("identity_wrong_released" in u
+               for u in early["unmet_hard_conditions"])
+
+    frozen = entries["d1_7_5_component_and_identity"]
+    assert frozen["aggregation_runtime"]["release_eligible"] is True
+    assert frozen["aggregation_runtime"]["git_commit_matches_evaluator"] is True
+    assert frozen["compare_runtime"]["release_eligible"] is True
+    assert frozen["unmet_hard_conditions"] == []
+    assert frozen["gate"] == "d1_batch_v3"
 
 
 def test_applying_v2_to_this_run_is_labelled_post_hoc():

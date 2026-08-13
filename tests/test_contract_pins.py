@@ -82,6 +82,10 @@ PINNED = {
         "19A412345ECAD1EA",
     "eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v5_profile.json":
         "B7F5EE9E1FC95D4F",
+    # Identical judging content to v2; it changes only what the gate says about
+    # ITSELF, because v2 inherited v1's "fixed before the recording exists" and
+    # that was false of v2.
+    "configs/gates/d1_batch_v3.json": "BF991151137EE376",
 }
 
 
