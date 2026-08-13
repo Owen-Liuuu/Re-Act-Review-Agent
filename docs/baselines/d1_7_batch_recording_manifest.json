@@ -1,8 +1,9 @@
 {
-  "manifest_id": "d1_7_batch_recording_v1",
+  "manifest_id": "d1_7_batch_recording_v2",
+  "supersedes": "d1_7_batch_recording_v1 (hand-written; see corrections)",
   "recorded_on": "2026-08-13",
-  "what": "The one live recording of the targeted_v5_batch route. The cache lives under output/, which is gitignored, so this is the artifact that enters the repository.",
-  "commit": "aafa20a3952278c46ca274612b981e7f04db7437",
+  "what": "The one live recording of the targeted_v5_batch route. The cache and the result artifacts live under output/, which is gitignored, so this manifest is what enters the repository — and it hashes them, so a copy obtained elsewhere can be shown to be the same one.",
+  "commit": "e77d5aaa0e3e8ab780d1c73d6d796572bd1c73cd",
   "model": {
     "provider": "glm",
     "model_id": "glm-4.5-flash",
@@ -28,107 +29,159 @@
     "prompt_contract": "1A02A44DDE55A7975E4D7A0ABE362C62F1267CA425715F81E8C86709CC42B70D",
     "excerpt_gold": "9F67F418E245E6563A5CAF8ACF726A61C9F56DB8995793578F6F957A86A2052A",
     "expected_plan": "72AD64CBE18447AD6A130A30BC0F44151F697F5EA1AF09C097B2F9F5DAB5B3A9",
-    "feature_gate": "B624742F31536742B47506444B6499D90E72E13E40B1C07056E6C50DC112CF47",
-    "evaluator": "safe_aggregation 1.6.2 under safe_sum_v5"
+    "feature_gate": "B624742F31536742B47506444B6499D90E72E13E40B1C07056E6C50DC112CF47"
   },
+  "evaluator": "safe_aggregation 1.6.2 under safe_sum_v5",
   "documents": {
     "larkin_2015": "F1A499768E5CEC3A8D637DF40C02D9BB9E4494AADA6AC5DF7111D496F07F02E8"
   },
+  "artifacts": {
+    "preflight": {
+      "path": "output/baselines/melanoma_checkpoint_2017/d1_7_preflight.json",
+      "sha256": "FDEA2C23890E3FEC1B13F6F68020672F0A39A13D8F70707646AFFEFC94A7495F"
+    },
+    "record": {
+      "path": "output/baselines/melanoma_checkpoint_2017/d1_7_record.json",
+      "sha256": "E6125CFE7771017BDE23AF5E639DB1FF0B5A00227AC14A3EE02BB307626EA58A"
+    },
+    "replay": {
+      "path": "output/baselines/melanoma_checkpoint_2017/d1_7_replay.json",
+      "sha256": "A640A82AFDB63AB0C7C727BA8D8048912D88182889A980C6BB8FC0458ED07C20"
+    },
+    "scored": {
+      "path": "output/baselines/melanoma_checkpoint_2017/d1_7_scored.json",
+      "sha256": "39E34A498E941E203EB6FAE0A25B13CF2638570905089978BAE4E4217F74EC2F"
+    }
+  },
+  "artifact_storage": {
+    "status": "LOCAL ONLY — not yet retrievable by anyone else",
+    "why_it_matters": "These hashes prove that a file with this content existed on the machine that ran it. They do not let a reader obtain the recording and replay it. Until an immutable location is agreed, or a sanitised recording is committed, every conclusion here is reproducible by the author alone.",
+    "location": ""
+  },
   "cache": {
     "path": "output/baselines/melanoma_checkpoint_2017/phase8_batch_extraction_cache.json",
-    "sha256_before_seeded": "D3431D41EE4538CA48D218E8D9850F9E",
     "sha256_after": "CF5C4617F3A32751821D0B035B2289F6EF03A30E1A096161B8E2BF735A853889",
-    "entries_before": 6,
     "entries_after": 13,
     "seeded_from": "output/baselines/melanoma_checkpoint_2017/phase7_extraction_cache.json",
-    "seeded_from_sha256": "E0A00A5CC6F21EE3E9BEB8DA2B0B0DC7"
+    "seeded_from_sha256": "E0A00A5CC6F21EE3E9BEB8DA2B0B0DC74C4D6C7DAA79F67FC9E47A5DBA7D3D04",
+    "entries_before": 6,
+    "note": "`sha256_before_seeded` is not restated: the seeded file was replaced in place by the recording. What is checkable now is the source it was seeded from, the entry count before, and the file as it stands."
   },
   "prompts": [
     {
       "question_id": "0329EA7FDF9B07CD324761B2F1A3A2D6BDB289EA2D623BE185D8AB1A46A5BB71",
-      "attempt": 0,
-      "cache_key": "6dbca8b5491b2ef5b4d1e58edfda14432cedf57e781e8a82a6355f3af2b8b1e5",
       "claim_ids": [
         "MA001"
-      ]
+      ],
+      "attempt": 0,
+      "prompt_sha256": "A47A0C4C3DE66265085C41F6B3FE86208686969100865C3B479C06427FD9A28D",
+      "prompt_chars": 23443,
+      "cache_key": "6dbca8b5491b2ef5b4d1e58edfda14432cedf57e781e8a82a6355f3af2b8b1e5"
     },
     {
       "question_id": "2349B24DC0D90260E41473FB2EC31727938B14C41196BBFDCFDEE3161C319A00",
-      "attempt": 0,
-      "cache_key": "7a4e5e995484c3eb40cc25a077ceb028aefb7694b31c429e41b48affdff5510f",
       "claim_ids": [
         "MA002"
-      ]
+      ],
+      "attempt": 0,
+      "prompt_sha256": "332476730EE4CC63CB580333782EA442ACF9A8A447E9064D8F1AE46F452EF4C8",
+      "prompt_chars": 28505,
+      "cache_key": "7a4e5e995484c3eb40cc25a077ceb028aefb7694b31c429e41b48affdff5510f"
     },
     {
       "question_id": "871C62E668BEE847F6D23C19F861B8D3E67026ABB98460F9BB3C562A8D1BAE34",
-      "attempt": 0,
-      "cache_key": "9e2b9ff4e3b7eaba1a4255e18b274db95d284c66f93cfa79bc1a80f7aaa745d9",
       "claim_ids": [
         "MA004"
-      ]
+      ],
+      "attempt": 0,
+      "prompt_sha256": "872BEDBEF05883E7E4690BB612D144D1F42B5FE6D6C6F44B66BE55A2F1E726D1",
+      "prompt_chars": 23501,
+      "cache_key": "9e2b9ff4e3b7eaba1a4255e18b274db95d284c66f93cfa79bc1a80f7aaa745d9"
     },
     {
       "question_id": "8F89A69A86B549449163DF7F19EE1E74ED69304D966957D9318163F5A87B2709",
-      "attempt": 0,
-      "cache_key": "f9972809c7ca2feb1859456149195089b370a6e4b7340e0968202484b2ef9b0e",
       "claim_ids": [
         "MA006"
-      ]
+      ],
+      "attempt": 0,
+      "prompt_sha256": "22D6882E9B1591E1601E137DA9ADA3A7E0B4E86B4D4D7F631A66117AD5CFC269",
+      "prompt_chars": 23486,
+      "cache_key": "f9972809c7ca2feb1859456149195089b370a6e4b7340e0968202484b2ef9b0e"
     },
     {
       "question_id": "9D923DC0801373F2F8898278009DAD3CE4D3045451F4ACFA69F4019A5EFA7633",
-      "attempt": 0,
-      "cache_key": "8d0e10508875fc82fe75e2014d5ddb276fe3dc88845de2cf839f412b8388f236",
       "claim_ids": [
         "MA008"
-      ]
+      ],
+      "attempt": 0,
+      "prompt_sha256": "6D382DD510B9CBC8645F21E0B07159C3FB82C3578176FD8656F218F04C5D12A0",
+      "prompt_chars": 23495,
+      "cache_key": "8d0e10508875fc82fe75e2014d5ddb276fe3dc88845de2cf839f412b8388f236"
     },
     {
       "question_id": "D3AFBFD423EBF9C65E635C319AF68F7CADAFD2E18B9EB47CC784293E6ABE63A9",
-      "attempt": 0,
-      "cache_key": "0a9f4c3125e8a21ae47583114bb97b2a3fba3c64192d5ca1cee55f5b125e596e",
       "claim_ids": [
         "MA012",
         "MA013",
         "MA014",
         "MA015"
-      ]
+      ],
+      "attempt": 0,
+      "prompt_sha256": "3B950AE9B6AADCED449BAEADCEC09D133F50114DEC5D84E00F9BE242CAF0F596",
+      "prompt_chars": 23331,
+      "cache_key": "0a9f4c3125e8a21ae47583114bb97b2a3fba3c64192d5ca1cee55f5b125e596e"
     },
     {
       "question_id": "F87335C2481685BCB4C12DC60E5CD5B941C9DD10B6B7EF4A114403EC3169A7DF",
-      "attempt": 0,
-      "cache_key": "e9172bbf44942a87525827925582a7460bd041df969d6e133dc8a0e5634a6e19",
       "claim_ids": [
         "MA009",
         "MA010",
         "MA011"
-      ]
+      ],
+      "attempt": 0,
+      "prompt_sha256": "503F7344BEFB51490D1D7FA46C9DD35DC2247D092663565EB5E3B9DBE35F5C89",
+      "prompt_chars": 23438,
+      "cache_key": "e9172bbf44942a87525827925582a7460bd041df969d6e133dc8a0e5634a6e19"
     }
   ],
-  "prompt_set_sha256": "0C5E985726C2E3287660CA3FF95E6E7CE8B3FD20A5CAF1DE0CA31DC6045F12E9",
+  "prompt_set_sha256": "A582E52F836ED9526C8FFA05C30E118BFC845A848F8F134CC767EC1E5BB0EB64",
   "what_the_run_did": {
-    "backend_requests": 7,
-    "cache_hits": 6,
-    "cache_misses": 7,
-    "batches": 7,
-    "retries_recorded": 0,
-    "model_seconds": 438.6,
-    "note": "The 6 hits are the seeded arm-identity entries and the 7 misses are the batch route going live. Only the batch route was new, which is what the preflight existed to guarantee. NOT_JSON and transport failures write no cache entry; there were none."
+    "backend_requests_logical": 7,
+    "backend_requests_note": "logical complete() calls. The provider client is configured with max_retries=5, so the number of HTTP requests may be higher and is not observable from here",
+    "extraction_cache_hits": 6,
+    "extraction_cache_misses": 7,
+    "batch_contract_retries": 0,
+    "run_level_repeated_attempts": 3,
+    "repeated_attempts_note": "all of them cache-served targeted_v4 arm-identity replays, not batch retries. Every batch answered on its first attempt: 7 attempt-0 slots written, 14 retry slots still empty",
+    "prompt_chars_in": 169199,
+    "output_chars_out": 42001,
+    "model_seconds": 438.5902202000143
   },
   "results": {
-    "scored_with": "--extraction replay --semantic cache-only against the phase7 semantic cache: 16 hits, 0 misses",
+    "scored_with": "--extraction replay --semantic cache-only against the phase7 semantic cache",
+    "extraction_cache_hits": 13,
+    "semantic_cache_entries_on_disk": 4,
+    "global_cache_hits": 16,
+    "global_cache_misses": 0,
+    "cache_split_note": "the global counter is extraction plus semantic. v1 reported the global 16 as the semantic total, which it is not",
     "label_accuracy": 0.5333333333333333,
     "baseline_label_accuracy": 0.6666666666666666,
     "silent_releases": 0,
     "review_visibility": 1.0,
     "scope_wrong_released": 0,
-    "excerpt_coverage_covered_batches": 7,
-    "gate_v1_verdict": "fail",
-    "gate_v1_reason": "one forbidden transition: MA015 correct -> wrong_released. That row carries review_required=True, so it was escalated rather than silently released; gate v1's state function does not distinguish those, and it is not edited here to change its own verdict."
+    "excerpt_coverage_covered_batches": 7
+  },
+  "gate": {
+    "gate_v1_verdict": "NOT EVALUABLE (protocol error)",
+    "why": "v1 defines `wrong_released` as a wrong value released WITHOUT review. MA015 carries review_required=True, so it does not meet that definition and v1's state space has no term for what it is. The FAIL reported on the day was computed by an ad-hoc classifier that contradicted the gate's own text, and no executable v1 classifier exists in the repository. The earlier FAIL stands as a record of what was reported, not as a verdict of the frozen gate.",
+    "v1_second_defect": "v1 has no capability floor: a system that refused every row would satisfy every hard condition and pass."
   },
   "replay_check": {
     "result": "identical",
-    "detail": "re-run with --extraction replay: 15/15 rows identical, metrics identical, 0 backend requests, 13 cache hits"
-  }
+    "detail": "re-run with --extraction replay: 15/15 rows identical field by field, metrics identical, 0 backend requests, 13 extraction cache hits. The batch records differ only in served_from_cache, false -> true, which is what replaying means"
+  },
+  "claims_not_made": [
+    "no speedup: under v5 the single bucket holds arm identities and the batch bucket holds value claims, which are different tasks",
+    "D6 cross-domain stays NOT ESTIMABLE; one study is not evidence about a domain"
+  ]
 }

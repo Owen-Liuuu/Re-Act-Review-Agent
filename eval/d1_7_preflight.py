@@ -257,6 +257,7 @@ def observe(benchmark: Path, profile_name: str, cache_path: Path | None,
             })
     batches.sort(key=lambda b: (b["field_type"], b["raw_field_name"]))
     return {"profile": profile, "contract": contract, "model_id": model_id,
+            "batch_tool": batch,
             "research_context": research_context, "batches": batches,
             "v4_trace": single.trace, "batch_probe": batch_probe,
             "single_probe": single_probe}
