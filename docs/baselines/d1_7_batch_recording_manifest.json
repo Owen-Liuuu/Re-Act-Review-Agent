@@ -1,0 +1,134 @@
+{
+  "manifest_id": "d1_7_batch_recording_v1",
+  "recorded_on": "2026-08-13",
+  "what": "The one live recording of the targeted_v5_batch route. The cache lives under output/, which is gitignored, so this is the artifact that enters the repository.",
+  "commit": "aafa20a3952278c46ca274612b981e7f04db7437",
+  "model": {
+    "provider": "glm",
+    "model_id": "glm-4.5-flash",
+    "settings_sha256": "E05F3F3F4ABD09BA45976AF1625ABFC315AE61F651903B92BAA85383A0D64D7D",
+    "settings": {
+      "provider": "glm",
+      "model": "glm-4.5-flash",
+      "base_url": "https://open.bigmodel.cn/api/paas/v4",
+      "temperature": 0.1,
+      "max_tokens": 8192,
+      "extra_body": {
+        "thinking": {
+          "type": "disabled"
+        }
+      }
+    },
+    "note": "no api key is read, recorded or hashed here"
+  },
+  "command": "python eval/run_full_accuracy.py --config configs/config.local.yaml --benchmark eval/benchmarks/melanoma_checkpoint_2017 --benchmark-profile phase8_batch_v3_profile.json --extraction record --extraction-cache output/baselines/melanoma_checkpoint_2017/phase8_batch_extraction_cache.json --semantic off --out output/baselines/melanoma_checkpoint_2017/d1_7_record.json --html output/baselines/melanoma_checkpoint_2017/d1_7_record.html",
+  "contracts": {
+    "run_profile": "AD9F2F180F718BEB55C1FF7220E0DD20D56431EB0404656030673CC3FC8F9104",
+    "benchmark_profile": "779E9F1C97D5B9A95638E4F663C34A932CD58396D83BEF1D2E67E126B9D9A7AE",
+    "prompt_contract": "1A02A44DDE55A7975E4D7A0ABE362C62F1267CA425715F81E8C86709CC42B70D",
+    "excerpt_gold": "9F67F418E245E6563A5CAF8ACF726A61C9F56DB8995793578F6F957A86A2052A",
+    "expected_plan": "72AD64CBE18447AD6A130A30BC0F44151F697F5EA1AF09C097B2F9F5DAB5B3A9",
+    "feature_gate": "B624742F31536742B47506444B6499D90E72E13E40B1C07056E6C50DC112CF47",
+    "evaluator": "safe_aggregation 1.6.2 under safe_sum_v5"
+  },
+  "documents": {
+    "larkin_2015": "F1A499768E5CEC3A8D637DF40C02D9BB9E4494AADA6AC5DF7111D496F07F02E8"
+  },
+  "cache": {
+    "path": "output/baselines/melanoma_checkpoint_2017/phase8_batch_extraction_cache.json",
+    "sha256_before_seeded": "D3431D41EE4538CA48D218E8D9850F9E",
+    "sha256_after": "CF5C4617F3A32751821D0B035B2289F6EF03A30E1A096161B8E2BF735A853889",
+    "entries_before": 6,
+    "entries_after": 13,
+    "seeded_from": "output/baselines/melanoma_checkpoint_2017/phase7_extraction_cache.json",
+    "seeded_from_sha256": "E0A00A5CC6F21EE3E9BEB8DA2B0B0DC7"
+  },
+  "prompts": [
+    {
+      "question_id": "0329EA7FDF9B07CD324761B2F1A3A2D6BDB289EA2D623BE185D8AB1A46A5BB71",
+      "attempt": 0,
+      "cache_key": "6dbca8b5491b2ef5b4d1e58edfda14432cedf57e781e8a82a6355f3af2b8b1e5",
+      "claim_ids": [
+        "MA001"
+      ]
+    },
+    {
+      "question_id": "2349B24DC0D90260E41473FB2EC31727938B14C41196BBFDCFDEE3161C319A00",
+      "attempt": 0,
+      "cache_key": "7a4e5e995484c3eb40cc25a077ceb028aefb7694b31c429e41b48affdff5510f",
+      "claim_ids": [
+        "MA002"
+      ]
+    },
+    {
+      "question_id": "871C62E668BEE847F6D23C19F861B8D3E67026ABB98460F9BB3C562A8D1BAE34",
+      "attempt": 0,
+      "cache_key": "9e2b9ff4e3b7eaba1a4255e18b274db95d284c66f93cfa79bc1a80f7aaa745d9",
+      "claim_ids": [
+        "MA004"
+      ]
+    },
+    {
+      "question_id": "8F89A69A86B549449163DF7F19EE1E74ED69304D966957D9318163F5A87B2709",
+      "attempt": 0,
+      "cache_key": "f9972809c7ca2feb1859456149195089b370a6e4b7340e0968202484b2ef9b0e",
+      "claim_ids": [
+        "MA006"
+      ]
+    },
+    {
+      "question_id": "9D923DC0801373F2F8898278009DAD3CE4D3045451F4ACFA69F4019A5EFA7633",
+      "attempt": 0,
+      "cache_key": "8d0e10508875fc82fe75e2014d5ddb276fe3dc88845de2cf839f412b8388f236",
+      "claim_ids": [
+        "MA008"
+      ]
+    },
+    {
+      "question_id": "D3AFBFD423EBF9C65E635C319AF68F7CADAFD2E18B9EB47CC784293E6ABE63A9",
+      "attempt": 0,
+      "cache_key": "0a9f4c3125e8a21ae47583114bb97b2a3fba3c64192d5ca1cee55f5b125e596e",
+      "claim_ids": [
+        "MA012",
+        "MA013",
+        "MA014",
+        "MA015"
+      ]
+    },
+    {
+      "question_id": "F87335C2481685BCB4C12DC60E5CD5B941C9DD10B6B7EF4A114403EC3169A7DF",
+      "attempt": 0,
+      "cache_key": "e9172bbf44942a87525827925582a7460bd041df969d6e133dc8a0e5634a6e19",
+      "claim_ids": [
+        "MA009",
+        "MA010",
+        "MA011"
+      ]
+    }
+  ],
+  "prompt_set_sha256": "0C5E985726C2E3287660CA3FF95E6E7CE8B3FD20A5CAF1DE0CA31DC6045F12E9",
+  "what_the_run_did": {
+    "backend_requests": 7,
+    "cache_hits": 6,
+    "cache_misses": 7,
+    "batches": 7,
+    "retries_recorded": 0,
+    "model_seconds": 438.6,
+    "note": "The 6 hits are the seeded arm-identity entries and the 7 misses are the batch route going live. Only the batch route was new, which is what the preflight existed to guarantee. NOT_JSON and transport failures write no cache entry; there were none."
+  },
+  "results": {
+    "scored_with": "--extraction replay --semantic cache-only against the phase7 semantic cache: 16 hits, 0 misses",
+    "label_accuracy": 0.5333333333333333,
+    "baseline_label_accuracy": 0.6666666666666666,
+    "silent_releases": 0,
+    "review_visibility": 1.0,
+    "scope_wrong_released": 0,
+    "excerpt_coverage_covered_batches": 7,
+    "gate_v1_verdict": "fail",
+    "gate_v1_reason": "one forbidden transition: MA015 correct -> wrong_released. That row carries review_required=True, so it was escalated rather than silently released; gate v1's state function does not distinguish those, and it is not edited here to change its own verdict."
+  },
+  "replay_check": {
+    "result": "identical",
+    "detail": "re-run with --extraction replay: 15/15 rows identical, metrics identical, 0 backend requests, 13 cache hits"
+  }
+}
