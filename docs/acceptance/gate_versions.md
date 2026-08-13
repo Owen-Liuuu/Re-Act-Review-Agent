@@ -65,6 +65,8 @@ version reported a registered, release-eligible run.
 | — | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v2_profile.json` | `9275079632081DB6` | the benchmark that runs it |
 | v2 | `eval/benchmarks/melanoma_checkpoint_2017/excerpt_gold_v2.json` | `9F67F418E245E656` | WHERE the evidence is, keyed on the batches the run makes |
 | — | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v3_profile.json` | `779E9F1C97D5B9A9` | the benchmark that judges against gold v2 |
+| v1 | `eval/benchmarks/melanoma_checkpoint_2017/d1_7_expected_plan.json` | `72AD64CBE18447AD` | what a D1-7 recording is expected to ask for |
+| v1 | `configs/gates/d1_batch_v1.json` | `B624742F31536742` | what the batch route has to achieve; **provisional** |
 
 ## excerpt_gold v1 → v2: a key that described a reading nobody makes
 

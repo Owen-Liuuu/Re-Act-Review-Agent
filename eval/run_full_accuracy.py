@@ -39,7 +39,10 @@ from react_review.eval_benchmark import (
     format_benchmark_diagnostics,
     validate_frozen_benchmark,
 )
-from react_review.eval_excerpt import coverage_for_run
+from react_review.eval_excerpt import (
+    benchmark_cohorts as _cohort_registry,
+    coverage_for_run,
+)
 from react_review.eval_profile import ProfileError, load_profile
 from react_review.dkb import load_runtime_knowledge
 from react_review.llm.metered import MeteredBackend
@@ -83,28 +86,6 @@ def _aggregation_runtime(contract):
     return AggregationRuntime.resolve(
         policy_id=contract.aggregation_policy_id,
         evaluator_version=contract.evaluator_version)
-
-
-def _cohort_registry(profile, rows: list[dict[str, str]]):
-    """The review's own arm labels, keyed exactly as the answer key groups them.
-
-    Built by joining the profile's target contract to the answer key on
-    audit_id, because the benchmark's ``group`` values ARE the join keys the
-    answer key uses: re-slugging the display names here would silently stop the
-    review side and the source side from meeting.
-    """
-    from react_review.normalize.cohorts import CohortLabel, CohortRegistry
-
-    labels: dict[str, CohortLabel] = {}
-    for row in rows:
-        target = profile.targets.get(row.get("audit_id", ""))
-        display = (getattr(target, "cohort_label", "") or "").strip()
-        key = (row.get("group") or "").strip()
-        if not display or not key or key in labels:
-            continue
-        labels[key] = CohortLabel(key=key, display=display,
-                                  raw_variants=[display], source="contract")
-    return CohortRegistry(labels=list(labels.values())) if labels else None
 
 
 def main(argv: list[str] | None = None) -> None:

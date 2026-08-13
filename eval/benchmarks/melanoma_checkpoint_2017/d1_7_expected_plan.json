@@ -1,0 +1,133 @@
+{
+  "plan_id": "d1_7_expected_plan_v1",
+  "written_on": "2026-08-13",
+  "purpose": "What a D1-7 recording is expected to ask for, fixed before it is asked. A pre-registration nothing compares against is a description, and this one was already stale once: the identities in the first draft were computed under an empty research context and never regenerated after it was fixed.",
+  "benchmark": "melanoma_checkpoint_2017",
+  "benchmark_profile": "phase8_batch_v3_profile.json",
+  "run_contract": "phase8_batch_v2",
+  "research_context": "malignant melanoma checkpoint-inhibitor randomized trials",
+  "max_attempts": 3,
+  "model_id": "glm-4.5-flash",
+  "model_settings": {
+    "provider": "glm",
+    "model": "glm-4.5-flash",
+    "base_url": "https://open.bigmodel.cn/api/paas/v4",
+    "temperature": 0.1,
+    "max_tokens": 8192,
+    "extra_body": {
+      "thinking": {
+        "type": "disabled"
+      }
+    }
+  },
+  "model_settings_sha256": "E05F3F3F4ABD09BA45976AF1625ABFC315AE61F651903B92BAA85383A0D64D7D",
+  "prompt_versions": {
+    "value": "extract-source-v5-batch",
+    "arm_identity": "extract-source-v4-targeted-components"
+  },
+  "expected_batches": [
+    {
+      "field_type": "cohort_n",
+      "target_shape": "arm",
+      "raw_field_name": "Additional arm drug, dose, n",
+      "claim_ids": [
+        "MA008"
+      ],
+      "question_id": "9D923DC0801373F2F8898278009DAD3CE4D3045451F4ACFA69F4019A5EFA7633",
+      "cache_key_slots": [
+        "8d0e10508875fc82fe75e2014d5ddb276fe3dc88845de2cf839f412b8388f236",
+        "11212fbfb91fb720c9625f24cb8975fc3ae8048b859c2fa9ce02cba56968c383",
+        "af91eb439a2adb9e0d0079a6b2dd1a49d9bb362c76d57680c75aae6475b6d2e3"
+      ]
+    },
+    {
+      "field_type": "cohort_n",
+      "target_shape": "arm",
+      "raw_field_name": "Control arm drug, dose, n",
+      "claim_ids": [
+        "MA006"
+      ],
+      "question_id": "8F89A69A86B549449163DF7F19EE1E74ED69304D966957D9318163F5A87B2709",
+      "cache_key_slots": [
+        "f9972809c7ca2feb1859456149195089b370a6e4b7340e0968202484b2ef9b0e",
+        "c62217c3c547ffd84e759eb01473f77e6b958d4a1ee9dc812b56a89b1f420502",
+        "25589ff4f9f18f13f4075af617a59347e7449d1a0694106a2ed6bfeaee7a4761"
+      ]
+    },
+    {
+      "field_type": "cohort_n",
+      "target_shape": "arm",
+      "raw_field_name": "Intervention arm drug, dose, n",
+      "claim_ids": [
+        "MA004"
+      ],
+      "question_id": "871C62E668BEE847F6D23C19F861B8D3E67026ABB98460F9BB3C562A8D1BAE34",
+      "cache_key_slots": [
+        "9e2b9ff4e3b7eaba1a4255e18b274db95d284c66f93cfa79bc1a80f7aaa745d9",
+        "491a2ac3ec3952a014d1f387f119d8bbf1427fe19f969bd1249c9ed5bf2e49d9",
+        "8d5d69b9bab6d33b602b200387f591d770f34259670fc9cbc21f1674216c0312"
+      ]
+    },
+    {
+      "field_type": "hazard_ratio",
+      "target_shape": "comparison",
+      "raw_field_name": "HR",
+      "claim_ids": [
+        "MA012",
+        "MA013",
+        "MA014",
+        "MA015"
+      ],
+      "question_id": "D3AFBFD423EBF9C65E635C319AF68F7CADAFD2E18B9EB47CC784293E6ABE63A9",
+      "cache_key_slots": [
+        "0a9f4c3125e8a21ae47583114bb97b2a3fba3c64192d5ca1cee55f5b125e596e",
+        "44499be576062b58f8e4cb67a6cb26d1fe64288ed6be121f09bf6d5901d61b54",
+        "97db5b3d00aaf5dc6cb5ddcdc781c5dcfe6aa4121551f00d2142b2042beb7a35"
+      ]
+    },
+    {
+      "field_type": "progression_free_survival",
+      "target_shape": "arm",
+      "raw_field_name": "PFS",
+      "claim_ids": [
+        "MA009",
+        "MA010",
+        "MA011"
+      ],
+      "question_id": "F87335C2481685BCB4C12DC60E5CD5B941C9DD10B6B7EF4A114403EC3169A7DF",
+      "cache_key_slots": [
+        "e9172bbf44942a87525827925582a7460bd041df969d6e133dc8a0e5634a6e19",
+        "7c07c39d3cb0e42b36e7264adfc8641cac87ad1235af37e1697ab61d06c65f32",
+        "97c1e03964c0b977f4863ed76ee4d5f558b1f36327de06a68d3caa58e08122ec"
+      ]
+    },
+    {
+      "field_type": "sample_size",
+      "target_shape": "study",
+      "raw_field_name": "Randomized patients, n",
+      "claim_ids": [
+        "MA002"
+      ],
+      "question_id": "2349B24DC0D90260E41473FB2EC31727938B14C41196BBFDCFDEE3161C319A00",
+      "cache_key_slots": [
+        "7a4e5e995484c3eb40cc25a077ceb028aefb7694b31c429e41b48affdff5510f",
+        "4cb9cfea54326d435145ebded7c138578062bdff41d90b7ef1d60e81a5fb6f2a",
+        "851352748b0fc55735278f6c362eb5b9d4725a5d59343225a5802fb792c3b299"
+      ]
+    },
+    {
+      "field_type": "study_design",
+      "target_shape": "study",
+      "raw_field_name": "Design",
+      "claim_ids": [
+        "MA001"
+      ],
+      "question_id": "0329EA7FDF9B07CD324761B2F1A3A2D6BDB289EA2D623BE185D8AB1A46A5BB71",
+      "cache_key_slots": [
+        "6dbca8b5491b2ef5b4d1e58edfda14432cedf57e781e8a82a6355f3af2b8b1e5",
+        "f4289ce753fc7ca1ba369a7143aa6ae3dd3f34b507cc74782fecfb554c62522b",
+        "decf0f13c0fdf88a5d93951ad59b0a3015dc8079ccfb30b19cf3274d94596c7e"
+      ]
+    }
+  ]
+}

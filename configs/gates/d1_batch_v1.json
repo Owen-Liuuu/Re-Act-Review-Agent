@@ -1,0 +1,167 @@
+{
+  "gate_id": "d1_batch_v1",
+  "written_on": "2026-08-13",
+  "status": "provisional",
+  "purpose": "What the batch route has to do to be acceptable, fixed before the recording exists. Written because 'graded against the D1 feature gate' named a gate that was not in the repository, which is defining the standard after seeing the result with extra steps.",
+  "applies_to": {
+    "benchmark": "melanoma_checkpoint_2017",
+    "benchmark_profile": "phase8_batch_v3_profile.json",
+    "expected_plan": "d1_7_expected_plan.json"
+  },
+  "baseline": {
+    "what": "The same benchmark under the single-target contract, replayed offline from the phase7 recording. Regenerated rather than quoted: docs/baselines/melanoma_phase8_metrics.json publishes aggregates only, and a transition table needs rows.",
+    "benchmark_profile": "phase8_profile.json",
+    "extraction": "replay of phase7_extraction_cache.json",
+    "semantic": "cache-only against phase7_semantic_cache.json",
+    "label_accuracy": "66.7% (10 of 15) — reproduced, matching the published figure"
+  },
+  "hard_conditions": {
+    "silent_releases": 0,
+    "wrong_target_accepted_count": 0,
+    "scope_wrong_released_count": 0,
+    "batches_match_expected_plan": true,
+    "every_batched_row_resolves_its_execution_id": true,
+    "no_forbidden_transition": true
+  },
+  "reported_never_gated": [
+    "label_accuracy — a system raises it by refusing less",
+    "claims_per_batch and cost — reported for v5 alone; no speedup is computed, because v5's single-target bucket holds arm identities and its batch bucket holds value claims, which are different tasks",
+    "excerpt coverage — a diagnostic about what was sent, not about the answer"
+  ],
+  "transitions": {
+    "allowed": {
+      "correct -> correct": "unchanged",
+      "correct -> refused": "a capability loss. Reported, not a failure: refusing is the safe direction and the project has taken it deliberately before",
+      "refused -> correct": "a capability gain, which is what batching is for",
+      "refused -> refused": "unchanged, possibly for a different reason; the reason is reported"
+    },
+    "forbidden": {
+      "correct -> wrong_released": "a row that was right now releases a wrong value without review. This is the safety regression the gate exists to catch",
+      "refused -> wrong_released": "a refusal replaced by a wrong released value is worse than the refusal",
+      "wrong_released -> wrong_released": "not a pass. It was already a failure and remains one"
+    }
+  },
+  "outcome_rule": "Any hard condition unmet, or any forbidden transition, is a FAIL and no amount of label accuracy offsets it. Every hard condition met is a PASS for THIS feature on THIS benchmark — it is not evidence about a domain, and the D6 cross-domain conclusion stays NOT ESTIMABLE regardless.",
+  "baseline_rows": [
+    {
+      "audit_id": "MA001",
+      "field_type": "study_design",
+      "expected_label": "match",
+      "baseline_label": "match",
+      "baseline_outcome": "found",
+      "baseline_state": "correct"
+    },
+    {
+      "audit_id": "MA002",
+      "field_type": "sample_size",
+      "expected_label": "match",
+      "baseline_label": "not_comparable",
+      "baseline_outcome": "found",
+      "baseline_state": "refused"
+    },
+    {
+      "audit_id": "MA003",
+      "field_type": "treatment_arm",
+      "expected_label": "match",
+      "baseline_label": "match",
+      "baseline_outcome": "found",
+      "baseline_state": "correct"
+    },
+    {
+      "audit_id": "MA004",
+      "field_type": "cohort_n",
+      "expected_label": "match",
+      "baseline_label": "not_comparable",
+      "baseline_outcome": "found",
+      "baseline_state": "refused"
+    },
+    {
+      "audit_id": "MA005",
+      "field_type": "treatment_arm",
+      "expected_label": "match",
+      "baseline_label": "not_comparable",
+      "baseline_outcome": "found",
+      "baseline_state": "refused"
+    },
+    {
+      "audit_id": "MA006",
+      "field_type": "cohort_n",
+      "expected_label": "match",
+      "baseline_label": "match",
+      "baseline_outcome": "found",
+      "baseline_state": "correct"
+    },
+    {
+      "audit_id": "MA007",
+      "field_type": "treatment_arm",
+      "expected_label": "match",
+      "baseline_label": "match",
+      "baseline_outcome": "found",
+      "baseline_state": "correct"
+    },
+    {
+      "audit_id": "MA008",
+      "field_type": "cohort_n",
+      "expected_label": "match",
+      "baseline_label": "match",
+      "baseline_outcome": "found",
+      "baseline_state": "correct"
+    },
+    {
+      "audit_id": "MA009",
+      "field_type": "progression_free_survival",
+      "expected_label": "match",
+      "baseline_label": "not_comparable",
+      "baseline_outcome": "missing_source",
+      "baseline_state": "refused"
+    },
+    {
+      "audit_id": "MA010",
+      "field_type": "progression_free_survival",
+      "expected_label": "match",
+      "baseline_label": "match",
+      "baseline_outcome": "found",
+      "baseline_state": "correct"
+    },
+    {
+      "audit_id": "MA011",
+      "field_type": "progression_free_survival",
+      "expected_label": "match",
+      "baseline_label": "match",
+      "baseline_outcome": "found",
+      "baseline_state": "correct"
+    },
+    {
+      "audit_id": "MA012",
+      "field_type": "hazard_ratio",
+      "expected_label": "mismatch",
+      "baseline_label": "mismatch",
+      "baseline_outcome": "found",
+      "baseline_state": "correct"
+    },
+    {
+      "audit_id": "MA013",
+      "field_type": "hazard_ratio",
+      "expected_label": "mismatch",
+      "baseline_label": "mismatch",
+      "baseline_outcome": "found",
+      "baseline_state": "correct"
+    },
+    {
+      "audit_id": "MA014",
+      "field_type": "hazard_ratio",
+      "expected_label": "match",
+      "baseline_label": "not_comparable",
+      "baseline_outcome": "missing_source",
+      "baseline_state": "refused"
+    },
+    {
+      "audit_id": "MA015",
+      "field_type": "hazard_ratio",
+      "expected_label": "mismatch",
+      "baseline_label": "mismatch",
+      "baseline_outcome": "found",
+      "baseline_state": "correct"
+    }
+  ]
+}

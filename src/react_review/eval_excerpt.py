@@ -505,3 +505,30 @@ def planned_batches(collector, claims, route):
     from react_review.tools.batch_group import group_claims
 
     return group_claims([c for c in claims if collector.route_for(c) == route])
+
+
+def benchmark_cohorts(profile, rows):
+    """The review's own arm labels, keyed exactly as the answer key groups them.
+
+    Shared for the same reason the claim builder is: the cohort display name
+    reaches the single-target prompt, so a preflight that omitted it computed
+    cache keys for a question the run does not ask — and then reported the
+    resulting misses as recordings that did not exist.
+
+    Built by joining the profile's target contract to the answer key on
+    audit_id, because the benchmark's ``group`` values ARE the join keys the
+    answer key uses: re-slugging the display names here would silently stop the
+    review side and the source side from meeting.
+    """
+    from react_review.normalize.cohorts import CohortLabel, CohortRegistry
+
+    labels: dict[str, "CohortLabel"] = {}
+    for row in rows:
+        target = profile.targets.get(row.get("audit_id", "")) if profile else None
+        display = (getattr(target, "cohort_label", "") or "").strip()
+        key = (row.get("group") or "").strip()
+        if not display or not key or key in labels:
+            continue
+        labels[key] = CohortLabel(key=key, display=display,
+                                  raw_variants=[display], source="contract")
+    return CohortRegistry(labels=list(labels.values())) if labels else None

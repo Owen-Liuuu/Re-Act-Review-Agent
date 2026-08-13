@@ -60,6 +60,12 @@ PINNED = {
         "9F67F418E245E656",
     "eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v3_profile.json":
         "779E9F1C97D5B9A9",
+    # What a D1-7 recording is expected to ask for, and what it has to achieve.
+    # Both frozen before the recording exists, because a plan nothing compares
+    # against is a description and a gate written afterwards is not a gate.
+    "eval/benchmarks/melanoma_checkpoint_2017/d1_7_expected_plan.json":
+        "72AD64CBE18447AD",
+    "configs/gates/d1_batch_v1.json": "B624742F31536742",
 }
 
 
