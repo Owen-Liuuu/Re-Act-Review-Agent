@@ -68,6 +68,34 @@ version reported a registered, release-eligible run.
 | v1 | `eval/benchmarks/melanoma_checkpoint_2017/d1_7_expected_plan.json` | `72AD64CBE18447AD` | what a D1-7 recording is expected to ask for |
 | v1 | `configs/gates/d1_batch_v1.json` | `B624742F31536742` | superseded; **could not judge the run it was written for** |
 | v2 | `configs/gates/d1_batch_v2.json` | `1221EC40F789F04C` | current; **provisional**, capability floor deliberately UNSET |
+| v6 | `configs/aggregation/registry_v6.json` | `93D50BFC3F0B48CC` | current |
+| 1.7.0 | `configs/aggregation/evaluators/safe_aggregation_1.7.0.json` | `43703B7DADE72943` | current evaluator |
+| — | `configs/run_profiles/phase8_batch_v3.json` | `936985979F2A7726` | the contract that selects the batch route under 1.7.0 |
+| — | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v4_profile.json` | `4F58FDB3672A1F46` | the benchmark that runs it |
+
+## 1.7.0: a MINOR the corpus could not decide
+
+D1-7.3 makes each batched reading's numeric components verify against its OWN
+quote, attributed away from the rival estimates in the same sentence, and maps
+what survives onto the result. A protocol error rejects only its own entry.
+
+The consequence is a NEW REFUSAL: a reading whose quote states an interval the
+extraction did not return is INCOMPLETE, and an incomplete source may no longer
+produce a bare MATCH. A paper that genuinely reports no interval is unaffected —
+that case still compares and still matches.
+
+**The 26-case corpus reported 26 of 26 identical, and did not decide this.** The
+corpus exercises the aggregation projector; this refusal lives in the
+comparator, which the corpus does not reach. Silence is not confirmation. The
+rule registered in `PENDING.json` BEFORE the change — any new refusal is at
+least MINOR — is what decides it, which is the whole point of writing the rule
+down first.
+
+**Known boundary gap.** `audit/compare.py` implements the refusal and is NOT
+inside the evaluator's hashed boundary, so the evaluator hash does not cover it.
+Widening the boundary would pull in a file that changes often and is a
+governance decision of its own; it is not made silently here, and it is recorded
+so the next person does not discover it by surprise.
 
 ## d1_batch v1 → v2: a gate that could not express what happened
 

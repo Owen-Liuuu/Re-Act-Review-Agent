@@ -46,7 +46,11 @@ from react_review.schemas.batch import (
 )
 from react_review.tools.evidence_binding import binding_verdict, bound
 from react_review.tools.target_assignment import _label_in_quote
-from react_review.tools.value_components import parse_component_block
+from react_review.tools.value_components import (
+    PROTOCOL_ERROR,
+    parse_component_block,
+    verify_components,
+)
 
 
 class BatchReading(BaseModel):
@@ -112,6 +116,12 @@ def parse_batch(raw: object, document: str, *, target_shape: str = ARM,
             rejected.append({"index": index, "reason": reason})
         else:
             entries.append(entry)
+
+    # Phase two, and it has to BE a second phase: a component is only this
+    # reading's when no other reading in the same response sits nearer to it,
+    # so the rivals are not known until every entry has been read.
+    entries, component_rejects = _verify_entry_components(entries)
+    rejected.extend(component_rejects)
 
     sets, bad_sets, errors = (parse_aggregation(raw, document) if aggregable
                               else ([], [], []))
@@ -573,6 +583,44 @@ def parse_one_entry(item: object, index: int, document: str, *,
         quote=quote, components=components, raw_index=index,
         population_anchor=population_anchor, timepoint_anchor=timepoint_anchor,
         effect_anchor=effect_anchor), ""
+
+
+def _verify_entry_components(entries: list[BatchEntry]):
+    """Check each reading's numbers against its own quote, and against its rivals.
+
+    Phase 6B's failure, arriving through the batch route this time: asked for a
+    hazard ratio the extraction returned `0.57` from a sentence printing
+    `0.57; 99.5% CI, 0.43 to 0.76`, and the interval was dropped on the way out.
+    The comparator then saw a bare point estimate — indistinguishable from a
+    paper that reports no interval — and the review's own 95% CI went unchecked.
+
+    Nothing is filled in from the quote. A value the model did not report is not
+    a value it read, so a reading whose quote states an interval it did not
+    return comes back INCOMPLETE and carries that reason forward. What changes
+    is that the omission is now visible instead of silent.
+
+    A `protocol_error` rejects ONLY its own entry. The other readings in the
+    response were checked separately and are not implicated by it.
+    """
+    verified: list[BatchEntry] = []
+    rejects: list[dict[str, Any]] = []
+    values = [entry.value for entry in entries if entry.value is not None]
+    for entry in entries:
+        if entry.value is None:
+            verified.append(entry)
+            continue
+        rivals = [value for value in values if value != entry.value]
+        components, status, reason = verify_components(
+            entry.components, value=entry.value, quote=entry.quote,
+            rival_values=rivals)
+        if status == PROTOCOL_ERROR:
+            rejects.append({"index": entry.raw_index,
+                            "reason": f"the reading for {entry.value!r} is "
+                                      f"unusable: {reason}"})
+            continue
+        verified.append(entry.model_copy(
+            update={"verified_components": components}))
+    return verified, rejects
 
 
 def _identity_for(item: dict, target_shape: str, quote: str,

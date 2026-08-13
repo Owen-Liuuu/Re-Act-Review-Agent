@@ -14,7 +14,7 @@ grouping, and calls the real selector — then stops, before anything would be
 asked of a model.
 
     python eval/excerpt_dry_run.py --benchmark eval/benchmarks/melanoma_checkpoint_2017 \
-        --benchmark-profile phase8_batch_v3_profile.json
+        --benchmark-profile phase8_batch_v4_profile.json
 """
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ def main(argv=None) -> int:
         description="Compute what a batched run would send, without sending it.")
     ap.add_argument("--benchmark", type=Path,
                     default=REPO / "eval/benchmarks/melanoma_checkpoint_2017")
-    ap.add_argument("--benchmark-profile", default="phase8_batch_v3_profile.json")
+    ap.add_argument("--benchmark-profile", default="phase8_batch_v4_profile.json")
     ap.add_argument("--json", type=Path, default=None)
     args = ap.parse_args(argv)
 

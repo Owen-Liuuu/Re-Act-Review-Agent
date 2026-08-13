@@ -335,7 +335,7 @@ def main(argv=None) -> int:
         description="Enumerate the recordings a D1-7 run needs, without making any.")
     ap.add_argument("--benchmark", type=Path,
                     default=REPO / "eval/benchmarks/melanoma_checkpoint_2017")
-    ap.add_argument("--benchmark-profile", default="phase8_batch_v3_profile.json")
+    ap.add_argument("--benchmark-profile", default="phase8_batch_v4_profile.json")
     ap.add_argument("--cache", type=Path, default=None,
                     help="the cache the RECORDING run would use")
     ap.add_argument("--config", type=Path, default=None,

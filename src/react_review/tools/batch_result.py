@@ -114,6 +114,11 @@ def to_source_result(projection: Projection) -> SourceValueResult:
         return SourceValueResult(
             found=True, value=entry.value, unit=entry.unit, quote=entry.quote,
             value_origin="verbatim",
+            # The parts, as verified against this reading's own quote. The value
+            # itself is NOT rewritten from them: the verbatim string is what the
+            # paper printed, and a components path that could change it would be
+            # a second, quieter extractor.
+            source_components=entry.verified_components,
             group_label_in_paper=entry.identity.arm_label,
             assigned_arm_label=entry.identity.arm_label,
             source_scope=entry.identity.population,

@@ -3,7 +3,7 @@
   "supersedes": "d1_7_batch_recording_v1 (hand-written; see corrections)",
   "recorded_on": "2026-08-13",
   "what": "The one live recording of the targeted_v5_batch route. The cache and the result artifacts live under output/, which is gitignored, so this manifest is what enters the repository — and it hashes them, so a copy obtained elsewhere can be shown to be the same one.",
-  "commit": "e96d0b646794d9a87ad553a09378cc663b844fe9",
+  "commit": "d41e5f8e88009e30ed80fd0a2395e0b3b8bc9cf2",
   "model": {
     "provider": "glm",
     "model_id": "glm-4.5-flash",
@@ -32,7 +32,7 @@
     "expected_plan": "72AD64CBE18447AD6A130A30BC0F44151F697F5EA1AF09C097B2F9F5DAB5B3A9",
     "feature_gate": "B624742F31536742B47506444B6499D90E72E13E40B1C07056E6C50DC112CF47"
   },
-  "evaluator": "safe_aggregation 1.6.2 under safe_sum_v5",
+  "evaluator": "safe_aggregation 1.6.2 under safe_sum_v5 (the evaluator this recording ran under; 1.7.0 supersedes it)",
   "documents": {
     "larkin_2015": "F1A499768E5CEC3A8D637DF40C02D9BB9E4494AADA6AC5DF7111D496F07F02E8"
   },
@@ -190,6 +190,32 @@
     },
     "gate_v2_note": "POST-HOC REANALYSIS. v2 was written after this run by an author who knew which verdict it would change; it is published because v1 could not judge the run at all, not because v1's verdict was inconvenient. Its capability floor is deliberately UNSET — a draft set 0.8 and this run keeps exactly 8 of the baseline's 10 correct rows — so the strongest verdict available is PASS (PROHIBITIONS ONLY), which is not a claim that the route works."
   },
+  "reanalyses": [
+    {
+      "id": "d1_7_3_component_verification",
+      "what": "The same recording, replayed under evaluator 1.7.0, which verifies each reading's numeric components against its own quote and carries the survivors to the result. No model was asked: backend_requests is 0.",
+      "artifact": {
+        "path": "output/baselines/melanoma_checkpoint_2017/d1_7_3_scored.json",
+        "sha256": "0F33BAA7051F80081743BF17A10F11C2E8368CD84CD0F737BAA3719F3A0F6EE9"
+      },
+      "extraction": "replay of the D1-7 cache, unchanged",
+      "backend_requests": 0,
+      "label_accuracy": 0.6,
+      "label_accuracy_before_fix": 0.5333333333333333,
+      "baseline_label_accuracy": 0.6666666666666666,
+      "silent_releases": 0,
+      "gate_v2_verdict": "PASS_PROHIBITIONS_ONLY",
+      "gate_v2_states": {
+        "rows": 15,
+        "correct": 9,
+        "refused": 6,
+        "wrong_but_flagged": 0,
+        "wrong_released": 0,
+        "baseline_correct": 10
+      },
+      "note": "MA015 moves from `match` to `mismatch` — the baseline's own verdict — because the source's 99.5% confidence level is now compared against the review's 95%. The components were in the response all along; nothing carried them to the result."
+    }
+  ],
   "replay_check": {
     "result": "identical",
     "detail": "re-run with --extraction replay: 15/15 rows identical field by field, metrics identical, 0 backend requests, 13 extraction cache hits. The batch records differ only in served_from_cache, false -> true, which is what replaying means"

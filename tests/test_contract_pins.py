@@ -67,6 +67,11 @@ PINNED = {
         "72AD64CBE18447AD",
     "configs/gates/d1_batch_v1.json": "B624742F31536742",
     "configs/gates/d1_batch_v2.json": "1221EC40F789F04C",
+    "configs/aggregation/registry_v6.json": "93D50BFC3F0B48CC",
+    "configs/aggregation/evaluators/safe_aggregation_1.7.0.json": "43703B7DADE72943",
+    "configs/run_profiles/phase8_batch_v3.json": "936985979F2A7726",
+    "eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v4_profile.json":
+        "4F58FDB3672A1F46",
 }
 
 

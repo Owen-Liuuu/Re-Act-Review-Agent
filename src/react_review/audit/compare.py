@@ -58,9 +58,28 @@ def _within(a: float, b: float, rel_tolerance: float) -> bool:
     return _rel(a, b) <= rel_tolerance
 
 
+def _source_omitted(source_components) -> list[str]:
+    """Parts the SOURCE's own quote states and the extraction did not return.
+
+    Different in kind from "the paper reports no interval". Here the interval is
+    demonstrably in the evidence — the verifier found it in the same quote, and
+    attributed it to this value rather than to a rival — and the extraction
+    simply did not carry it out. Nothing fills it in: a value the model did not
+    report is not a value it read.
+    """
+    if source_components is None:
+        return []
+    get = (source_components.get if isinstance(source_components, dict)
+           else lambda key: getattr(source_components, key, None))
+    if str(get("status") or "") != "incomplete":
+        return []
+    return sorted(str(name) for name in (get("missing") or ()))
+
+
 def _compare_components(
     rv: NumericValue, sv: NumericValue, base: dict, *,
     rel_tolerance: float, p_value_abs_tolerance: float, null_value: float | None,
+    source_omitted: list[str] | None = None,
 ) -> MatchResult | None:
     """Decide a pair that reports structure, or return None to fall through.
 
@@ -165,6 +184,19 @@ def _compare_components(
             # An interval one side reported and the other did not cannot be
             # verified; the point estimate alone must not read as fully checked.
             unconsumed.append("ci")
+
+    if unconsumed and source_omitted:
+        # The source is KNOWN to have dropped a part its own quote states. That
+        # is not the same as a paper reporting no interval, and calling it MATCH
+        # would credit an extraction with agreement on something it never read.
+        # Phase 6B's exact failure, arriving through the batch route.
+        return result(
+            AuditLabel.NOT_COMPARABLE,
+            f"{', '.join(compared) or 'the point estimates'} agree, but the "
+            f"source's own quote states {', '.join(source_omitted)} which the "
+            "extraction did not return, so the values are not comparable on "
+            "the parts that would decide them",
+            compared=compared, unconsumed=unconsumed, review=True)
 
     if unconsumed:
         # Fall back to the point estimates ONLY if nothing else was comparable.
@@ -354,7 +386,8 @@ def compare_values(
     # other did not.
     structured = _compare_components(
         rv, sv, base, rel_tolerance=rel_tolerance,
-        p_value_abs_tolerance=p_value_abs_tolerance, null_value=null_value)
+        p_value_abs_tolerance=p_value_abs_tolerance, null_value=null_value,
+        source_omitted=_source_omitted(source_components))
     if structured is not None:
         return structured
 

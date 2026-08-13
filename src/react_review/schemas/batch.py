@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field, model_serializer
 
 from react_review.normalize.cohorts import distinguishing_tokens
 from react_review.normalize.population import PopulationScope
+from react_review.schemas.evidence import SourceNumericComponents
 
 #: What kind of thing a batch is about. The prompt asks only for this shape:
 #: making every batch enumerate arms AND comparisons AND populations grows
@@ -122,6 +123,11 @@ class BatchEntry(BaseModel):
     unit: str = ""
     quote: str = ""
     components: dict[str, float] = Field(default_factory=dict)
+    #: The components after they have been checked against THIS entry's quote and
+    #: attributed away from its rivals. `components` is what the response
+    #: claimed; this is what survived. Absent until the reading has been verified,
+    #: because a reading nobody checked must not look like one that passed.
+    verified_components: SourceNumericComponents | None = None
     population_anchor: EvidenceAnchor | None = None
     timepoint_anchor: EvidenceAnchor | None = None
     effect_anchor: EvidenceAnchor | None = None

@@ -79,7 +79,12 @@ def _prompt_rows() -> tuple[list[dict], str]:
     import d1_7_preflight as preflight
 
     plan = json.loads(PLAN.read_text(encoding="utf-8-sig"))
-    observed = preflight.observe(BENCH, "phase8_batch_v3_profile.json", None, 3,
+    # The profile the RECORDING ran under has been superseded by a later
+    # evaluator, and its contract now names one this tree is not. The prompts are
+    # unchanged by that — the evaluator decides how an answer is judged, not what
+    # question is asked — so the re-derivation uses the current profile and is
+    # checked, as always, against the keys the run actually wrote.
+    observed = preflight.observe(BENCH, "phase8_batch_v4_profile.json", None, 3,
                                  plan["model_id"])
     prompts = {question.identity(): prompt
                for question, prompt in observed["batch_tool"].asked}
@@ -164,6 +169,46 @@ def _graded(rows) -> dict:
     }
 
 
+def _reanalyses() -> list[dict]:
+    """Later readings of the SAME recording, each named and hashed.
+
+    A deterministic fix re-reads a recording; it does not make a new one. Kept
+    apart from the original result so that "what the model said" and "what the
+    code made of it" can never be confused for one another.
+    """
+    from react_review.acceptance_transitions import grade
+
+    path = RUNS / "d1_7_3_scored.json"
+    if not path.is_file():
+        return []
+    scored = json.loads(path.read_text(encoding="utf-8-sig"))
+    gate = json.loads((REPO / "configs/gates/d1_batch_v2.json"
+                       ).read_text(encoding="utf-8-sig"))
+    result = grade(gate, scored["rows"])
+    telemetry = scored["run"].get("telemetry") or {}
+    return [{
+        "id": "d1_7_3_component_verification",
+        "what": ("The same recording, replayed under evaluator 1.7.0, which "
+                 "verifies each reading's numeric components against its own "
+                 "quote and carries the survivors to the result. No model was "
+                 "asked: backend_requests is 0."),
+        "artifact": {"path": path.relative_to(REPO).as_posix(),
+                     "sha256": _digest(path)},
+        "extraction": "replay of the D1-7 cache, unchanged",
+        "backend_requests": telemetry.get("backend_requests"),
+        "label_accuracy": scored["metrics"]["label_accuracy"],
+        "label_accuracy_before_fix": 8 / 15,
+        "baseline_label_accuracy": 10 / 15,
+        "silent_releases": scored["metrics"]["safety"]["silent_release_count"],
+        "gate_v2_verdict": result.verdict.upper(),
+        "gate_v2_states": result.capability,
+        "note": ("MA015 moves from `match` to `mismatch` — the baseline's own "
+                 "verdict — because the source's 99.5% confidence level is now "
+                 "compared against the review's 95%. The components were in the "
+                 "response all along; nothing carried them to the result."),
+    }]
+
+
 def build() -> dict:
     scored = json.loads(ARTIFACTS["scored"].read_text(encoding="utf-8-sig"))
     record = json.loads(ARTIFACTS["record"].read_text(encoding="utf-8-sig"))
@@ -197,7 +242,7 @@ def build() -> dict:
         "command": COMMAND,
         "contracts": {name: sha256_file(REPO / path)
                       for name, path in CONTRACTS.items()},
-        "evaluator": "safe_aggregation 1.6.2 under safe_sum_v5",
+        "evaluator": "safe_aggregation 1.6.2 under safe_sum_v5 (the evaluator this recording ran under; 1.7.0 supersedes it)",
         "documents": {
             "larkin_2015": _document_sha256(
                 _pdf_text(BENCH / "raw/sources/larkin_2015.pdf")),
@@ -271,6 +316,7 @@ def build() -> dict:
                     "gold_covered_batches")),
         },
         "gate": _graded(scored["rows"]),
+        "reanalyses": _reanalyses(),
         "replay_check": {
             "result": "identical",
             "detail": ("re-run with --extraction replay: 15/15 rows identical "

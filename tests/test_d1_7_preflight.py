@@ -20,7 +20,7 @@ from react_review.contracts import repo_root
 
 BENCH = repo_root() / "eval/benchmarks/melanoma_checkpoint_2017"
 PLAN = BENCH / "d1_7_expected_plan.json"
-PROFILE = "phase8_batch_v3_profile.json"
+PROFILE = "phase8_batch_v4_profile.json"
 SOURCE_PDF = BENCH / "raw/sources/larkin_2015.pdf"
 
 sys.path.insert(0, str(repo_root() / "eval"))
@@ -103,15 +103,25 @@ def test_the_model_id_comes_from_the_pin_not_from_whichever_cache_is_open():
 # --- the plan is compared, not merely written -------------------------------
 
 @needs_paper
-def test_the_checked_in_plan_still_describes_this_checkout():
+def test_the_checked_in_plan_still_asks_exactly_what_it_pre_registered():
     """The first pre-registration published identities computed under a bug and
-    never regenerated. Nothing compared them to anything."""
+    never regenerated. Nothing compared them to anything.
+
+    The plan describes a recording that HAPPENED, under contract
+    phase8_batch_v2, so it is not regenerated when the evaluator moves. What
+    must not move is what the run ASKS: the evaluator decides how an answer is
+    judged, not what question reaches the model, and if that ever stops being
+    true the recording stops being replayable.
+    """
     import d1_7_preflight as preflight
 
     plan = json.loads(PLAN.read_text(encoding="utf-8-sig"))
-    observed = _observe()
-    drifts = preflight.compare(plan, observed, settings={})
-    assert drifts == [], drifts
+    drifts = preflight.compare(plan, _observe(), settings={})
+    identity_drifts = [d for d in drifts if "pre-registered contract" not in d]
+    assert identity_drifts == [], identity_drifts
+    # The one expected difference, named rather than filtered silently.
+    assert drifts == ["the plan pre-registered contract 'phase8_batch_v2' and "
+                      "this is 'phase8_batch_v3'"]
 
 
 @needs_paper
