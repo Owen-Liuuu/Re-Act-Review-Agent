@@ -32,6 +32,7 @@ from pydantic import BaseModel, Field
 from react_review.normalize.anchors import normalised_contains, value_supported_by_quote
 from react_review.normalize.cohorts import distinguishing_tokens
 from react_review.normalize.population import PopulationScope, classify_population
+from react_review.schemas.evidence import SourceNumericComponents
 from react_review.schemas.batch import (
     ARM,
     COMPARISON,
@@ -47,6 +48,7 @@ from react_review.schemas.batch import (
 from react_review.tools.evidence_binding import binding_verdict, bound
 from react_review.tools.target_assignment import _label_in_quote
 from react_review.tools.value_components import (
+    INCOMPLETE,
     PROTOCOL_ERROR,
     parse_component_block,
     verify_components,
@@ -605,9 +607,25 @@ def _verify_entry_components(entries: list[BatchEntry]):
     verified: list[BatchEntry] = []
     rejects: list[dict[str, Any]] = []
     values = [entry.value for entry in entries if entry.value is not None]
+    # Two readings that report the SAME number from the SAME sentence cannot be
+    # told apart by proximity: whichever interval is nearest is nearest to both.
+    # The rival list is built from unequal values, so they were never each
+    # other's rivals, and the search silently locked onto the first occurrence —
+    # accepting a reading that claimed its neighbour's interval and REFUSING the
+    # one that claimed its own. Attribution fails closed here instead.
+    ambiguous = {value for value in values if values.count(value) > 1}
     for entry in entries:
         if entry.value is None:
             verified.append(entry)
+            continue
+        if entry.value in ambiguous and _shares_quote(entry, entries):
+            verified.append(entry.model_copy(update={
+                "verified_components": SourceNumericComponents(
+                    point_estimate=None, status=INCOMPLETE,
+                    missing=["ci_level", "ci_lower", "ci_upper"],
+                    reason=(f"two readings in this response report {entry.value!r} "
+                            "from the same passage, so no interval in it can be "
+                            "attributed to one of them rather than the other"))}))
             continue
         rivals = [value for value in values if value != entry.value]
         components, status, reason = verify_components(
@@ -621,6 +639,12 @@ def _verify_entry_components(entries: list[BatchEntry]):
         verified.append(entry.model_copy(
             update={"verified_components": components}))
     return verified, rejects
+
+
+def _shares_quote(entry: BatchEntry, entries: list[BatchEntry]) -> bool:
+    """Whether another reading with the same value rests on the same passage."""
+    return any(other is not entry and other.value == entry.value
+               and other.quote == entry.quote for other in entries)
 
 
 def _identity_for(item: dict, target_shape: str, quote: str,

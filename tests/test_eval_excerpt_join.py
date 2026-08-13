@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import pytest
 
+from tests.conftest import requires_frozen_evaluator
+
 from react_review.eval_excerpt import GoldError, assess, index_gold
 from react_review.schemas.batch import BatchReadingRecord, ExcerptProvenance
 
@@ -298,6 +300,7 @@ def test_the_key_names_every_batch_the_real_grouping_produces():
     makes. It stayed invisible while coverage joined on (study, field, shape),
     which collapsed all three into it.
     """
+    requires_frozen_evaluator()
     import csv
 
     from react_review.dkb import load_runtime_knowledge
@@ -344,6 +347,7 @@ def test_the_harness_judges_a_whole_planned_run_against_the_key():
     every batch the run would make rather than against one hand-made record —
     which, now that both directions are checked, would be refused anyway.
     """
+    requires_frozen_evaluator()
     import csv
     import types
 

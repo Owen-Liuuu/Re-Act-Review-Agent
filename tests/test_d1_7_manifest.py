@@ -14,6 +14,8 @@ import sys
 
 import pytest
 
+from tests.conftest import requires_frozen_evaluator
+
 from react_review.contracts import repo_root
 
 MANIFEST = repo_root() / "docs/baselines/d1_7_batch_recording_manifest.json"
@@ -139,6 +141,7 @@ def test_the_manifest_makes_no_claim_the_recording_cannot_support():
 def test_the_recorded_prompts_still_produce_the_keys_the_run_wrote():
     """The prompt shas are re-derived offline, so they are only trustworthy if
     the keys they compute are the ones actually in the cache."""
+    requires_frozen_evaluator()
     import d1_7_manifest
 
     rows, _ = d1_7_manifest._prompt_rows()

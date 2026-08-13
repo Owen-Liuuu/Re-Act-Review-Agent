@@ -21,6 +21,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.conftest import requires_frozen_evaluator
+
 from react_review.cli import _run_main
 from react_review.production import ProductionDependencies
 from react_review.steps.data_extraction.schemas import PaperDocument
@@ -306,6 +308,7 @@ def test_the_batch_contract_reads_once_and_records_what_it_sent(workspace, tmp_p
     gap that let the CLI ship without a runtime, without routes, and without
     telemetry on three separate occasions.
     """
+    requires_frozen_evaluator()
     from react_review.contracts import repo_root
     from react_review.schemas.telemetry import BATCH_EXTRACTION
 
@@ -343,6 +346,7 @@ def test_the_batch_contract_reads_once_and_records_what_it_sent(workspace, tmp_p
 def test_the_batched_package_records_which_evaluator_decided(workspace, tmp_path):
     """A run that aggregates must name the code that did it, or its answers are
     attributed to nothing."""
+    requires_frozen_evaluator()
     from react_review.contracts import repo_root
 
     profile = repo_root() / "configs/run_profiles/phase8_batch_v3.json"

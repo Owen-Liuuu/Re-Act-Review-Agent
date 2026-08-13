@@ -16,6 +16,8 @@ import sys
 
 import pytest
 
+from tests.conftest import requires_frozen_evaluator
+
 from react_review.contracts import repo_root
 
 BENCH = repo_root() / "eval/benchmarks/melanoma_checkpoint_2017"
@@ -64,6 +66,7 @@ def test_the_arm_identity_route_is_fully_covered_by_the_phase7_recording():
     If this ever fails, a recording run would go live for the arm identities as
     well as the batch route, and could not be described as isolating batching.
     """
+    requires_frozen_evaluator()
     cache = (repo_root()
              / "output/baselines/melanoma_checkpoint_2017/phase7_extraction_cache.json")
     if not cache.is_file():
@@ -81,6 +84,7 @@ def test_the_arm_identity_route_is_fully_covered_by_the_phase7_recording():
 def test_every_batch_slot_is_checked_not_only_the_first_attempt():
     """A failed first attempt reaches for attempt 1, and a stale recording
     there would be replayed into a run that believes it asked."""
+    requires_frozen_evaluator()
     observed = _observe()
     assert observed["batches"]
     for batch in observed["batches"]:
@@ -94,6 +98,7 @@ def test_the_model_id_comes_from_the_pin_not_from_whichever_cache_is_open():
     """The tools take the model id from the backend first and the open cache
     second, so a preflight against an EMPTY cache with no backend computes keys
     under the literal string "replay" — addresses no recording will occupy."""
+    requires_frozen_evaluator()
     one = _observe(model_id="glm-4.5-flash")
     other = _observe(model_id="some-other-model")
     assert (one["batches"][0]["cache_key_slots"]
@@ -113,6 +118,7 @@ def test_the_checked_in_plan_still_asks_exactly_what_it_pre_registered():
     judged, not what question reaches the model, and if that ever stops being
     true the recording stops being replayable.
     """
+    requires_frozen_evaluator()
     import d1_7_preflight as preflight
 
     plan = json.loads(PLAN.read_text(encoding="utf-8-sig"))
@@ -126,6 +132,7 @@ def test_the_checked_in_plan_still_asks_exactly_what_it_pre_registered():
 
 @needs_paper
 def test_a_changed_batch_identity_is_reported_as_drift():
+    requires_frozen_evaluator()
     import d1_7_preflight as preflight
 
     plan = json.loads(PLAN.read_text(encoding="utf-8-sig"))
@@ -136,6 +143,7 @@ def test_a_changed_batch_identity_is_reported_as_drift():
 
 @needs_paper
 def test_a_batch_the_plan_does_not_expect_is_reported():
+    requires_frozen_evaluator()
     import d1_7_preflight as preflight
 
     plan = json.loads(PLAN.read_text(encoding="utf-8-sig"))

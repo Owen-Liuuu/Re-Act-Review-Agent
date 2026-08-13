@@ -147,18 +147,26 @@ def test_v1_cannot_judge_the_recording_it_was_written_for():
     assert "MA015" in result.reason
 
 
-def test_v2_reaches_only_a_prohibitions_only_pass():
-    """Its capability floor is deliberately unset, so it cannot say more."""
+def test_v2_without_the_run_cannot_reach_a_pass_at_all():
+    """Graded on rows alone, none of v2's numeric prohibitions are read.
+
+    It used to answer `pass_prohibitions_only` in that state, which reads as
+    "every prohibition held" when in fact not one had been consulted. The
+    transitions are only part of what the gate declares.
+    """
     rows = _scored_rows()
     if rows is None:
         import pytest
 
         pytest.skip("the recording is local-only and not in this checkout")
     result = grade(_published("v2"), rows)
-    assert result.verdict == "pass_prohibitions_only"
-    assert result.capability_judged is False
+    assert result.verdict == "fail"
+    assert any("none of them were read" in u
+               for u in result.unmet_hard_conditions)
+    # The transition table itself is still clean; the failure is that the rest
+    # of the gate was never applied.
+    assert result.violations == ()
     assert result.capability["wrong_released"] == 0
-    assert result.capability["wrong_but_flagged"] == 1
 
 
 def test_v2_publishes_no_capability_threshold():
@@ -174,3 +182,66 @@ def test_v1_is_not_edited_to_change_its_own_verdict():
     v1 = _published("v1")
     assert "wrong_but_flagged" not in json.dumps(v1["transitions"])
     assert v1["gate_id"] == "d1_batch_v1"
+
+
+# --- the prohibitions the gate DECLARES are the ones it enforces -------------
+
+def _artifact(**metrics):
+    body = {"metrics": {"safety": {"silent_release_count": 0},
+                        "target": {"gold": {"identity_wrong_released": 0},
+                                   "wrong_target_accepted_count": 0},
+                        "scope": {"scope_wrong_released_count": 0}}}
+    for path, value in metrics.items():
+        section, key = path.split("__", 1)
+        node = body["metrics"][section]
+        if key == "identity_wrong_released":
+            node["gold"][key] = value
+        else:
+            node[key] = value
+    return body
+
+
+def test_a_gate_applied_without_the_run_reports_that_it_read_nothing():
+    """`grade(gate, rows)` graded the transitions and silently skipped every
+    numeric prohibition the gate declared. The verdict then said
+    PASS_PROHIBITIONS_ONLY while no prohibition had been read at all."""
+    from react_review.acceptance_transitions import grade
+
+    gate = {"hard_conditions": {"silent_releases": 0},
+            "baseline_rows": [], "transitions": {"allowed": {}, "forbidden": {}}}
+    result = grade(gate, [])
+    assert result.verdict == "fail"
+    assert any("none of them were read" in u for u in result.unmet_hard_conditions)
+
+
+def test_the_gold_graded_counter_is_what_wrong_target_reads():
+    """`target.wrong_target_accepted_count` reads 0 on a run whose comparison
+    identity was wrong and released, because it never looked at the gold. The
+    deprecated counter is exactly the one that passed MA014."""
+    from react_review.acceptance_transitions import check_hard_conditions
+
+    gate = {"hard_conditions": {"wrong_target_accepted_count": 0}}
+    assert check_hard_conditions(gate, _artifact()) == []
+
+    unmet = check_hard_conditions(
+        gate, _artifact(target__identity_wrong_released=1))
+    assert len(unmet) == 1
+    assert "identity_wrong_released" in unmet[0]
+
+
+def test_a_declared_condition_with_no_reader_is_refused_not_skipped():
+    """A gate that declares a rule nothing enforces is worse than one that
+    declares nothing."""
+    from react_review.acceptance_transitions import check_hard_conditions
+
+    unmet = check_hard_conditions(
+        {"hard_conditions": {"invented_condition": 0}}, _artifact())
+    assert any("no reader" in u for u in unmet)
+
+
+def test_a_condition_the_run_does_not_report_is_not_treated_as_met():
+    from react_review.acceptance_transitions import check_hard_conditions
+
+    unmet = check_hard_conditions(
+        {"hard_conditions": {"silent_releases": 0}}, {"metrics": {}})
+    assert any("reports no" in u for u in unmet)

@@ -152,3 +152,54 @@ def test_a_paper_that_reports_no_interval_still_compares():
         source_value="0.57", source_components=complete)
     assert verdict.label.value == "match"
     assert verdict.review_required, "unverified parts still force review"
+
+
+# --- two readings, one number: attribution must fail closed -----------------
+
+SAME_NUMBER = ("The hazard ratio for A versus C was 0.57 (95% CI, 0.40 to 0.80) "
+               "and for B versus C was 0.57 (99% CI, 0.30 to 0.90).")
+SAME_DOC = "Intro. " + SAME_NUMBER + " End."
+
+
+def _same(left, lower, upper, level):
+    return {"left_label": left, "right_label": "C", "value": "0.57",
+            "unit": "ratio", "quote": SAME_NUMBER,
+            "value_components": {"point_estimate": "0.57", "ci_level": level,
+                                 "ci_lower": lower, "ci_upper": upper}}
+
+
+def test_two_readings_with_the_same_number_get_no_interval_at_all():
+    """Proximity cannot separate them: whichever interval is nearest is nearest
+    to both.
+
+    The rival list was built from UNEQUAL values, so two readings of `0.57`
+    were never each other's rivals — and the search locked onto the first
+    occurrence. It accepted the reading that claimed its neighbour's interval
+    and REFUSED the one that claimed its own, which is the wrong answer twice.
+    """
+    reading = parse_batch(
+        {"readings": [_same("A", "0.40", "0.80", 95),
+                      _same("B", "0.30", "0.90", 99)]},
+        SAME_DOC, target_shape=COMPARISON)
+
+    assert len(reading.usable) == 2, "the values themselves are still readable"
+    for entry in reading.usable:
+        components = entry.verified_components
+        assert components.status == "incomplete"
+        assert components.ci_level is None and components.ci_lower is None
+        assert "same passage" in components.reason
+
+
+def test_an_ambiguous_attribution_cannot_produce_a_bare_match():
+    """The fail-closed path has to reach the verdict, or it is only a comment."""
+    reading = parse_batch(
+        {"readings": [_same("A", "0.40", "0.80", 95),
+                      _same("B", "0.30", "0.90", 99)]},
+        SAME_DOC, target_shape=COMPARISON)
+
+    verdict = compare_values(
+        field_type="hazard_ratio", review_value="0.57 (95% CI 0.40-0.80)",
+        source_value="0.57",
+        source_components=reading.usable[0].verified_components)
+    assert verdict.label.value == "not_comparable"
+    assert verdict.review_required

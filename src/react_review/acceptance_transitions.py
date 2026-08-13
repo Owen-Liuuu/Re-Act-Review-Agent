@@ -87,7 +87,68 @@ class GateResult:
     reason: str = ""
 
 
-def grade(gate: dict, rows, *, baseline_key: str = "baseline_state") -> GateResult:
+#: Where each declared hard condition is READ FROM in a scored artifact, and
+#: what it must equal. A condition with no reader here is refused rather than
+#: skipped: a gate that declares a rule nothing enforces is worse than one that
+#: declares nothing, and this repository has already found that exact failure in
+#: an aggregation policy and written a test for it there.
+_HARD_CONDITION_READERS = {
+    "silent_releases": ("metrics", "safety", "silent_release_count"),
+    # The gold-graded counter, not the deprecated numeric one. `target.
+    # wrong_target_accepted_count` reads 0 on a run whose comparison identity
+    # was wrong and released, because it never looked at the gold.
+    "wrong_target_accepted_count": ("metrics", "target", "gold",
+                                    "identity_wrong_released"),
+    "scope_wrong_released_count": ("metrics", "scope",
+                                   "scope_wrong_released_count"),
+}
+
+
+def _read_path(body: dict, path: tuple):
+    node = body
+    for key in path:
+        if not isinstance(node, dict) or key not in node:
+            return None
+        node = node[key]
+    return node
+
+
+def check_hard_conditions(gate: dict, artifact: dict) -> list[str]:
+    """Every numeric prohibition the gate declares, read from the run.
+
+    Conditions this cannot read are reported as unenforceable rather than
+    passed over. `batches_match_expected_plan` and
+    `every_batched_row_resolves_its_execution_id` are checked by the preflight
+    and the package tests respectively, and are named here so that the gate's
+    own declaration is answered rather than ignored.
+    """
+    unmet: list[str] = []
+    external = {"batches_match_expected_plan":
+                "checked by eval/d1_7_preflight.py against the expected plan",
+                "every_batched_row_resolves_its_execution_id":
+                "checked by tests/orchestrator/test_batched_pipeline.py",
+                "no_forbidden_transition": "checked by the transition table below"}
+    for name, expected in (gate.get("hard_conditions") or {}).items():
+        if name in external:
+            continue
+        reader = _HARD_CONDITION_READERS.get(name)
+        if reader is None:
+            unmet.append(f"hard condition {name!r} has no reader, so the gate "
+                         "declares a rule nothing enforces")
+            continue
+        actual = _read_path(artifact, reader)
+        if actual is None:
+            unmet.append(f"hard condition {name!r} is declared and the run "
+                         f"reports no {'.'.join(reader)}")
+        elif actual != expected:
+            unmet.append(f"hard condition {name!r}: the gate requires "
+                         f"{expected} and the run reports {actual} "
+                         f"(from {'.'.join(reader)})")
+    return unmet
+
+
+def grade(gate: dict, rows, *, baseline_key: str = "baseline_state",
+          artifact: dict | None = None) -> GateResult:
     """Apply a gate to a scored run.
 
     `rows` are dicts carrying at least audit_id, field_type, predicted_label,
@@ -141,6 +202,12 @@ def grade(gate: dict, rows, *, baseline_key: str = "baseline_state") -> GateResu
     }
 
     unmet: list[str] = []
+    if artifact is not None:
+        unmet.extend(check_hard_conditions(gate, artifact))
+    elif gate.get("hard_conditions"):
+        unmet.append(
+            "the gate declares hard conditions and was applied to rows alone, "
+            "so none of them were read. Pass the scored artifact")
     floor = gate.get("capability_floor") or {}
     judged = any(floor.get(name) is not None
                  for name in ("min_correct_rows",
