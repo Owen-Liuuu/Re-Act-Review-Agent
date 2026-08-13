@@ -76,7 +76,7 @@ def _contract(tmp_path):
             "extraction_routes": {"value": "targeted_v5_batch",
                                   "arm_identity": "targeted_v4"},
             "aggregation_policy_id": "safe_sum_v5",
-            "evaluator_version": "1.7.0"}
+            "evaluator_version": "1.8.0"}
     path = tmp_path / "contract.json"
     path.write_text(json.dumps(body), encoding="utf-8")
     return load_run_contract(path)
@@ -488,10 +488,10 @@ def test_the_manifest_records_the_runtime_that_ran(tmp_path):
     from react_review.tools.safe_aggregation import AggregationRuntime
 
     runtime = AggregationRuntime.resolve(policy_id="safe_sum_v5",
-                                         evaluator_version="1.7.0")
+                                         evaluator_version="1.8.0")
     body = RunManifest.runtime_of(runtime)
     assert body["policy_id"] == "safe_sum_v5"
-    assert body["evaluator_version"] == "1.7.0"
+    assert body["evaluator_version"] == "1.8.0"
     assert len(body["policy_sha256"]) == 64
     assert "release_eligible" in body
     # And a run that never aggregated records nothing at all.
@@ -640,7 +640,7 @@ def test_the_production_pipeline_routes_records_and_measures(tmp_path):
     # And what decided is recorded rather than inferred.
     body = RunManifest.runtime_of(runtime)
     assert body["policy_id"] == "safe_sum_v5"
-    assert body["evaluator_version"] == "1.7.0"
+    assert body["evaluator_version"] == "1.8.0"
 
 
 def test_a_package_from_a_run_that_measured_nothing_has_no_telemetry_key(tmp_path):

@@ -314,7 +314,7 @@ def test_the_key_names_every_batch_the_real_grouping_produces():
     root = BENCH.parents[2]
     rows = list(csv.DictReader(
         (BENCH / "audit_template.csv").open(encoding="utf-8-sig")))
-    profile = load_profile(BENCH, "phase8_batch_v4_profile.json",
+    profile = load_profile(BENCH, "phase8_batch_v5_profile.json",
                            answer_key_ids=[r["audit_id"] for r in rows])
     collector = dry_run_collector(profile.run_contract, load_runtime_knowledge(
         root / "configs/knowledge.seed.json", root / "configs/ontology"))
@@ -373,7 +373,7 @@ def test_the_harness_judges_a_whole_planned_run_against_the_key():
     root = BENCH.parents[2]
     rows = list(csv.DictReader(
         (BENCH / "audit_template.csv").open(encoding="utf-8-sig")))
-    profile = load_profile(BENCH, "phase8_batch_v4_profile.json",
+    profile = load_profile(BENCH, "phase8_batch_v5_profile.json",
                            answer_key_ids=[r["audit_id"] for r in rows])
     collector = dry_run_collector(profile.run_contract, load_runtime_knowledge(
         root / "configs/knowledge.seed.json", root / "configs/ontology"))

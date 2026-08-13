@@ -69,6 +69,10 @@ class RunManifest(BaseModel):
     #: answers to code that never ran. Omitted from the serialised form when
     #: empty, so every manifest already written is unchanged.
     aggregation_runtime: dict[str, Any] = Field(default_factory=dict)
+    #: Which comparator decided MATCH, and whether its answers may be published.
+    #: Omitted when the contract names none, so every manifest already written
+    #: is unchanged.
+    compare_runtime: dict[str, Any] = Field(default_factory=dict)
     complete: bool = False
 
     @model_serializer(mode="wrap")
@@ -76,7 +80,19 @@ class RunManifest(BaseModel):
         body = handler(self)
         if not body.get("aggregation_runtime"):
             body.pop("aggregation_runtime", None)
+        if not body.get("compare_runtime"):
+            body.pop("compare_runtime", None)
         return body
+
+    @staticmethod
+    def compare_of(contract) -> dict[str, Any]:
+        """The comparator identity a contract names, resolved once."""
+        version = getattr(contract, "compare_version", "") if contract else ""
+        if not version:
+            return {}
+        from react_review.tools.compare_identity import compare_readiness
+
+        return compare_readiness(version).as_dict()
 
     @staticmethod
     def runtime_of(runtime) -> dict[str, Any]:

@@ -341,6 +341,9 @@ def main(argv: list[str] | None = None) -> None:
         results, studies, benchmark,
         (profile.excerpt_gold_path if profile is not None else None))
 
+    from react_review.schemas.run_manifest import RunManifest as _RM
+    _compare_runtime = _RM.compare_of(contract)
+
     metrics = score_rows(results)
     print(format_report(metrics))
     if coverage is not None and not coverage.assessable:
@@ -379,6 +382,10 @@ def main(argv: list[str] | None = None) -> None:
             # answers to code that never ran.
             **({"aggregation_runtime": run_meta_runtime} if run_meta_runtime
                else {}),
+            # What decided MATCH. A separate identity from what decided a
+            # total, and recorded separately, because a comparator change that
+            # rode on an aggregation version is the hole this closes.
+            **({"compare_runtime": _compare_runtime} if _compare_runtime else {}),
             **({"excerpt_coverage": coverage.as_dict()}
                if coverage is not None else {}),
             "studies_file": str(studies_path.resolve()),

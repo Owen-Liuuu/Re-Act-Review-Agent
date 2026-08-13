@@ -42,6 +42,25 @@ _TARGET_CHECK = {
 }
 
 
+def _target_name(entry) -> str:
+    """The paper's own name for what this reading is ABOUT.
+
+    A comparison has no `arm_label` — its identity is the PAIR — so reading the
+    arm label alone returned an empty string, and a run whose comparison
+    identity was wrong reported no identity at all. The gold graded that as an
+    identity released without review, and the gate that should have caught it
+    was reading a counter which never looks at the gold.
+
+    Named exactly as the single-target route names one, because the two are
+    graded against the same key and a second spelling would be a second answer.
+    """
+    identity = entry.identity
+    if identity.comparison_pair:
+        left, right = identity.comparison_pair
+        return f"{left} vs {right}"
+    return identity.arm_label
+
+
 def _provenance(projection: Projection) -> AggregationProvenance | None:
     """The account of a sum — or nothing at all, where no sum was ever in play.
 
@@ -119,8 +138,8 @@ def to_source_result(projection: Projection) -> SourceValueResult:
             # paper printed, and a components path that could change it would be
             # a second, quieter extractor.
             source_components=entry.verified_components,
-            group_label_in_paper=entry.identity.arm_label,
-            assigned_arm_label=entry.identity.arm_label,
+            group_label_in_paper=_target_name(entry),
+            assigned_arm_label=_target_name(entry),
             source_scope=entry.identity.population,
             target_check="ok", evidence_check="ok", **common)
 

@@ -22,7 +22,7 @@ from react_review.contracts import repo_root
 
 BENCH = repo_root() / "eval/benchmarks/melanoma_checkpoint_2017"
 PLAN = BENCH / "d1_7_expected_plan.json"
-PROFILE = "phase8_batch_v4_profile.json"
+PROFILE = "phase8_batch_v5_profile.json"
 SOURCE_PDF = BENCH / "raw/sources/larkin_2015.pdf"
 
 sys.path.insert(0, str(repo_root() / "eval"))
@@ -127,7 +127,7 @@ def test_the_checked_in_plan_still_asks_exactly_what_it_pre_registered():
     assert identity_drifts == [], identity_drifts
     # The one expected difference, named rather than filtered silently.
     assert drifts == ["the plan pre-registered contract 'phase8_batch_v2' and "
-                      "this is 'phase8_batch_v3'"]
+                      "this is 'phase8_batch_v4'"]
 
 
 @needs_paper

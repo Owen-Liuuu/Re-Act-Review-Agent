@@ -84,7 +84,7 @@ def _prompt_rows() -> tuple[list[dict], str]:
     # unchanged by that — the evaluator decides how an answer is judged, not what
     # question is asked — so the re-derivation uses the current profile and is
     # checked, as always, against the keys the run actually wrote.
-    observed = preflight.observe(BENCH, "phase8_batch_v4_profile.json", None, 3,
+    observed = preflight.observe(BENCH, "phase8_batch_v5_profile.json", None, 3,
                                  plan["model_id"])
     prompts = {question.identity(): prompt
                for question, prompt in observed["batch_tool"].asked}

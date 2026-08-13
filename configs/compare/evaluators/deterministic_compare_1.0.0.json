@@ -1,0 +1,21 @@
+{
+  "compare_id": "deterministic_compare",
+  "compare_version": "1.0.0",
+  "written_on": "2026-08-13",
+  "hash_algorithm": "sha256-path-lf-v1",
+  "purpose": "The code that decides whether two values AGREE. safe_aggregation versions the code that turns readings into totals and never covered this, so a refusal added in audit/compare.py could change a verdict while every published hash stayed put.",
+  "boundary": "Files that can change a MATCH into a MISMATCH or a NOT_COMPARABLE. compare.py decides; numeric.py parses the values it decides on; value_components.py decides which parts of a value are believed. The aggregation executor is deliberately NOT here — it has its own identity, and one file belonging to two hashes would make each of them a claim about the other.",
+  "versioning": {
+    "patch": "wording and logging only; proven not to move any pair between labels",
+    "minor": "a new refusal, or a comparison that can now decide what it previously could not",
+    "major": "a different comparison contract",
+    "rule": "If the set of pairs landing in match / mismatch / not_comparable can change, it is at least MINOR"
+  },
+  "source_files": {
+    "src/react_review/audit/compare.py": "sha256:e83abe672f33e1c9893e4044bf3c4052b38d57c5b078da44e26bb116f5fb17cb",
+    "src/react_review/normalize/numeric.py": "sha256:f23290a3f2b67e1c97adc2816d956d72895aef38e7cb6f26f243847e1bfd270a",
+    "src/react_review/tools/value_components.py": "sha256:34b20c67ca7c2205bc86538b00d14bf5f28354110b4860710573cc5e221b3aeb"
+  },
+  "compare_hash": "sha256:3a884ff42d260bcf7f4d4519edc325da7c005d81ce5e0a8fbb4bdf15bd597913",
+  "why_1_0_0": "The first identity for this code. It is 1.0.0 rather than a number continuing the aggregation series because it is not that series: the two are separate identities from here, and pretending otherwise is what let a comparator change ride on an aggregation version."
+}

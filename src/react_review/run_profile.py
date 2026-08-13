@@ -76,6 +76,10 @@ class RunContractProfile(BaseModel):
     #: a derived total is only as good as the identity that cleared it.
     aggregation_policy_id: str = ""
     evaluator_version: str = ""
+    #: Which comparator decided MATCH. Separate from `evaluator_version`: the
+    #: aggregation executor and the comparison code are different identities,
+    #: and one field for both would let a change in either ride on the other.
+    compare_version: str = ""
     semantic_prompt_profile: str = "semantic_v1"
     # None means "the comparator's own defaults" — the Phase 6/7 behaviour. A
     # contract that names a file pins its hash; nothing loads a tolerance table
@@ -144,6 +148,8 @@ class RunContractProfile(BaseModel):
             body["extraction_routes"] = dict(sorted(self.extraction_routes.items()))
             body["aggregation_policy_id"] = self.aggregation_policy_id
             body["evaluator_version"] = self.evaluator_version
+            if self.compare_version:
+                body["compare_version"] = self.compare_version
         return body
 
 
@@ -187,7 +193,9 @@ def load_run_contract(path: Path | str) -> RunContractProfile:
         path=path, sha256=sha256_file(path),
         schema_version=version,
         extraction_routes=routes, aggregation_policy_id=policy_id,
-        evaluator_version=evaluator_version, semantic_prompt_profile=semantic,
+        evaluator_version=evaluator_version,
+        compare_version=str(body.get("compare_version") or ""),
+        semantic_prompt_profile=semantic,
         tolerances_path=(tolerances_path or None), tolerances_sha256=tolerances_sha,
         population_contract_path=(population_path or None),
         population_contract_sha256=population_sha,

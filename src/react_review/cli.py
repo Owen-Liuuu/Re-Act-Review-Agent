@@ -857,6 +857,10 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
     # What decided, recorded beside what it decided under — including on the
     # partial manifest a stopped run leaves behind.
     manifest.aggregation_runtime = RunManifest.runtime_of(runtime)
+    # And what decided MATCH, which is a different identity from what decided a
+    # total. Empty when the contract names no comparator version, so nothing
+    # already recorded gains a key.
+    manifest.compare_runtime = RunManifest.compare_of(contract)
     # So a run interrupted before the first paper still leaves an artifact that
     # says which contract it was running under.
     session.manifest = manifest

@@ -341,3 +341,37 @@ restored to its original bytes and the corrections published as v2.
 2. A correction is a new version naming what it supersedes and why.
 3. Results are attributed to the gate version and hash that produced them.
 4. Withdrawn results stay published as withdrawn, with the defect named.
+
+| — | `configs/aggregation/registry_v7.json` | `CBAB63703AA30014` | current |
+| — | `configs/aggregation/evaluators/safe_aggregation_1.8.0.json` | `D566BA50B65FCF7A` | current |
+| — | `configs/compare/evaluators/deterministic_compare_1.0.0.json` | `44B1F8045D405BD7` | current |
+| — | `configs/run_profiles/phase8_batch_v4.json` | `19A412345ECAD1EA` | current |
+| — | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v5_profile.json` | `B7F5EE9E1FC95D4F` | current |
+
+## The comparator gets an identity of its own
+
+`safe_aggregation` versions the code that turns readings into totals. It never
+covered the code that decides whether two values AGREE — and D1-7.3 added a
+refusal in `audit/compare.py` under which the same recording, the same policy
+and the same evaluator hash produce NOT_COMPARABLE where they had produced
+MATCH. The hole was recorded at the time rather than closed, because closing it
+was a governance decision.
+
+The decision was to give the comparator its own identity rather than fold it
+into the aggregation boundary: it is not part of a safe-summation executor, and
+folding it in would have forced a new aggregation version for every edit to a
+file that changes often. `configs/compare/evaluators/` now holds
+`deterministic_compare`, with the same hash algorithm, over `audit/compare.py`,
+`normalize/numeric.py` and `tools/value_components.py`.
+
+There is no registry on this side and no policy to pair with. A registry exists
+for aggregation to say which POLICY may be applied by which evaluator; the
+comparator applies no policy, so its identity is the manifest and nothing else.
+A run profile may now name `compare_version`, and the manifest records the
+resolved identity beside the aggregation one — omitted entirely when a contract
+names none, so nothing already written gains a key.
+
+Unlike the aggregation evaluator, a mismatch here does not raise at startup. The
+comparator runs in every audit, including ones that never aggregate, so a
+development checkout stays runnable and simply may not publish: the refusal is
+carried on the result instead of thrown.

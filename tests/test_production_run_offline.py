@@ -312,7 +312,7 @@ def test_the_batch_contract_reads_once_and_records_what_it_sent(workspace, tmp_p
     from react_review.contracts import repo_root
     from react_review.schemas.telemetry import BATCH_EXTRACTION
 
-    profile = repo_root() / "configs/run_profiles/phase8_batch_v3.json"
+    profile = repo_root() / "configs/run_profiles/phase8_batch_v4.json"
     backend = ScriptedBackend()
     store = _run(workspace, tmp_path, backend, run_id="batched1",
                  argv_extra=("--profile", str(profile)))
@@ -349,10 +349,10 @@ def test_the_batched_package_records_which_evaluator_decided(workspace, tmp_path
     requires_frozen_evaluator()
     from react_review.contracts import repo_root
 
-    profile = repo_root() / "configs/run_profiles/phase8_batch_v3.json"
+    profile = repo_root() / "configs/run_profiles/phase8_batch_v4.json"
     store = _run(workspace, tmp_path, ScriptedBackend(), run_id="batched2",
                  argv_extra=("--profile", str(profile)))
 
     runtime = store.load("batched2").run_manifest.aggregation_runtime
     assert runtime["policy_id"] == "safe_sum_v5"
-    assert runtime["evaluator_version"] == "1.7.0"
+    assert runtime["evaluator_version"] == "1.8.0"
