@@ -119,10 +119,12 @@ def test_a_batch_is_covered_only_when_every_witness_in_it_is():
 
     assert tally([(whole, True)]).as_dict() == {
         "windowed_batches": 1, "gold_text_assessable_batches": 1,
-        "gold_covered_batches": 1, "gold_missing_batches": 0}
+        "gold_covered_batches": 1, "gold_missing_batches": 0,
+        "gold_unlocatable_batches": 0}
     assert tally([(partial, True)]).as_dict() == {
         "windowed_batches": 1, "gold_text_assessable_batches": 1,
-        "gold_covered_batches": 0, "gold_missing_batches": 1}
+        "gold_covered_batches": 0, "gold_missing_batches": 1,
+        "gold_unlocatable_batches": 0}
 
 
 def test_a_batch_with_nothing_assessable_is_counted_in_neither_column():

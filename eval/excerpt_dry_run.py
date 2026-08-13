@@ -94,7 +94,12 @@ def main(argv=None) -> int:
                 text, target=target, raw_label=group.key.raw_field_name,
                 field_type=field_type, variants=variants)
             readings.append(BatchReadingRecord(
-                execution_id=f"dry:{study_id}/{field_type}/{group.shape}",
+                # The raw field name is part of the group key, so leaving it out
+                # gave the three arm-count batches ONE id between them. An
+                # identity that collides cannot be used to pre-register what a
+                # recording is expected to contain.
+                execution_id=(f"dry:{study_id}/{field_type}/{group.shape}/"
+                              f"{group.key.raw_field_name}"),
                 study_id=study_id, field_type=field_type,
                 target_shape=group.shape,
                 claim_ids=[_claim_id(c) for c in group.claims],
@@ -118,6 +123,12 @@ def main(argv=None) -> int:
     print(f"batches  : {len(readings)} computed without asking a model")
     if not report.assessable:
         print(f"excerpt  : NOT ASSESSABLE — {report.reason}")
+        if report.missing_from_run:
+            print(f"           the key expects, and the run never made: "
+                  f"{list(report.missing_from_run)}")
+        if report.unjudged_run_batches:
+            print(f"           the run made, and the key does not judge: "
+                  f"{list(report.unjudged_run_batches)}")
         return 1
     counts = report.tally
     print(f"excerpt  : {counts.gold_covered_batches}/"
@@ -129,8 +140,7 @@ def main(argv=None) -> int:
         state = "all covered" if not missed else json.dumps(missed)
         print(f"  {entry['batch_id']:46s} windowed={entry['windowed']!s:5s} "
               f"{entry['excerpt_chars']:>6d}/{entry['source_chars']:<6d} {state}")
-    if report.unjudged_run_batches:
-        print(f"  unjudged by the key: {list(report.unjudged_run_batches)}")
+
     if args.json:
         args.json.write_text(json.dumps(report.as_dict(), indent=2,
                                         ensure_ascii=False), encoding="utf-8")

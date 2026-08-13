@@ -172,12 +172,17 @@ class CoverageTally:
     gold_text_assessable_batches: int = 0
     gold_covered_batches: int = 0
     gold_missing_batches: int = 0
+    #: Batches held OUT of the denominator because a witness the key quotes is
+    #: not in the extracted text at all. Reported so they cannot vanish: a batch
+    #: that leaves every count silently is a batch nobody knows was skipped.
+    gold_unlocatable_batches: int = 0
 
     def as_dict(self) -> dict[str, int]:
         return {"windowed_batches": self.windowed_batches,
                 "gold_text_assessable_batches": self.gold_text_assessable_batches,
                 "gold_covered_batches": self.gold_covered_batches,
-                "gold_missing_batches": self.gold_missing_batches}
+                "gold_missing_batches": self.gold_missing_batches,
+                "gold_unlocatable_batches": self.gold_unlocatable_batches}
 
 
 def tally(batches) -> CoverageTally:
@@ -187,23 +192,34 @@ def tally(batches) -> CoverageTally:
     about. Counting witnesses would let one batch with five quotes outvote five
     batches with one, and the selector made a single decision in each case.
 
-    A batch is covered only when every assessable witness in it is: the point of
-    batching is that one reading answers several claims, so a window holding
-    four of five passages has failed the claim resting on the fifth.
+    A batch is covered only when EVERY text witness in it was located and sent.
+    The point of batching is that one reading answers several claims, so a window
+    holding four of five passages has failed the claim resting on the fifth.
+
+    And a batch with a witness the extracted text does not contain is not
+    covered — it is not assessable. Dropping the unlocatable witness and judging
+    the rest was the earlier behaviour, and it let a batch whose partition
+    sentence had been mangled by the PDF extractor be reported as fully covered
+    on the strength of the witnesses that survived. What the window did with a
+    passage nobody can locate is not knowable, and "covered" is a claim.
     """
-    windowed = assessable = covered = missing = 0
+    windowed = assessable = covered = missing = unlocatable = 0
     for outcomes, was_windowed in batches:
         if was_windowed:
             windowed += 1
-        judged = [o for o in outcomes if o.assessable]
-        if not judged:
+        text = [o for o in outcomes if o.outcome != NON_TEXT_UNASSESSABLE]
+        if not text:
+            # Nothing lexical to judge. Neither a pass nor a failure.
+            continue
+        if any(o.outcome == FULLTEXT_UNLOCATABLE for o in text):
+            unlocatable += 1
             continue
         assessable += 1
-        if all(o.outcome == COVERED for o in judged):
-            covered += 1
-        else:
+        if any(o.outcome == WINDOW_MISSED for o in text):
             missing += 1
-    return CoverageTally(windowed, assessable, covered, missing)
+        else:
+            covered += 1
+    return CoverageTally(windowed, assessable, covered, missing, unlocatable)
 
 
 # --- joining a run's readings to the key ------------------------------------
@@ -244,18 +260,19 @@ class CoverageReport:
     reason: str = ""
     tally: CoverageTally | None = None
     batches: tuple = ()
-    #: Readings the key says nothing about. Reported rather than skipped: a key
-    #: that silently covers half a run yields a coverage figure computed over a
-    #: sample nobody chose.
+    #: Readings the key says nothing about, and batches the key expects that the
+    #: run never made. Either one means the two are describing different runs,
+    #: so both are reported and both make the result unassessable.
     unjudged_run_batches: tuple = ()
+    missing_from_run: tuple = ()
 
     def as_dict(self) -> dict:
-        if not self.assessable:
-            return {"assessable": False, "reason": self.reason,
-                    "unjudged_run_batches": list(self.unjudged_run_batches)}
-        return {"assessable": True, **self.tally.as_dict(),
+        body = {"assessable": self.assessable,
                 "unjudged_run_batches": list(self.unjudged_run_batches),
-                "batches": list(self.batches)}
+                "missing_from_run": list(self.missing_from_run)}
+        if not self.assessable:
+            return {**body, "reason": self.reason}
+        return {**body, **self.tally.as_dict(), "batches": list(self.batches)}
 
 
 class GoldError(ValueError):
@@ -298,10 +315,15 @@ def assess(batch_readings, gold: dict, text_for, *, sha_for=None) -> CoverageRep
     counted: list[tuple[list[WitnessOutcome], bool]] = []
     detail: list[dict] = []
     unjudged: list[str] = []
+    seen_keys: set[tuple[str, ...]] = set()
 
     def refuse(reason: str) -> "CoverageReport":
+        absent = tuple(sorted(
+            index[k].get("batch_id", "/".join(k)) for k in index
+            if k not in seen_keys))
         return CoverageReport(False, reason,
-                              unjudged_run_batches=tuple(unjudged))
+                              unjudged_run_batches=tuple(unjudged),
+                              missing_from_run=absent)
 
     for reading in batch_readings:
         key = _claim_key(getattr(reading, "claim_ids", ()))
@@ -311,6 +333,7 @@ def assess(batch_readings, gold: dict, text_for, *, sha_for=None) -> CoverageRep
             unjudged.append(reading.execution_id
                             or f"{reading.study_id}/{reading.field_type}")
             continue
+        seen_keys.add(key)
         batch_id = entry.get("batch_id", "?")
         if provenance is None:
             return refuse(f"batch {batch_id} recorded no excerpt provenance, so "
@@ -363,8 +386,20 @@ def assess(batch_readings, gold: dict, text_for, *, sha_for=None) -> CoverageRep
 
     if not counted:
         return refuse("no batch this run made appears in the excerpt key")
+
+    # Both directions, or the number is computed over a sample nobody chose.
+    # A run that made six of the key's seven batches would otherwise report
+    # "6/6 covered" — true of what it did, and silent about what it did not.
+    absent = sorted(index[k].get("batch_id", "/".join(k)) for k in index
+                    if k not in seen_keys)
+    if absent or unjudged:
+        return refuse(
+            f"the run and the key describe different sets of readings: "
+            f"{len(absent)} batch(es) the key expects were never made "
+            f"({', '.join(absent[:3]) or 'none'}), and {len(unjudged)} the run "
+            f"made are not in the key ({', '.join(unjudged[:3]) or 'none'})")
     return CoverageReport(True, tally=tally(counted), batches=tuple(detail),
-                          unjudged_run_batches=tuple(unjudged))
+                          unjudged_run_batches=(), missing_from_run=())
 
 
 # --- what a run, or a run that has not happened yet, would be judged on ------
@@ -384,8 +419,19 @@ def coverage_for_run(results, studies, benchmark, gold_path) -> "CoverageReport 
     from react_review.retrieval.local_pdf import _pdf_text
 
     readings = list(getattr(results, "batch_readings", []) or [])
-    if gold_path is None or not Path(gold_path).is_file() or not readings:
+    if gold_path is None or not Path(gold_path).is_file():
+        # No key: this benchmark has not judged its windows, and reporting
+        # anything would be reporting a measurement nobody made.
         return None
+    if not readings:
+        # A key exists and the run produced no reading at all. Silence here
+        # removed the coverage section from exactly the reports that most need
+        # one — the runs where everything failed.
+        return CoverageReport(
+            False, "the run produced no batched reading, so there is nothing to "
+            "judge against a key that expects some",
+            missing_from_run=tuple(sorted(
+                b.get("batch_id", "") for b in load_gold(gold_path).get("batches") or ())))
 
     paths = {s.study_id: (Path(benchmark) / s.source_pdf) for s in studies
              if getattr(s, "source_pdf", "")}
@@ -408,31 +454,15 @@ def coverage_for_run(results, studies, benchmark, gold_path) -> "CoverageReport 
 
 
 def benchmark_reviews(rows, targets):
-    """The claims the accuracy harness builds, from the same two files.
+    """The claims the accuracy harness builds — the SAME function it calls.
 
-    Shared so that a dry run and a real run group the same claims. A second copy
-    would drift, and the whole point of computing what WOULD be sent is that it
-    is what would be sent.
+    Not a copy that agrees today. The whole point of computing what would be
+    sent is that it is what would be sent, and a second builder drifts the first
+    time a field is added to the target contract.
     """
-    from react_review.eval_accuracy import _target_scope
-    from react_review.schemas.evidence import ReviewDataItem
+    from react_review.eval_accuracy import review_items_for_rows
 
-    built = []
-    for row in rows:
-        target = (targets or {}).get(row.get("audit_id", ""))
-        extra = {} if target is None else {
-            "raw_field_name": target.raw_field_name,
-            "cohort_label": target.cohort_label,
-            "timepoint": target.timepoint or "single",
-            "population_scope": _target_scope(target),
-            "population_scope_source": getattr(target, "population_scope_source", ""),
-        }
-        built.append(ReviewDataItem(
-            review_data_id=row.get("audit_id") or "", study_id=row["study_id"],
-            group=(row.get("group") or "-"), field_type=row["field_type"],
-            value=(row.get("review_value") or None), unit=(row.get("unit") or ""),
-            column_header=(row.get("column_header") or ""), **extra))
-    return built
+    return review_items_for_rows(rows, targets)
 
 
 class _Unreachable:

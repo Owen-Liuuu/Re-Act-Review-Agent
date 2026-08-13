@@ -115,14 +115,69 @@ def test_a_key_that_describes_a_different_reading_is_refused():
     assert "different reading" in report.reason
 
 
-def test_readings_the_key_says_nothing_about_are_reported_not_dropped():
-    """A key silently covering half a run gives a figure over a sample nobody
-    chose."""
+def test_a_reading_the_key_says_nothing_about_makes_the_result_unassessable():
+    """A key covering half a run gives a figure over a sample nobody chose.
+
+    Reporting it as a note beside a green number was not enough: the number was
+    still printed, still true of the batches it counted, and still silent about
+    the rest.
+    """
     extra = _reading(claim_ids=("MA099",))
     extra = extra.model_copy(update={"execution_id": "E-unjudged"})
     report = _assess([_reading(), extra])
-    assert report.assessable
+    assert not report.assessable
     assert report.unjudged_run_batches == ("E-unjudged",)
+    assert "different sets of readings" in report.reason
+
+
+def test_a_batch_the_key_expects_and_the_run_never_made_is_not_assessable():
+    """"6 of 6 covered" is true of what a run did and silent about what it did
+    not. Both directions are checked, or the denominator is whatever happened."""
+    gold = _gold()
+    gold["batches"].append({
+        "batch_id": "a batch this run never made", "study_id": "larkin_2015",
+        "field_type": "event_count", "target_shape": "arm",
+        "audit_ids": ["MA050"],
+        "witnesses": [{"witness_id": "w9", "witness_type": "explicit",
+                       "source_quote": "316 to the nivolumab group",
+                       "modality": "text"}]})
+    report = _assess([_reading()], gold)
+    assert not report.assessable
+    assert report.missing_from_run == ("a batch this run never made",)
+
+
+def test_a_run_that_produced_no_reading_at_all_is_not_assessable(tmp_path):
+    """Silence removed the coverage section from exactly the reports that most
+    need one — the runs where everything failed."""
+    import json
+    import types
+
+    from react_review.eval_excerpt import coverage_for_run
+
+    path = tmp_path / "gold.json"
+    path.write_text(json.dumps(_gold()), encoding="utf-8")
+    report = coverage_for_run(types.SimpleNamespace(batch_readings=[]), [],
+                              tmp_path, path)
+    assert report is not None and not report.assessable
+    assert "no batched reading" in report.reason
+    assert report.missing_from_run == ("larkin/cohort_n/arm",)
+
+
+def test_a_batch_with_an_unlocatable_witness_is_never_reported_as_covered():
+    """Dropping the unlocatable witness and judging the rest let a batch whose
+    partition sentence the PDF extractor had mangled be reported as fully
+    covered on the strength of the witnesses that survived."""
+    gold = _gold()
+    gold["batches"][0]["witnesses"].append({
+        "witness_id": "w-mangled", "witness_type": "partition",
+        "source_quote": "a sentence this extraction does not contain",
+        "modality": "text"})
+    report = assess([_reading()], gold, lambda _: PAPER, sha_for=lambda _: SHA)
+    assert report.assessable
+    counts = report.tally.as_dict()
+    assert counts["gold_covered_batches"] == 0
+    assert counts["gold_text_assessable_batches"] == 0
+    assert counts["gold_unlocatable_batches"] == 1
 
 
 # --- refusals, rather than zeros ---------------------------------------------
@@ -281,40 +336,76 @@ def test_the_key_is_bound_to_the_document_its_offsets_came_from():
 
 # --- the harness glue -------------------------------------------------------
 
-def test_the_harness_reads_the_same_document_the_key_measured(tmp_path):
-    """`_excerpt_coverage` had no test either, and it is where the run's
-    readings, the benchmark's PDFs and the key are brought together.
+def test_the_harness_judges_a_whole_planned_run_against_the_key():
+    """`coverage_for_run` had no test either, and it is where a run's readings,
+    the benchmark's PDFs and the key are brought together.
 
-    The failure it must not have is reading the paper with a different
-    extraction than the one the offsets came from — which would leave every
-    number plausible and every witness in the wrong place.
+    Built from the SAME planner the dry run uses, so this checks the key against
+    every batch the run would make rather than against one hand-made record —
+    which, now that both directions are checked, would be refused anyway.
     """
+    import csv
     import types
 
-    from react_review.eval_excerpt import coverage_for_run
+    from react_review.dkb import load_runtime_knowledge
+    from react_review.eval_excerpt import (
+        benchmark_reviews,
+        coverage_for_run,
+        dry_run_collector,
+        planned_batches,
+    )
+    from react_review.eval_profile import load_profile
+    from react_review.retrieval.local_pdf import _pdf_text
+    from react_review.tools.extract_source import (
+        SELECTION_METHOD_ID,
+        SELECTION_VERSION,
+        select_excerpt,
+    )
 
-    results = types.SimpleNamespace(batch_readings=[
-        BatchReadingRecord(execution_id="E1", study_id="larkin_2015",
-                           field_type="hazard_ratio", target_shape="comparison",
-                           claim_ids=["MA012", "MA013", "MA014", "MA015"],
-                           excerpt_provenance=ExcerptProvenance(
-                               windowed=False, source_chars=1, excerpt_chars=1,
-                               spans=[(0, 10**9)], selection_method_id="m",
-                               selection_version="v2"))])
+    paper = BENCH / "raw/sources/larkin_2015.pdf"
+    if not paper.is_file():
+        pytest.skip("the source paper is copyrighted and not in the repo")
+
+    root = BENCH.parents[2]
+    rows = list(csv.DictReader(
+        (BENCH / "audit_template.csv").open(encoding="utf-8-sig")))
+    profile = load_profile(BENCH, "phase8_batch_v3_profile.json",
+                           answer_key_ids=[r["audit_id"] for r in rows])
+    collector = dry_run_collector(profile.run_contract, load_runtime_knowledge(
+        root / "configs/knowledge.seed.json", root / "configs/ontology"))
+
+    text = _pdf_text(paper)
+    readings = []
+    for group in planned_batches(collector,
+                                 benchmark_reviews(rows, profile.targets),
+                                 profile.run_contract.extraction_routes["value"]):
+        excerpt, spans = select_excerpt(
+            text, target=(collector._concept_for(group.key.field_type)
+                          or group.key.raw_field_name or group.key.field_type),
+            raw_label=group.key.raw_field_name, field_type=group.key.field_type,
+            variants=collector._concept_variants_for(group.key.field_type))
+        readings.append(BatchReadingRecord(
+            execution_id=f"{group.key.field_type}/{group.key.raw_field_name}",
+            study_id=group.claims[0].study_id, field_type=group.key.field_type,
+            target_shape=group.shape,
+            claim_ids=[c.review_data_id for c in group.claims],
+            excerpt_provenance=ExcerptProvenance(
+                windowed=len(excerpt) != len(text), source_chars=len(text),
+                excerpt_chars=len(excerpt), spans=spans,
+                selection_method_id=SELECTION_METHOD_ID,
+                selection_version=SELECTION_VERSION)))
+
     studies = [types.SimpleNamespace(study_id="larkin_2015",
                                      source_pdf="raw/sources/larkin_2015.pdf")]
-
-    report = coverage_for_run(results, studies, BENCH,
-                              BENCH / "excerpt_gold_v2.json")
-    if not (BENCH / "raw/sources/larkin_2015.pdf").is_file():
-        # The source paper is copyrighted and not in the repo. The glue must
-        # then REFUSE rather than report zeros.
-        assert report is not None and not report.assessable
-        assert "no extracted text" in report.reason
-        return
-    assert report.assessable
-    assert report.tally.gold_covered_batches == 1
-    assert report.unjudged_run_batches == ()
+    report = coverage_for_run(types.SimpleNamespace(batch_readings=readings),
+                              studies, BENCH, profile.excerpt_gold_path)
+    assert report.assessable, report.reason
+    counts = report.tally
+    assert counts.gold_text_assessable_batches == len(readings) == 7
+    assert counts.gold_covered_batches == 7
+    assert counts.gold_missing_batches == 0
+    assert counts.gold_unlocatable_batches == 0
+    assert report.unjudged_run_batches == () and report.missing_from_run == ()
 
 
 def test_the_harness_is_silent_when_a_benchmark_publishes_no_key():
@@ -325,3 +416,51 @@ def test_the_harness_is_silent_when_a_benchmark_publishes_no_key():
 
     results = types.SimpleNamespace(batch_readings=[_reading()])
     assert coverage_for_run(results, [], BENCH, None) is None
+
+
+# --- the selector's OUTPUT is pinned, not compared to itself ----------------
+
+#: A frozen synthetic document. Long enough to force the ceiling and to make the
+#: last block truncate, which is the case that was wrong.
+_PIN_TEXT = "".join(
+    f"block {i} sample size total randomised patients {i * 7 % 97} "
+    for i in range(4000))
+_PIN_QUERY = dict(target="sample size", raw_label="Randomized patients, n",
+                  field_type="sample_size",
+                  variants=["number randomised", "total n"])
+_PIN_EXCERPT_SHA = "CDE732A036692E03C4F6F3020514DBE1"
+_PIN_SPANS = [(0, 3000), (2500, 5500), (7500, 10500), (17500, 20500),
+              (20000, 23000), (27500, 30500), (37500, 39291)]
+
+
+def test_the_selector_still_sends_the_bytes_it_was_published_sending():
+    """A pin on the OUTPUT, not a comparison of two current implementations.
+
+    `select_excerpt() == _paper_excerpt()` only says the two agree today; both
+    could move together and every recording made under targeted_v5_batch would
+    stop replaying, reported as a missing recording. The excerpt is part of the
+    prompt, so its bytes are part of the prompt contract.
+    """
+    import hashlib
+
+    from react_review.tools.extract_source import select_excerpt
+
+    excerpt, spans = select_excerpt(_PIN_TEXT, **_PIN_QUERY)
+    assert hashlib.sha256(excerpt.encode("utf-8")).hexdigest().upper()[:32] == \
+        _PIN_EXCERPT_SHA, (
+        "the excerpt sent for this query changed. If that is intended it is a "
+        "new prompt version, not a new hash typed into this test")
+
+
+def test_the_spans_the_selector_reports_are_pinned_too():
+    """The report is not the prompt, so it has its own pin — and its own
+    version. v1 read them off the markers and over-reported the truncated
+    block; the numbers here are what was actually sent.
+    """
+    from react_review.tools.extract_source import SELECTION_VERSION, select_excerpt
+
+    excerpt, spans = select_excerpt(_PIN_TEXT, **_PIN_QUERY)
+    assert spans == _PIN_SPANS
+    assert SELECTION_VERSION == "v2"
+    markers = sum(len(f"\n\n[SOURCE EXCERPT {a}:{b}]\n") for a, b in spans)
+    assert sum(b - a for a, b in spans) + markers == len(excerpt)

@@ -324,6 +324,45 @@ async def _collect_all(collector, reviews, reference_for, opened, opener,
     return collected
 
 
+def review_items_for_rows(rows, targets) -> list[ReviewDataItem]:
+    """The claims a benchmark run audits, built once.
+
+    One function because a preflight that computes what a run WOULD send has to
+    build the same claims the run builds. Two copies agreed on the day they were
+    written and would drift on the first day somebody added a field to the target
+    contract — and the drift would be invisible, because both sides would still
+    look right on their own.
+    """
+    built: list[ReviewDataItem] = []
+    for r in rows:
+        # Only a target contract may add to the question the extractor is
+        # asked. Deriving a raw field name from the answer key's own column
+        # header would change the prompt of every benchmark that has one — and
+        # so invalidate its recorded replay — for a run that asked for no
+        # profile at all.
+        target = (targets or {}).get(r.get("audit_id", ""))
+        extra = {} if target is None else {
+            "raw_field_name": target.raw_field_name,
+            "cohort_label": target.cohort_label,
+            "timepoint": target.timepoint or "single",
+            "population_scope": _target_scope(target),
+            "population_scope_source": getattr(
+                target, "population_scope_source", ""),
+        }
+        built.append(ReviewDataItem(
+            # The benchmark's own identity for this row. Production has
+            # `review_data_id` already; here the answer key's `audit_id` is what
+            # names a claim, and carrying it means nothing downstream has to
+            # recover a row's identity from its position in a list.
+            review_data_id=(r.get("audit_id") or ""),
+            study_id=r["study_id"], group=(r.get("group") or "-"),
+            field_type=r["field_type"], value=(r.get("review_value") or None),
+            unit=(r.get("unit") or ""), column_header=(r.get("column_header") or ""),
+            **extra,
+        ))
+    return built
+
+
 async def run_rows(
     rows: list[dict[str, str]],
     collector: _CollectorLike,
@@ -357,34 +396,7 @@ async def run_rows(
     # than one interleaved loop. A batched read answers several rows at once, so
     # a loop that collected and compared one row at a time could not use it —
     # and re-collecting per row would pay for the batch and then throw it away.
-    reviews: list[ReviewDataItem] = []
-    for r in rows:
-        # Only a target contract may add to the question the extractor is
-        # asked. Deriving a raw field name from the answer key's own column
-        # header would change the prompt of every benchmark that has one — and
-        # so invalidate its recorded replay — for a run that asked for no
-        # profile at all.
-        target = (targets or {}).get(r.get("audit_id", ""))
-        extra = {} if target is None else {
-            "raw_field_name": target.raw_field_name,
-            "cohort_label": target.cohort_label,
-            "timepoint": target.timepoint or "single",
-            "population_scope": _target_scope(target),
-            "population_scope_source": getattr(
-                target, "population_scope_source", ""),
-        }
-        review = ReviewDataItem(
-            # The benchmark's own identity for this row. Production has
-            # `review_data_id` already; here the answer key's `audit_id` is what
-            # names a claim, and carrying it means nothing downstream has to
-            # recover a row's identity from its position in a list.
-            review_data_id=(r.get("audit_id") or ""),
-            study_id=r["study_id"], group=(r.get("group") or "-"),
-            field_type=r["field_type"], value=(r.get("review_value") or None),
-            unit=(r.get("unit") or ""), column_header=(r.get("column_header") or ""),
-            **extra,
-        )
-        reviews.append(review)
+    reviews = review_items_for_rows(rows, targets)
 
     collected = await _collect_all(collector, reviews, reference_for, opened,
                                    opener, research_context)
