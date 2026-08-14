@@ -1,0 +1,26 @@
+{
+  "policy_id": "evidence_adequacy_v1",
+  "version": 1,
+  "written_on": "2026-08-15",
+  "purpose": "Claim-level deterministic gate before value comparison. It verifies that the source value is anchored and uniquely bound to the requested field, cohort and any scope axes the claim states.",
+  "required_axes": ["value", "field"],
+  "conditional_axes": {
+    "target": "required when the review claim names a cohort or comparison",
+    "population": "required when the review claim states a population basis",
+    "timepoint": "required when the review claim states a timepoint",
+    "analysis_set": "required when the review claim states an analysis set"
+  },
+  "rules": {
+    "metadata_only": "insufficient",
+    "unknown_document_scope": "unknown",
+    "any_required_fail": "insufficient",
+    "any_required_unknown": "unknown",
+    "all_required_pass": "sufficient",
+    "duplicate_value_occurrence": "unknown",
+    "coarser_compatible_source_statistic": "insufficient"
+  },
+  "limits": {
+    "max_context_chars": 800,
+    "max_field_distance_chars": 120
+  }
+}

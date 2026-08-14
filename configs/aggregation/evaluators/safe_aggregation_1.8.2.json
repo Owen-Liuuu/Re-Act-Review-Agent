@@ -1,0 +1,30 @@
+{
+  "evaluator_id": "safe_aggregation",
+  "evaluator_version": "1.8.2",
+  "written_on": "2026-08-15",
+  "hash_algorithm": "sha256-path-lf-v1",
+  "purpose": "The code whose behaviour IS this evaluator. A policy hash says what the conditions were; this says what enforced them.",
+  "boundary": "Files that can change what the same response becomes or whether the verdict may be published.",
+  "versioning": {
+    "patch": "logging wording and provenance only; proven not to move any claim between states",
+    "minor": "a new refusal a safety fix or any change to scope or set selection",
+    "major": "an incompatible input/output contract or a different aggregation algorithm"
+  },
+  "source_files": {
+    "src/react_review/audit/scope.py": "sha256:bee073eef8216f04cf2514dc149b949fdc9fa73f90cc518627be1e79c9ba6e05",
+    "src/react_review/normalize/anchors.py": "sha256:c816d4daf0b877c3313ba0e19f67b6708f6366977dc499574a7cb22e05866475",
+    "src/react_review/normalize/cohorts.py": "sha256:22c3f111aa4a910be2345285629e26233801d86d0d170a276c88b7dbf3a991a8",
+    "src/react_review/normalize/population.py": "sha256:e5f71fa85d68ad283c379872b19154714da64a29c05273e06afd000b3351f150",
+    "src/react_review/schemas/batch.py": "sha256:bebdeaef730ec254094135a6a1cc20f5d1bad8e4cec2f016e1a1a1de398444a4",
+    "src/react_review/schemas/evidence.py": "sha256:5459008cab4ddf11a66fb76462707d6d56c8a61642bd98e20c1d3024f5761abb",
+    "src/react_review/tools/aggregation_identity.py": "sha256:839f5c4c9c1ab9ad76f55e624ed2f11155a8d12fd1a35c570658919356cbc64f",
+    "src/react_review/tools/batch_parse.py": "sha256:1c46c8fede930839a79c2d13212e9fbeb7d65a2a289555d7be442f5c89b39fe0",
+    "src/react_review/tools/batch_project.py": "sha256:ccf236eb35ca6dfc37206313a0cf950791846483bc9c10586191a62215edd7d1",
+    "src/react_review/tools/batch_result.py": "sha256:b65b7fb46bebaba55dea1765d16d36cf132d8a19707c80b0133f1b1412623ff0",
+    "src/react_review/tools/evidence_binding.py": "sha256:dd27bf169d7b97275b677d980b4b9218876cc060a2db1f41d5ee9210ab8665a7",
+    "src/react_review/tools/safe_aggregation.py": "sha256:4e09157c1a1aa978300f381109fd15a642b99f7118ec52854f00cc8487b836c1"
+  },
+  "evaluator_hash": "sha256:3eeebc3fcaa8f0e447efe1774b4906c43cacbd12a25d7ec75e578f4a04ab296b",
+  "supersedes": "1.8.1",
+  "why_1_8_2": "D4 adds conditionally omitted document scope and evidence adequacy provenance to SourceEvidenceItem and repoints readiness at registry_v9. Safe aggregation does not read either field. This is PATCH only if the frozen aggregation behavior comparison remains identical across all 26 cases; that comparison is run before this version is committed."
+}

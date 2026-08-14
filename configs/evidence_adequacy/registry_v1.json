@@ -1,0 +1,15 @@
+{
+  "registry_id": "evidence_adequacy_policies_v1",
+  "version": 1,
+  "written_on": "2026-08-15",
+  "purpose": "Authorised policy/evaluator pairs for claim-level evidence adequacy. A pair may publish only when its policy and evaluator hashes match a clean Git commit.",
+  "policies": {
+    "evidence_adequacy_v1": {
+      "status": "active",
+      "formal_results": true,
+      "file": "configs/evidence_adequacy/policy_v1.json",
+      "sha256": "9DA56A30430B6B2B78C4A051DA9DB620A559A6802E3DDBA606551C5ECCD42FC4",
+      "evaluators": ["1.0.0"]
+    }
+  }
+}

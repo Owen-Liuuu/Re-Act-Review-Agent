@@ -9,6 +9,8 @@
 configs/gates/*.json text eol=lf
 configs/aggregation/*.json text eol=lf
 configs/aggregation/evaluators/*.json text eol=lf
+configs/evidence_adequacy/*.json text eol=lf
+configs/evidence_adequacy/evaluators/*.json text eol=lf
 eval/baselines/*.json text eol=lf
 eval/aggregation_behavior.py text eol=lf
 
@@ -22,6 +24,7 @@ configs/run_profiles/phase8_batch_v3.json text eol=lf
 configs/run_profiles/phase8_batch_v4.json text eol=lf
 configs/run_profiles/phase8_batch_v5.json text eol=lf
 configs/run_profiles/phase8_batch_v6.json text eol=lf
+configs/run_profiles/phase8_batch_v7.json text eol=lf
 eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_profile.json text eol=lf
 eval/benchmarks/melanoma_checkpoint_2017/excerpt_gold_v1.json text eol=lf
 eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v2_profile.json text eol=lf
@@ -30,6 +33,7 @@ eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v3_profile.json text eol=l
 eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v4_profile.json text eol=lf
 eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v5_profile.json text eol=lf
 eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v6_profile.json text eol=lf
+eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v7_profile.json text eol=lf
 eval/benchmarks/melanoma_checkpoint_2017/d1_7_expected_plan.json text eol=lf
 configs/prompt_contracts/*.json text eol=lf
 eval/table_capture_gold_schema.json text eol=lf

@@ -1,0 +1,24 @@
+{
+  "evaluator_id": "evidence_adequacy",
+  "evaluator_version": "1.0.0",
+  "written_on": "2026-08-15",
+  "hash_algorithm": "sha256-path-lf-v1",
+  "purpose": "The complete deterministic boundary that decides whether one source item is sufficiently anchored to one review claim before value comparison.",
+  "versioning": {
+    "patch": "wording or provenance changes proven not to move a claim between sufficient insufficient or unknown",
+    "minor": "any new refusal or changed field target population timepoint or analysis-set binding rule",
+    "major": "an incompatible input/output contract or a different adequacy algorithm"
+  },
+  "source_files": {
+    "src/react_review/agents/collector.py": "sha256:8898cfa63cec580a471da9972d66e53e8c944ce0dd8d3ad3602d18cd2e13e214",
+    "src/react_review/audit/evidence_adequacy.py": "sha256:0293ece9f04f9d03fa9ea120e0055b00507491f3788357c8d8e80b361038c622",
+    "src/react_review/contracts.py": "sha256:237e39b98ae068e70f92575f8a5d6e49746b7d016f31d9b29d5c686dc793b999",
+    "src/react_review/normalize/cohorts.py": "sha256:22c3f111aa4a910be2345285629e26233801d86d0d170a276c88b7dbf3a991a8",
+    "src/react_review/normalize/numeric.py": "sha256:f23290a3f2b67e1c97adc2816d956d72895aef38e7cb6f26f243847e1bfd270a",
+    "src/react_review/normalize/population.py": "sha256:e5f71fa85d68ad283c379872b19154714da64a29c05273e06afd000b3351f150",
+    "src/react_review/schemas/adequacy.py": "sha256:e3436f4f7728eefa20090cb4146ae08890f7e8fc5e38e5d62a1f6259f253e906",
+    "src/react_review/schemas/evidence.py": "sha256:5459008cab4ddf11a66fb76462707d6d56c8a61642bd98e20c1d3024f5761abb",
+    "src/react_review/steps/data_extraction/schemas.py": "sha256:af61f0d0dff02ddefdb90e6a0f334cc2d429d78b94adf76cc5ddeef3b796262f"
+  },
+  "evaluator_hash": "sha256:4c04abf8b32e959b74d9dd6e0100c5c49c10ba09a31f727a1f39c3c1266e1931"
+}

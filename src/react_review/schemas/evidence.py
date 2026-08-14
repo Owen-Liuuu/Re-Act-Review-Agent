@@ -13,7 +13,9 @@ from pydantic import BaseModel, Field, model_serializer, model_validator
 
 from react_review.core.enums import CollectionOutcome
 from react_review.normalize.population import PopulationScope
+from react_review.schemas.adequacy import EvidenceAdequacy
 from react_review.schemas.reason import ReasonRecord
+from react_review.steps.data_extraction.schemas import DocumentScope
 
 Value = str | int | float | None
 
@@ -215,6 +217,10 @@ class SourceEvidenceItem(BaseModel):
     source_paper_id: str = ""
     source_doi: str = ""
     retriever_kind: str = ""       # local_pdf | pmc | unpaywall | openalex_pdf | …
+    # Explicit retrieval extent and the claim-level deterministic assessment.
+    # Both are omitted for artifacts written before these contracts existed.
+    document_scope: DocumentScope = DocumentScope.UNKNOWN
+    evidence_adequacy: EvidenceAdequacy | None = None
     collection_outcome: CollectionOutcome = CollectionOutcome.FOUND
     # Back-check: source evidence (unit/value) contradicts a CANDIDATE translation
     # → the auto-classified field_type is likely wrong. Set only for candidates.
@@ -242,7 +248,8 @@ class SourceEvidenceItem(BaseModel):
     #: Fields that exist only for the batch path. Present when a batch produced
     #: this row; absent — not null — otherwise.
     _CONDITIONALLY_OMITTED = (
-        "review_data_id", "batch_provenance", "aggregation_provenance")
+        "review_data_id", "batch_provenance", "aggregation_provenance",
+        "evidence_adequacy")
 
     @model_validator(mode="after")
     def _claim_identity_is_consistent(self):
@@ -274,6 +281,8 @@ class SourceEvidenceItem(BaseModel):
         for name in self._CONDITIONALLY_OMITTED:
             if body.get(name) is None or body.get(name) == "":
                 body.pop(name, None)
+        if self.document_scope is DocumentScope.UNKNOWN:
+            body.pop("document_scope", None)
         return body
 
 

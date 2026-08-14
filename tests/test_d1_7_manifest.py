@@ -190,7 +190,7 @@ def test_the_recorded_prompts_still_produce_the_keys_the_run_wrote(monkeypatch):
     observe = d1_7_preflight.observe
 
     def observe_under_current_profile(benchmark, _profile, cache, attempts, model):
-        return observe(benchmark, "phase8_batch_v6_profile.json", cache,
+        return observe(benchmark, "phase8_batch_v7_profile.json", cache,
                        attempts, model)
 
     monkeypatch.setattr(d1_7_preflight, "observe", observe_under_current_profile)

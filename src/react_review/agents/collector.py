@@ -257,6 +257,9 @@ class Collector:
         # readiness shells out to git, and a check that runs per claim is a
         # check somebody eventually removes for being slow.
         aggregation_runtime=None,
+        # Optional claim-level deterministic gate. It is resolved once by the
+        # caller, like aggregation readiness, and never shells out per claim.
+        adequacy_evaluator=None,
         batch_tool=None,
         knowledge_fingerprint: str = "",
         telemetry=None,
@@ -272,6 +275,7 @@ class Collector:
         self._extraction_profile = extraction_profile
         self._contract = contract
         self._runtime = aggregation_runtime
+        self._adequacy = adequacy_evaluator
         self._batch = batch_tool or (
             catalogue.get("extract_source_batch")
             if "extract_source_batch" in catalogue else None)
@@ -364,7 +368,8 @@ class Collector:
         ))
         if not fetched.retrieved or fetched.document is None:
             out = self._decider.decide(ReflectionSignals(retrieval_ok=False, attempt=0))
-            return StudySource(reference=reference, retrieved=False,
+            return StudySource(reference=reference, document=fetched.document,
+                               retrieved=False,
                                outcome=CollectionOutcome.SOURCE_ACCESS_FAILED,
                                reason=out.reason, provenance=provenance, steps=steps)
         return StudySource(reference=reference, document=fetched.document,
@@ -586,14 +591,15 @@ class Collector:
             served_from_cache=record.served_from_cache)
         return self._result(claim, result, steps, ReflectionDecision.ESCALATE,
                             outcome, provenance=source.provenance,
-                            batch_provenance=provenance)
+                            batch_provenance=provenance,
+                            document=source.document)
 
     def _unretrieved(self, claim, source) -> CollectResult:
         outcome = source.outcome or CollectionOutcome.SOURCE_ACCESS_FAILED
         return self._result(
             claim, SourceValueResult(found=False, not_found_reason=source.reason),
             list(source.steps), ReflectionDecision.ESCALATE, outcome,
-            provenance=source.provenance)
+            provenance=source.provenance, document=source.document)
 
     async def collect(
         self,
@@ -635,7 +641,8 @@ class Collector:
             return self._result(
                 review_item,
                 SourceValueResult(found=False, not_found_reason=source.reason),
-                steps, decision, outcome, provenance=provenance)
+                steps, decision, outcome, provenance=provenance,
+                document=source.document)
 
         # 2. Directed extraction, with a bounded reflection-driven retry loop.
         concept = self._concept_for(review_item.field_type)
@@ -709,7 +716,8 @@ class Collector:
                 review_item.field_type, kb=self._kb,
                 unit=result.unit, value=result.value)
         return self._result(review_item, result, steps, decision, outcome,
-                            mismatch_reason=mismatch_reason, provenance=provenance)
+                            mismatch_reason=mismatch_reason, provenance=provenance,
+                            document=source.document)
 
     def _result(
         self,
@@ -721,6 +729,7 @@ class Collector:
         mismatch_reason: str = "",
         provenance: dict[str, str] | None = None,
         batch_provenance=None,
+        document=None,
     ) -> CollectResult:
         explicit_id = declared_claim_id(review_item)
         batch_id = str(getattr(batch_provenance, "claim_id", "") or "").strip()
@@ -764,6 +773,15 @@ class Collector:
             batch_provenance=batch_provenance,
             **(provenance or {}),
         )
+        if self._adequacy is not None and document is not None:
+            adequacy = self._adequacy.assess(
+                review_item, source_item, document,
+                field_variants=self._concept_variants_for(review_item.field_type),
+                cohort_variants=self._cohort_variants(),
+            )
+            source_item = source_item.model_copy(
+                update={"evidence_adequacy": adequacy}
+            )
         record = AgentRun(
             agent="collector",
             task={"study_id": review_item.study_id, "group": review_item.group,

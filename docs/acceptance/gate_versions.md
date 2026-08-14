@@ -347,8 +347,8 @@ restored to its original bytes and the corrections published as v2.
 | — | `configs/compare/evaluators/deterministic_compare_1.0.0.json` | `44B1F8045D405BD7` | current |
 | — | `configs/run_profiles/phase8_batch_v4.json` | `19A412345ECAD1EA` | superseded; bytes frozen |
 | — | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v5_profile.json` | `B7F5EE9E1FC95D4F` | superseded; bytes frozen |
-| — | `configs/aggregation/registry_v8.json` | `27F66638AE845DAD` | current |
-| — | `configs/aggregation/evaluators/safe_aggregation_1.8.1.json` | `7DCEB9C565CECF68` | current |
+| — | `configs/aggregation/registry_v8.json` | `27F66638AE845DAD` | superseded; bytes frozen |
+| — | `configs/aggregation/evaluators/safe_aggregation_1.8.1.json` | `7DCEB9C565CECF68` | superseded; bytes frozen |
 | — | `configs/run_profiles/phase8_batch_v5.json` | `C7F38629DA4EADBB` | current |
 | — | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v6_profile.json` | `5FB8CE66A4C05194` | current |
 | B0 | `configs/prompt_contracts/table_capture_v1.json` | `654F6B9ABBEDFFE3` | frozen production baseline |
@@ -356,6 +356,13 @@ restored to its original bytes and the corrections published as v2.
 | B0 | `configs/run_profiles/phase8_batch_v6.json` | `46888B89138AAFFC` | current; pins TableCapture v1 |
 | B1 | `eval/table_capture_ab_v1.json` | `68E35AE880AC87DD` | frozen pre-live A/B manifest |
 | B2 | `eval/table_capture_ab_v1_result.json` | `03B6A9DB7A66F628` | paired diagnostic; v2 not promoted |
+| D4 | `configs/aggregation/registry_v9.json` | `09B3D2E4FF569EDD` | current |
+| D4 | `configs/aggregation/evaluators/safe_aggregation_1.8.2.json` | `5338C2345D389B68` | current |
+| D4 | `configs/evidence_adequacy/policy_v1.json` | `9DA56A30430B6B2B` | frozen policy |
+| D4 | `configs/evidence_adequacy/registry_v1.json` | `E2C75161EF9642DC` | current |
+| D4 | `configs/evidence_adequacy/evaluators/evidence_adequacy_1.0.0.json` | `03FC06FDA682DA83` | current |
+| D4 | `configs/run_profiles/phase8_batch_v7.json` | `E00D058C259AA4A9` | current; pins safe_aggregation 1.8.2 |
+| D4 | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v7_profile.json` | `9213358AC894C959` | current offline replay profile |
 
 ## Claim identity provenance: safe_aggregation 1.8.0 → 1.8.1
 
@@ -373,6 +380,21 @@ behavior vectors identical. Under the pre-registered rule, this is PATCH
 `protocol_error` or `not_applicable`. The identity chain itself is tested from
 review claim through source evidence, matcher, comparison, human-review flag,
 CLI and HTML; that is separate evidence from the aggregation corpus.
+
+## Evidence adequacy provenance: safe_aggregation 1.8.1 → 1.8.2
+
+D4 adds conditionally omitted `document_scope` and `evidence_adequacy`
+provenance to `SourceEvidenceItem`. Safe aggregation does not read either
+field. `python eval/aggregation_behavior.py --compare` reported all 26 frozen
+behavior vectors identical, so the pre-declared version rule classifies this
+boundary change as PATCH `1.8.2`; `safe_sum_v5` is unchanged.
+
+Evidence adequacy is independently versioned as policy
+`evidence_adequacy_v1` plus deterministic evaluator `1.0.0`. Its manifest
+hashes the collector, schemas, normalizers and binding implementation that can
+move a claim among `sufficient`, `insufficient` and `unknown`. A result is not
+release-eligible unless the registered policy and evaluator hashes describe a
+clean Git commit.
 
 ## The comparator gets an identity of its own
 

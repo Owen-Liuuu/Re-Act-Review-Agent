@@ -1,0 +1,62 @@
+{
+  "registry_id": "aggregation_policies_v9",
+  "version": 9,
+  "supersedes": "registry_v8.json",
+  "written_on": "2026-08-15",
+  "purpose": "Which aggregation policies exist, which evaluator versions were meant to apply them, and which of those pairs a formal result may be attributed to. A policy file cannot say this: it does not know what code read it.",
+  "statuses": {
+    "active": "the pair a run selects; formal results allowed",
+    "superseded": "retired by a later version; kept byte-identical for the record",
+    "record_only": "kept so anything recorded under it stays interpretable. No formal result was ever produced under it, and none may be"
+  },
+  "policies": {
+    "safe_sum_v1": {
+      "status": "record_only",
+      "formal_results": false,
+      "file": "configs/aggregation/safe_sum_v1.json",
+      "sha256": "1C99DCE79E4FDD3AE4134484C3582E79A24A975C381453937C605109C4FA96E3",
+      "evaluators": [],
+      "note": "superseded before any run reached it"
+    },
+    "safe_sum_v2": {
+      "status": "record_only",
+      "formal_results": false,
+      "file": "configs/aggregation/safe_sum_v2.json",
+      "sha256": "5FED9271920DF0A4521F07ABA0EE1F7DCF6EC65544B62B8F013259C82DDC87EB",
+      "evaluators": [],
+      "note": "superseded before any run reached it"
+    },
+    "safe_sum_v3": {
+      "status": "superseded",
+      "formal_results": false,
+      "file": "configs/aggregation/safe_sum_v3.json",
+      "sha256": "93E381F2ED633E06E963CAA27D0C9A667682BC611693D78DF4758423A3C32EC2",
+      "evaluators": [],
+      "note": "four release paths found in review; see why_v4"
+    },
+    "safe_sum_v4": {
+      "status": "superseded",
+      "formal_results": false,
+      "file": "configs/aggregation/safe_sum_v4.json",
+      "sha256": "FE1B925C28FA7558D34B2F82FFFFF1B633B5B74B2C4836F00D971B21695F70E4",
+      "evaluators": ["1.4.0"],
+      "note": "the explicit-total path never applied the axes the result claimed; see why_v5"
+    },
+    "safe_sum_v5": {
+      "status": "active",
+      "formal_results": true,
+      "file": "configs/aggregation/safe_sum_v5.json",
+      "sha256": "DAEB6715F812E88E8193B5991E464B7F97890F56FFC0D0DE1A5C08FE217747AF",
+      "evaluators": [
+        "1.6.1",
+        "1.6.2",
+        "1.7.0",
+        "1.8.0",
+        "1.8.1",
+        "1.8.2"
+      ]
+    }
+  },
+  "note_on_growth": "Adding a policy or an evaluator pair means a new registry version, because this file is pinned. Changing which pairs may publish requires a new version.",
+  "why_v9_registry": "D4 adds conditionally omitted document-scope and evidence-adequacy provenance to SourceEvidenceItem. The safe-sum policy and evaluator decisions do not read those fields. The frozen 26-case aggregation comparison remains the authority for classifying this provenance-only boundary change as PATCH 1.8.2; older registry and evaluator files remain byte-identical."
+}

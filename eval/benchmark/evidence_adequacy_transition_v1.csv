@@ -1,0 +1,20 @@
+audit_id,old_label,expected_new_label,expected_adequacy,required_failed_axis,document_scope,reason,adjudicator
+A_06,mismatch,not_comparable,insufficient,field,abstract_only,group claim was bound to an EAT significance phrase rather than an arm label,preimplementation_artifact_review
+A010,unit_mismatch,unit_mismatch,sufficient,,full_text,PMC table binds both BMI values to the printed kg/m3 header,benchmark_answer_key
+B_07,mismatch,not_comparable,insufficient,field,full_text,quality rating was bound to a plaque percentage,preimplementation_artifact_review
+A013,unit_mismatch,unit_mismatch,sufficient,,full_text,PMC table binds both BMI values to the printed kg/m3 header,benchmark_answer_key
+C_07,mismatch,not_comparable,insufficient,field,full_text,quality rating was bound to an HbA1c result,preimplementation_artifact_review
+D_06,mismatch,not_comparable,insufficient,field,abstract_only,group claim was bound to a comparative EFT finding rather than an arm label,preimplementation_artifact_review
+D_07,mismatch,not_comparable,insufficient,field,abstract_only,quality rating was bound to a biomarker comparison,preimplementation_artifact_review
+A028,unit_mismatch,not_comparable,insufficient,field,abstract_only,T1DM BMI claim was bound to the T1DM age value,plan_hard_gate
+E_07,mismatch,not_comparable,insufficient,field,abstract_only,quality rating was bound to diabetes duration,preimplementation_artifact_review
+A030,mismatch,not_comparable,insufficient,target,abstract_only,control age claim was bound to the T1DM age value,plan_hard_gate
+A031,unit_mismatch,not_comparable,insufficient,field,abstract_only,control BMI claim was bound to the control EFT value,plan_hard_gate
+F_07,mismatch,not_comparable,insufficient,field,abstract_only,quality rating was bound to a participant count,preimplementation_artifact_review
+A037,mismatch,not_comparable,insufficient,target,abstract_only,control age claim was bound to the T1DM age value,plan_hard_gate
+A038,unit_mismatch,not_comparable,insufficient,target,abstract_only,control BMI claim was bound to the T1DM BMI value,plan_hard_gate
+A041,mismatch,not_comparable,insufficient,value,abstract_only,rounded 31 plus or minus 8 without a statistic definition cannot verify the exact 30.8 plus or minus 7.7 claim,plan_hard_gate
+A042,unit_mismatch,not_comparable,insufficient,field,abstract_only,T1DM BMI claim was bound to the T1DM age value,plan_hard_gate
+G_07,mismatch,not_comparable,insufficient,field,abstract_only,quality rating was bound to an EAT measurement,preimplementation_artifact_review
+A044,mismatch,not_comparable,insufficient,target,abstract_only,control age claim was bound to the T1DM age value,plan_hard_gate
+A045,unit_mismatch,not_comparable,insufficient,field,abstract_only,control BMI claim was bound to the T1DM age value,plan_hard_gate
