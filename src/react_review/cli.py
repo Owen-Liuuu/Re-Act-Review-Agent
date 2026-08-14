@@ -678,6 +678,8 @@ def _run_main(argv: list[str] | None = None, *, dependencies=None) -> None:
         backends.parsing, resolver, reporter=reporter,
         keep_tables=_id_set(args.tables), drop_tables=_id_set(args.drop_tables),
         checklist=checklist,
+        table_capture_prompt_profile=(
+            contract.table_capture_prompt_profile or "table_capture_v1"),
     )
 
     # Every way this run can end goes through one object, so all four leave the

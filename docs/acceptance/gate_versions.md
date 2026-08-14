@@ -351,6 +351,10 @@ restored to its original bytes and the corrections published as v2.
 | — | `configs/aggregation/evaluators/safe_aggregation_1.8.1.json` | `7DCEB9C565CECF68` | current |
 | — | `configs/run_profiles/phase8_batch_v5.json` | `C7F38629DA4EADBB` | current |
 | — | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v6_profile.json` | `5FB8CE66A4C05194` | current |
+| B0 | `configs/prompt_contracts/table_capture_v1.json` | `654F6B9ABBEDFFE3` | frozen production baseline |
+| B0 | `configs/prompt_contracts/table_capture_v2.json` | `285D676ED59098F0` | frozen A/B candidate |
+| B0 | `configs/run_profiles/phase8_batch_v6.json` | `46888B89138AAFFC` | current; pins TableCapture v1 |
+| B1 | `eval/table_capture_ab_v1.json` | `68E35AE880AC87DD` | frozen pre-live A/B manifest |
 
 ## Claim identity provenance: safe_aggregation 1.8.0 → 1.8.1
 

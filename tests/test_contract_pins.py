@@ -94,6 +94,10 @@ PINNED = {
     # ITSELF, because v2 inherited v1's "fixed before the recording exists" and
     # that was false of v2.
     "configs/gates/d1_batch_v3.json": "BF991151137EE376",
+    "configs/prompt_contracts/table_capture_v1.json": "654F6B9ABBEDFFE3",
+    "configs/prompt_contracts/table_capture_v2.json": "285D676ED59098F0",
+    "configs/run_profiles/phase8_batch_v6.json": "46888B89138AAFFC",
+    "eval/table_capture_ab_v1.json": "68E35AE880AC87DD",
 }
 
 

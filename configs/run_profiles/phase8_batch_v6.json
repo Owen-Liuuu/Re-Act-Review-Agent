@@ -1,0 +1,37 @@
+{
+  "schema_version": 3,
+  "profile_id": "phase8_batch_v6",
+  "written_on": "2026-08-15",
+  "purpose": "The Phase 8 batch contract with an explicit frozen TableCapture v1 prompt identity for attributable parsing and v1 versus v2 evaluation.",
+  "why_routed": "Values are read in batches while arm identities use the single-claim route; this is unchanged from phase8_batch_v5.",
+  "extraction_routes": {
+    "value": "targeted_v5_batch",
+    "arm_identity": "targeted_v4"
+  },
+  "aggregation_policy_id": "safe_sum_v5",
+  "evaluator_version": "1.8.1",
+  "semantic_prompt_profile": "semantic_v2_specificity",
+  "table_capture_prompt_profile": "table_capture_v1",
+  "table_capture_prompt_id": "table_capture_v1",
+  "table_capture_prompt_hash": "3AAC303F18EC25CEEFEB7C3B8D2D0507DFA8A00A912BA5ECB5FB8242B9E9A6B6",
+  "tolerances": "../tolerances.phase8.yaml",
+  "tolerances_sha256": "B2C217445C1AC7CF9F140ACC97459278B9A76D269FBF41D12E49115EB1269EDF",
+  "population_contract": null,
+  "context_policy": "cli_then_parsed",
+  "scope_policy": "on",
+  "required_scope_axes": {
+    "sample_size": [
+      "population_basis"
+    ],
+    "cohort_n": [
+      "population_basis"
+    ],
+    "event_count": [
+      "population_basis",
+      "analysis_set"
+    ]
+  },
+  "supersedes": "phase8_batch_v5.json",
+  "compare_version": "1.0.0",
+  "why_v6": "It makes the TableCapture prompt an explicit, hash-pinned part of the run contract. Decision rules after parsing are unchanged; phase8_batch_v5.json remains byte-identical."
+}

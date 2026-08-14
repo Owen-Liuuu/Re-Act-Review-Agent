@@ -39,6 +39,7 @@ from react_review.schemas.run_manifest import (
     ExecutionMode,
     RunManifest,
 )
+from react_review.parser.table_capture_contract import TableCapturePromptContract
 from react_review.tools.extraction_profile import PROMPT_VERSIONS as EXTRACTION_PROFILES
 from react_review.tools.semantic_compare import PROMPT_VERSIONS as SEMANTIC_PROFILES
 
@@ -46,8 +47,8 @@ from react_review.tools.semantic_compare import PROMPT_VERSIONS as SEMANTIC_PROF
 #: run can legitimately read values in batch and arm identities one at a time —
 #: and a run that does both while declaring one profile is a recording nobody
 #: can interpret. Both versions load; only v2 can express a mixed contract.
-CONTRACT_SCHEMA_VERSION = 2
-SUPPORTED_CONTRACT_VERSIONS = (1, 2)
+CONTRACT_SCHEMA_VERSION = 3
+SUPPORTED_CONTRACT_VERSIONS = (1, 2, 3)
 
 #: The kinds of claim a route can be declared for. Closed, so a contract cannot
 #: name a route for something nothing dispatches on.
@@ -81,6 +82,11 @@ class RunContractProfile(BaseModel):
     #: and one field for both would let a change in either ride on the other.
     compare_version: str = ""
     semantic_prompt_profile: str = "semantic_v1"
+    #: Empty only for historical v1/v2 contracts. Schema v3 fixes the exact
+    #: TableCapture question and records its rendered fixture hash.
+    table_capture_prompt_profile: str = ""
+    table_capture_prompt_id: str = ""
+    table_capture_prompt_hash: str = ""
     # None means "the comparator's own defaults" — the Phase 6/7 behaviour. A
     # contract that names a file pins its hash; nothing loads a tolerance table
     # that no contract points at.
@@ -150,6 +156,10 @@ class RunContractProfile(BaseModel):
             body["evaluator_version"] = self.evaluator_version
             if self.compare_version:
                 body["compare_version"] = self.compare_version
+        if self.schema_version >= 3:
+            body["table_capture_prompt_profile"] = self.table_capture_prompt_profile
+            body["table_capture_prompt_id"] = self.table_capture_prompt_id
+            body["table_capture_prompt_hash"] = self.table_capture_prompt_hash
         return body
 
 
@@ -166,6 +176,34 @@ def load_run_contract(path: Path | str) -> RunContractProfile:
     routes, policy_id, evaluator_version = _routes(body, version, path)
     semantic = one_of(body.get("semantic_prompt_profile"),
                       tuple(sorted(SEMANTIC_PROFILES)), field="semantic_prompt_profile")
+    table_capture_profile = ""
+    table_capture_id = ""
+    table_capture_hash = ""
+    table_capture_fields = (
+        "table_capture_prompt_profile",
+        "table_capture_prompt_id",
+        "table_capture_prompt_hash",
+    )
+    if version >= 3:
+        table_capture_profile = str(body.get("table_capture_prompt_profile") or "")
+        contract = TableCapturePromptContract.load(table_capture_profile)
+        table_capture_id = str(body.get("table_capture_prompt_id") or "")
+        table_capture_hash = str(body.get("table_capture_prompt_hash") or "").upper()
+        if table_capture_id != contract.prompt_id:
+            raise ContractError(
+                f"{path} table_capture_prompt_id {table_capture_id!r} does not "
+                f"match {contract.prompt_id!r}")
+        if table_capture_hash != contract.rendered_prompt_sha256:
+            raise ContractError(
+                f"{path} table_capture_prompt_hash does not match the rendered "
+                f"{contract.prompt_id} contract")
+        drift = contract.drifts()
+        if drift:
+            raise ContractError("; ".join(drift))
+    elif any(field in body for field in table_capture_fields):
+        raise ContractError(
+            f"{path} declares a TableCapture prompt identity under schema_version "
+            f"{version}; use schema_version 3")
     context_policy = one_of(body.get("context_policy"), CONTEXT_POLICIES,
                             field="context_policy")
     scope_policy = one_of(body.get("scope_policy"), SCOPE_POLICIES, field="scope_policy")
@@ -196,6 +234,9 @@ def load_run_contract(path: Path | str) -> RunContractProfile:
         evaluator_version=evaluator_version,
         compare_version=str(body.get("compare_version") or ""),
         semantic_prompt_profile=semantic,
+        table_capture_prompt_profile=table_capture_profile,
+        table_capture_prompt_id=table_capture_id,
+        table_capture_prompt_hash=table_capture_hash,
         tolerances_path=(tolerances_path or None), tolerances_sha256=tolerances_sha,
         population_contract_path=(population_path or None),
         population_contract_sha256=population_sha,

@@ -18,58 +18,32 @@ from react_review.hitl.events import StepStage, SubjectKind
 from react_review.hitl.gate import Decision
 from react_review.hitl.reporter import StepReporter
 from react_review.llm.base import LLMBackend, parse_llm_response
+from react_review.parser.table_capture_contract import (
+    DEFAULT_TABLE_CAPTURE_PROFILE,
+    PROMPT_TEMPLATES,
+    render_table_capture_prompt,
+)
 from react_review.parser.table_render import render_shape_report, render_table_set, to_csv
 from react_review.schemas.table import CapturedTable, CapturedTableSet
 
 logger = structlog.get_logger(__name__)
 
 
-_CAPTURE = """You are a systematic-review methodologist transcribing the tables of a review
-so a colleague can check them against the original PDF.
-
-Transcribe every DATA table: the characteristics-of-included-studies table, any
-outcome/effect table, any risk-of-bias table. Skip pure layout or navigation tables.
-
-TRANSCRIBE — do not interpret:
-- Copy every cell EXACTLY as printed, including "NR", "NA", "—", "not reported",
-  "not reached", and blanks. An empty cell stays an empty string.
-- Do NOT rename headers, do NOT standardise units, do NOT convert numbers, do NOT
-  reorder or drop columns — including columns whose meaning is unclear to you.
-- Keep multi-level headers as SEPARATE header rows. If a header spans several
-  columns, put it once and leave the columns it spans empty on that row.
-- Every data row must have the same number of cells as the widest header row.
-- If part of a table is unreadable, still transcribe what you can and say what
-  went wrong in "difficulties". Never invent a value to fill a gap.
-
-Also state the review's research question in one line.
-
-{{"research_context": "one line: population + exposure/intervention + outcome",
-  "tables": [
-    {{"table_id": "table_1",
-      "caption": "the table's printed caption",
-      "role": "characteristics | outcomes | quality | other",
-      "header_rows": [["Study","Country","EAT",""],["","","T1DM","Control"]],
-      "rows": [["Ahmad 2022","Egypt","6.60 ± 0.71","3.83 ± 0.35"]],
-      "footnotes": ["values are mean ± SD unless stated"],
-      "row_axis_columns": ["Study"],
-      "shape_notes": "one row per study; the cohort split is a column pair",
-      "cohort_labels_seen": ["T1DM","Control"],
-      "extraction_confidence": 0.0,
-      "difficulties": ["the last column was cut off in the text layer"]}}
-  ]}}
-
-## REVIEW TEXT
-{text}
-
-Return JSON only."""
+# Backwards-compatible import for tests/tools that observed the old production
+# constant.  Production remains v1 until the A/B gate explicitly promotes v2.
+_CAPTURE = PROMPT_TEMPLATES[DEFAULT_TABLE_CAPTURE_PROFILE]
 
 
 class TableCapturer:
     """Transcribe the review's tables, then hold the run at a human checkpoint."""
 
-    def __init__(self, backend: LLMBackend, *, alt_backend: LLMBackend | None = None) -> None:
+    def __init__(self, backend: LLMBackend, *, alt_backend: LLMBackend | None = None,
+                 prompt_profile: str = DEFAULT_TABLE_CAPTURE_PROFILE) -> None:
         self._backend = backend
         self._alt = alt_backend
+        # Validate at construction, before the first model call.
+        render_table_capture_prompt(prompt_profile, text="")
+        self.prompt_profile = prompt_profile
 
     async def capture(
         self, text: str, *, reporter: StepReporter, pdf_path: str = "",
@@ -110,7 +84,8 @@ class TableCapturer:
 
     async def _transcribe(self, backend: LLMBackend, text: str, seed: int) -> dict:
         try:
-            raw = await backend.complete(_CAPTURE.format(text=text), seed=seed)
+            prompt = render_table_capture_prompt(self.prompt_profile, text=text)
+            raw = await backend.complete(prompt, seed=seed)
             return parse_llm_response(raw, backend.model_id)
         except Exception as exc:                                   # noqa: BLE001
             logger.warning("table_capture_failed", error=str(exc)[:160])

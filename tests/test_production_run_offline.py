@@ -86,7 +86,9 @@ class ScriptedBackend:
         return "scripted"
 
     def _kind(self, prompt: str) -> str:
-        if "transcribing the tables" in prompt:
+        if (("transcribing the tables of a review" in prompt
+             or "STRICT TRANSCRIPTION RULES" in prompt)
+                and "REVIEW TEXT" in prompt):
             return "table_capture"
         if "converting one table" in prompt:
             return "unpivot"

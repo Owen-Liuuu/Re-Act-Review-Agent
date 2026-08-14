@@ -30,6 +30,7 @@ from react_review.normalize.cohorts import (
 from react_review.normalize.doi import normalize_doi
 from react_review.normalize.study_key import study_key
 from react_review.parser.table_capture import TableCapturer
+from react_review.parser.table_capture_contract import DEFAULT_TABLE_CAPTURE_PROFILE
 from react_review.schemas.agent import AgentRun, StepRecord
 from react_review.schemas.evidence import ReviewDataItem
 from react_review.schemas.knowledge import KnowledgeImportRecord
@@ -217,6 +218,7 @@ class ReviewParser:
         alt_backend: LLMBackend | None = None,
         cohort_aliases: dict[str, list[str]] | None = None,
         checklist: Checklist | None = None,
+        table_capture_prompt_profile: str = DEFAULT_TABLE_CAPTURE_PROFILE,
     ) -> None:
         self._backend = backend
         self._resolver = resolver          # the parser holds NO domain knowledge itself
@@ -227,7 +229,9 @@ class ReviewParser:
         self._keep_tables = keep_tables
         self._drop_tables = drop_tables
         self._checklist = checklist
-        self._capturer = TableCapturer(backend, alt_backend=alt_backend)
+        self._capturer = TableCapturer(
+            backend, alt_backend=alt_backend,
+            prompt_profile=table_capture_prompt_profile)
         # Alias file only RE-KEYS a discovered cohort (benchmark compatibility);
         # it never introduces one, so a new domain stays domain-neutral.
         self._cohort_aliases = (load_aliases(_ALIASES) if cohort_aliases is None

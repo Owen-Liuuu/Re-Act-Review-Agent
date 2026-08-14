@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "dataset_id": "table_capture_ab_v1",
+  "written_on": "2026-08-15",
+  "scope": "The first characteristics-of-included-studies table in each of two systematic reviews; no outcome or quality table is gold-scored in this gate.",
+  "gold_schema": "eval/table_capture_gold_schema.json",
+  "gold_schema_sha256": "20590E22094D4AF991D3978927016F6CF068F9F6F0FC475D12DDDC5D1DDB072D",
+  "seed": 42,
+  "prompt_profiles": [
+    {
+      "prompt_id": "table_capture_v1",
+      "prompt_contract": "configs/prompt_contracts/table_capture_v1.json",
+      "rendered_prompt_sha256": "3AAC303F18EC25CEEFEB7C3B8D2D0507DFA8A00A912BA5ECB5FB8242B9E9A6B6"
+    },
+    {
+      "prompt_id": "table_capture_v2",
+      "prompt_contract": "configs/prompt_contracts/table_capture_v2.json",
+      "rendered_prompt_sha256": "46D4542E30B63941549FCC5BFA5044031D7DE15AFCA8494B75DA19EB0885AD94"
+    }
+  ],
+  "documents": [
+    {
+      "document_id": "eat_t1dm_review_2025",
+      "pdf": "SRMA.pdf",
+      "pdf_sha256": "30170539BDB5F46755A2F56B6ED66A2CB4B0FD6AB3DD7D13BFB7070394236EDD",
+      "gold": "output/gold/table_capture_v1/eat_t1dm_review_2025.jsonl",
+      "gold_sha256": "B265407B71895717464172C1D3697577EB8269EE21879E3154D3D0D9684161D0",
+      "table_count": 1,
+      "row_count": 17,
+      "data_row_count": 16,
+      "cell_count": 153,
+      "value_cell_count": 116,
+      "source_page": 5,
+      "caption": "Table 1 Characteristic of included studies"
+    },
+    {
+      "document_id": "melanoma_checkpoint_review_2017",
+      "pdf": "eval/benchmarks/melanoma_checkpoint_2017/raw/review_karlsson_saleh_2017.pdf",
+      "pdf_sha256": "9976C59EC6CA2C72F137E1FEF39EBECCBF604704D0F2C5637F0BAAE7AD8A7401",
+      "gold": "output/gold/table_capture_v1/melanoma_checkpoint_review_2017.jsonl",
+      "gold_sha256": "B2B811F64B24346EEEBEDD637513EB7D902B987E817FE11469BC7EEE84449CD0",
+      "table_count": 1,
+      "row_count": 8,
+      "data_row_count": 7,
+      "cell_count": 48,
+      "value_cell_count": 44,
+      "source_page": 3,
+      "caption": "Table 1 Overview of characteristics of included studies"
+    }
+  ],
+  "planned_live_calls": 4,
+  "artifact_root": "output/live_tests/table_capture",
+  "copyright_boundary": "Gold tables, extracted review text, rendered prompts containing review text, and raw LLM responses remain under ignored output paths and must not be committed."
+}
