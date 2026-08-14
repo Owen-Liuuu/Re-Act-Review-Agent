@@ -198,6 +198,41 @@ def _graded(rows) -> dict:
     }
 
 
+BUNDLE = REPO / "docs/baselines/bundles/d1_7_batch_recording.zip"
+REMOTE = "https://github.com/Owen-Liuuu/Re-Act-Review-Agent"
+
+
+def _storage_status() -> str:
+    """`blocked` until a bundle exists; never past `available_unverified` here.
+
+    A machine that already holds the recording cannot independently verify it,
+    so this generator can never write the last state. That is the point.
+    """
+    return "available_unverified" if BUNDLE.is_file() else "blocked"
+
+
+def _bundle_block() -> dict:
+    if not BUNDLE.is_file():
+        return {"uri": None, "sha256": None, "size_bytes": None,
+                "media_type": "application/zip", "access_mode": None,
+                "copyright_restrictions": None}
+    return {
+        "uri": f"{REMOTE}/blob/main/{BUNDLE.relative_to(REPO).as_posix()}",
+        "git_path": BUNDLE.relative_to(REPO).as_posix(),
+        "sha256": _digest(BUNDLE),
+        "size_bytes": BUNDLE.stat().st_size,
+        "media_type": "application/zip",
+        "access_mode": ("controlled — the repository is private, so access is "
+                        "repository membership. A reader without a collaborator "
+                        "seat cannot obtain this."),
+        "copyright_restrictions": (
+            "Contains model responses quoting Larkin 2015 verbatim, and the "
+            "paper itself is NOT included. Published inside a private "
+            "repository with the owner's explicit permission; redistribution "
+            "outside it is not covered by that permission."),
+    }
+
+
 def _reanalyses() -> list[dict]:
     """Later readings of the SAME recording, each named and hashed.
 
@@ -362,7 +397,7 @@ def build() -> dict:
         # string could not tell them apart — which is why filling it in used to
         # be enough to silence the objection.
         "artifact_storage": {
-            "status": "blocked",
+            "status": _storage_status(),
             "why_it_matters": (
                 "The hashes above prove a file with this content existed on the "
                 "machine that ran it. They do not let a reader obtain the "
@@ -378,9 +413,7 @@ def build() -> dict:
                                            "verified it, replayed it and left "
                                            "an attestation"),
             },
-            "bundle": {"uri": None, "sha256": None, "size_bytes": None,
-                       "media_type": "application/zip", "access_mode": None,
-                       "copyright_restrictions": None},
+            "bundle": _bundle_block(),
             "independent_verification": None,
             "tooling": {
                 "build_and_verify": "eval/verify_d1_7_bundle.py",
@@ -623,10 +656,18 @@ def verify(path: Path) -> list[str]:
     if storage.get("status") == BLOCKED:
         problems.append(
             "artifact_storage.status is blocked: the recording is not "
-            "retrievable by anyone but its author, so the conclusions are not "
-            "independently reproducible. This is a known, declared gap, and it "
-            "is meant to keep failing until a bundle is published AND verified "
-            "somewhere else")
+            "retrievable by anyone but its author. This is a known, declared "
+            "gap, and it keeps failing until a bundle is published AND "
+            "verified somewhere else")
+    bundle = (storage.get("bundle") or {})
+    tracked = REPO / (bundle.get("git_path") or "")
+    if bundle.get("git_path"):
+        if not tracked.is_file():
+            problems.append(f"the manifest points at {bundle['git_path']} and "
+                            "it is not in this checkout")
+        elif _digest(tracked) != bundle.get("sha256"):
+            problems.append("the bundle in the repository is not the one the "
+                            "manifest hashes")
     return problems
 
 

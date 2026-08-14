@@ -245,15 +245,45 @@ def test_an_attestation_edited_after_signing_is_not_one(tmp_path):
 
 # --- and the manifest keeps failing until all of it is real -----------------
 
+def test_publishing_is_not_reproducing():
+    """The middle state must keep failing.
+
+    Reporting nothing for `available_unverified` would read as closed, and the
+    bundle being at an address is not the same as somebody else having replayed
+    it. The machine that made the recording cannot be the one that checks.
+    """
+    import verify_d1_7_bundle as bundle
+
+    problems = bundle.check_storage_block(_storage(
+        status="available_unverified", independent_verification=None))
+    assert any("NOBODY OUTSIDE has reproduced it" in p for p in problems)
+
+
 def test_the_manifest_still_reports_the_gap():
-    """Not a warning. It is meant to keep failing until a bundle is published
-    AND verified somewhere else."""
+    """Not a warning, and not closed by publishing."""
     import d1_7_manifest
 
     manifest = repo_root() / "docs/baselines/d1_7_batch_recording_manifest.json"
     problems = d1_7_manifest.verify(manifest)
-    assert any("blocked" in p for p in problems)
+    storage = json.loads(manifest.read_text(encoding="utf-8-sig")
+                         )["artifact_storage"]
+    assert storage["status"] in ("blocked", "available_unverified")
+    assert storage["independent_verification"] is None
+    assert any(storage["status"] in p for p in problems), (
+        "the gap must keep announcing itself until an attestation exists")
+
+
+def test_the_bundle_in_the_repository_is_the_one_the_manifest_hashes():
+    """Storage IS the repository here, so the file and the hash travel together
+    and a drift between them is visible."""
+    import d1_7_manifest
+
+    manifest = repo_root() / "docs/baselines/d1_7_batch_recording_manifest.json"
     body = json.loads(manifest.read_text(encoding="utf-8-sig"))
-    assert body["artifact_storage"]["status"] == "blocked"
-    assert body["artifact_storage"]["bundle"]["uri"] is None
-    assert body["artifact_storage"]["independent_verification"] is None
+    published = body["artifact_storage"]["bundle"]
+    if not published.get("git_path"):
+        pytest.skip("no bundle is published in this checkout")
+    target = repo_root() / published["git_path"]
+    assert target.is_file()
+    assert d1_7_manifest._digest(target) == published["sha256"]
+    assert published["size_bytes"] == target.stat().st_size

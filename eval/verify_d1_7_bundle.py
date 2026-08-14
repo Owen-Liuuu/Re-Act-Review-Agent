@@ -47,6 +47,12 @@ STATES = (BLOCKED, AVAILABLE_UNVERIFIED, INDEPENDENTLY_VERIFIED)
 #: — the previous check was "is it non-empty", which any word satisfied.
 ALLOWED_SCHEMES = ("https://", "s3://", "ipfs://", "doi:")
 
+#: The bundle's home when the repository IS the storage. Controlled access then
+#: means repository membership, which is a real access control and not a
+#: weaker one — but it is not public, and a reader without a collaborator seat
+#: still cannot reproduce anything.
+IN_REPO_PATH = "docs/baselines/bundles/d1_7_batch_recording.zip"
+
 #: What a replay needs, and nothing it does not. The extraction cache alone is
 #: not enough: the scoring run also replays semantic judgements, and without
 #: them the numbers cannot be reproduced at all.
@@ -182,6 +188,15 @@ def check_storage_block(storage: dict) -> list[str]:
                         "quotes a copyrighted paper verbatim")
 
     attestation = storage.get("independent_verification")
+    if status == AVAILABLE_UNVERIFIED:
+        # Reporting nothing here would read as closed, and publishing is not
+        # reproducing: the bundle now exists at an address, and nobody who did
+        # not already have the recording has replayed it.
+        problems.append(
+            "artifact_storage.status is available_unverified: the bundle is "
+            "published and NOBODY OUTSIDE has reproduced it. Independent "
+            "verification is the only thing that closes this, and the machine "
+            "that made the recording cannot perform it")
     if status == INDEPENDENTLY_VERIFIED:
         problems.extend(_check_attestation(attestation, bundle))
     elif attestation:

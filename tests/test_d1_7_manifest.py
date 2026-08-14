@@ -46,12 +46,13 @@ def test_the_unreachable_recording_is_declared_and_not_quietly_dropped():
     import d1_7_manifest
 
     problems = d1_7_manifest.verify(MANIFEST)
-    assert any("blocked" in p for p in problems), (
-        "either a bundle was published and independently verified — in which "
-        "case the status says so — or the gap must keep announcing itself")
     storage = _body()["artifact_storage"]
-    assert storage["status"] == "blocked"
-    assert storage["bundle"]["uri"] is None
+    assert storage["status"] in ("blocked", "available_unverified")
+    assert any(storage["status"] in p for p in problems), (
+        "either a bundle was published AND independently verified — in which "
+        "case the status says so and carries an attestation — or the gap must "
+        "keep announcing itself")
+    assert storage["independent_verification"] is None
 
 
 def test_every_hash_is_a_whole_sha256():
