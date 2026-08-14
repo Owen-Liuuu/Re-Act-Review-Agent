@@ -18,7 +18,7 @@
   },
   "manifest_generation": {
     "generator": "eval/d1_7_manifest.py",
-    "generator_sha256": "17EB9F443A98F4BFADDBBFF5220B370616B79FC94D68EEDDE01D33AB764E2FEE",
+    "generator_sha256": "ECB88532FD5972D9996F42F78084F2ED00A4492581109BB2139AD902FE5B9684",
     "generator_last_changed_commit": "85a732affb153bff34d04659067a73f5014af605",
     "note": "the generator is committed BEFORE the manifest it produces, so these two values describe a state that already exists in history"
   },
@@ -70,7 +70,7 @@
     }
   },
   "artifact_storage": {
-    "status": "blocked",
+    "status": "available_unverified",
     "why_it_matters": "The hashes above prove a file with this content existed on the machine that ran it. They do not let a reader obtain the recording and replay it, and they cannot be told apart from the hash of a file that no longer exists. Until this is closed, every conclusion here is reproducible by the author alone.",
     "states": {
       "blocked": "no legitimate location. The current state.",
@@ -78,12 +78,13 @@
       "independently_verified": "another machine downloaded it, verified it, replayed it and left an attestation"
     },
     "bundle": {
-      "uri": null,
-      "sha256": null,
-      "size_bytes": null,
+      "uri": "https://github.com/Owen-Liuuu/Re-Act-Review-Agent/blob/main/docs/baselines/bundles/d1_7_batch_recording.zip",
+      "git_path": "docs/baselines/bundles/d1_7_batch_recording.zip",
+      "sha256": "DB7981EB3CC0163B138D53C506D30B2EEE484E50322F9F61EAB81B238CE37C36",
+      "size_bytes": 14397,
       "media_type": "application/zip",
-      "access_mode": null,
-      "copyright_restrictions": null
+      "access_mode": "controlled — the repository is private, so access is repository membership. A reader without a collaborator seat cannot obtain this.",
+      "copyright_restrictions": "Contains model responses quoting Larkin 2015 verbatim, and the paper itself is NOT included. Published inside a private repository with the owner's explicit permission; redistribution outside it is not covered by that permission."
     },
     "independent_verification": null,
     "tooling": {
