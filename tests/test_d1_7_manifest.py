@@ -115,7 +115,13 @@ def test_the_three_identities_are_kept_apart():
     run among the run's own contracts."""
     body = _body()
     assert body["recording"]["code_commit"].startswith("aafa20a")
-    assert body["manifest_generation"]["code_commit"] !=         body["recording"]["code_commit"]
+    # The generation identity is the GENERATOR's bytes and the commit that last
+    # touched it — never the current HEAD. A manifest committed alongside its
+    # generator would otherwise record the commit before its own, because a file
+    # cannot contain the hash of a commit that contains the file.
+    generation = body["manifest_generation"]
+    assert generation["generator_sha256"] and generation["generator"]
+    assert "code_commit" not in generation
     # The gates and evaluators that did not exist yet are not listed as the
     # recording's.
     named = set(body["recording"]["contracts_in_force_then"])
@@ -174,3 +180,56 @@ def test_the_recorded_prompts_still_produce_the_keys_the_run_wrote():
     for row in rows:
         assert published[(row["question_id"], row["attempt"])] == \
             row["prompt_sha256"]
+
+
+# --- the verifier really fails; proved by breaking things -------------------
+
+def _probe(tmp_path, name, mutate):
+    """One tampered copy, and what the verifier says about it."""
+    import d1_7_manifest
+
+    body = json.loads(json.dumps(_body()))
+    mutate(body)
+    path = tmp_path / f"{name}.json"
+    path.write_text(json.dumps(body, indent=2, ensure_ascii=False),
+                    encoding="utf-8")
+    return [p for p in d1_7_manifest.verify(path)
+            if "artifact_storage" not in p]
+
+
+@pytest.mark.parametrize("name,mutate", [
+    ("cache_hash", lambda b: b["cache"].__setitem__("sha256_after", "A" * 64)),
+    ("seeded_hash",
+     lambda b: b["cache"].__setitem__("seeded_from_sha256", "B" * 64)),
+    ("reanalysis_artifact_hash",
+     lambda b: b["reanalyses"][-1]["artifact"].__setitem__("sha256", "C" * 64)),
+    ("accuracy_inflated",
+     lambda b: b["reanalyses"][-1].__setitem__("label_accuracy", 0.9)),
+    ("verdict_flipped",
+     lambda b: b["reanalyses"][0].__setitem__("gate_verdict", "PASS")),
+    ("version_in_prose",
+     lambda b: b["reanalyses"][-1].__setitem__("what", "replayed under 9.9.9")),
+    ("runtime_version",
+     lambda b: b["reanalyses"][-1]["aggregation_runtime"].__setitem__(
+         "evaluator_version", "1.7.0")),
+    ("reanalysis_contract",
+     lambda b: b["reanalysis_contracts"].__setitem__("feature_gate", "D" * 64)),
+    ("recording_contract",
+     lambda b: b["recording"]["contracts_in_force_then"].__setitem__(
+         "feature_gate", "E" * 64)),
+    ("prompt_set_hash",
+     lambda b: b.__setitem__("prompt_set_sha256", "F" * 64)),
+    ("one_prompt_sha",
+     lambda b: b["prompts"][0].__setitem__("prompt_sha256", "0" * 64)),
+])
+def test_the_verifier_catches_a_retyped_value(tmp_path, name, mutate):
+    """A verifier that only checks length passes any 64-character string, which
+    is precisely the shape of the pin this repository once published without
+    ever computing it. Each of these is a value that would look right."""
+    assert _probe(tmp_path, name, mutate), f"{name} was not caught"
+
+
+def test_a_manifest_made_by_different_code_is_not_trusted(tmp_path):
+    assert _probe(tmp_path, "generator",
+                  lambda b: b["manifest_generation"].__setitem__(
+                      "generator_sha256", "9" * 64))

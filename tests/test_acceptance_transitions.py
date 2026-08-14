@@ -221,9 +221,9 @@ def test_the_gold_graded_counter_is_what_wrong_target_reads():
     from react_review.acceptance_transitions import check_hard_conditions
 
     gate = {"hard_conditions": {"wrong_target_accepted_count": 0}}
-    assert check_hard_conditions(gate, _artifact()) == []
+    assert check_hard_conditions(gate, _artifact())[0] == []
 
-    unmet = check_hard_conditions(
+    unmet, _ = check_hard_conditions(
         gate, _artifact(target__identity_wrong_released=1))
     assert len(unmet) == 1
     assert "identity_wrong_released" in unmet[0]
@@ -234,7 +234,7 @@ def test_a_declared_condition_with_no_reader_is_refused_not_skipped():
     declares nothing."""
     from react_review.acceptance_transitions import check_hard_conditions
 
-    unmet = check_hard_conditions(
+    unmet, _ = check_hard_conditions(
         {"hard_conditions": {"invented_condition": 0}}, _artifact())
     assert any("no reader" in u for u in unmet)
 
@@ -242,6 +242,6 @@ def test_a_declared_condition_with_no_reader_is_refused_not_skipped():
 def test_a_condition_the_run_does_not_report_is_not_treated_as_met():
     from react_review.acceptance_transitions import check_hard_conditions
 
-    unmet = check_hard_conditions(
+    unmet, _ = check_hard_conditions(
         {"hard_conditions": {"silent_releases": 0}}, {"metrics": {}})
     assert any("reports no" in u for u in unmet)

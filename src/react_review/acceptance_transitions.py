@@ -79,6 +79,9 @@ class GateResult:
     violations: tuple = ()
     unmet_hard_conditions: tuple = ()
     capability: dict | None = None
+    #: What each structural condition actually saw, so a PASS can be inspected
+    #: rather than believed.
+    hard_condition_evidence: dict | None = None
     #: Whether a capability floor was applied at all. A run that meets every
     #: prohibition and was never measured against a floor has not been shown to
     #: work — it has been shown not to have broken a rule, and the two read
@@ -113,7 +116,7 @@ def _read_path(body: dict, path: tuple):
     return node
 
 
-def check_hard_conditions(gate: dict, artifact: dict) -> list[str]:
+def check_hard_conditions(gate: dict, artifact: dict) -> tuple[list[str], dict]:
     """Every numeric prohibition the gate declares, read from the run.
 
     Conditions this cannot read are reported as unenforceable rather than
@@ -123,13 +126,21 @@ def check_hard_conditions(gate: dict, artifact: dict) -> list[str]:
     own declaration is answered rather than ignored.
     """
     unmet: list[str] = []
-    external = {"batches_match_expected_plan":
-                "checked by eval/d1_7_preflight.py against the expected plan",
-                "every_batched_row_resolves_its_execution_id":
-                "checked by tests/orchestrator/test_batched_pipeline.py",
-                "no_forbidden_transition": "checked by the transition table below"}
+    evidence: dict = {}
+    # `no_forbidden_transition` is decided by the transition table, which grade()
+    # computes from these same rows. The other two used to be listed here too,
+    # with a note saying a preflight and a test checked them — which is a claim
+    # about OTHER runs. A gate has to read THIS artifact, or it is trusting that
+    # somebody looked.
+    external = {"no_forbidden_transition": "decided by the transition table"}
     for name, expected in (gate.get("hard_conditions") or {}).items():
         if name in external:
+            continue
+        if name in _STRUCTURAL_CONDITIONS:
+            failure, seen = _STRUCTURAL_CONDITIONS[name](artifact, gate)
+            evidence[name] = seen
+            if failure:
+                unmet.append(failure)
             continue
         reader = _HARD_CONDITION_READERS.get(name)
         if reader is None:
@@ -144,7 +155,91 @@ def check_hard_conditions(gate: dict, artifact: dict) -> list[str]:
             unmet.append(f"hard condition {name!r}: the gate requires "
                          f"{expected} and the run reports {actual} "
                          f"(from {'.'.join(reader)})")
-    return unmet
+        else:
+            evidence[name] = {"value": actual, "read_from": ".".join(reader)}
+    return unmet, evidence
+
+
+def _batches_of(artifact: dict) -> list[dict]:
+    """The batches THIS run made, as the artifact records them."""
+    coverage = ((artifact.get("run") or {}).get("excerpt_coverage") or {})
+    return list(coverage.get("batches") or ())
+
+
+def _check_execution_ids(artifact: dict, gate: dict):
+    """Every batched row names a reading, and that reading exists.
+
+    Computed from the rows and the batches of this run. A reference that
+    resolves nowhere would be worse than no reference — it would look like
+    evidence — and a gate that took someone's word for it could not tell.
+    """
+    batches = _batches_of(artifact)
+    known = {b.get("execution_id") for b in batches if b.get("execution_id")}
+    claimed = {c for b in batches for c in (b.get("claim_ids") or ())}
+    rows = [r for r in (artifact.get("rows") or ())
+            if r.get("batch_execution_id")]
+    seen = {"batches": len(batches), "batched_rows": len(rows),
+            "distinct_execution_ids": len(known)}
+    if not batches:
+        return ("hard condition 'every_batched_row_resolves_its_execution_id': "
+                "the artifact records no batches, so nothing could be "
+                "resolved"), seen
+    dangling = sorted({r["batch_execution_id"] for r in rows} - known)
+    if dangling:
+        return (f"hard condition 'every_batched_row_resolves_its_execution_id': "
+                f"{len(dangling)} row(s) name a reading the artifact does not "
+                f"contain ({dangling[:2]})"), seen
+    unnamed = sorted({r.get("audit_id", "") for r in rows} - claimed)
+    if unnamed:
+        return (f"hard condition 'every_batched_row_resolves_its_execution_id': "
+                f"the reading does not name back the claims {unnamed[:3]}, so "
+                "the reference resolves in one direction only"), seen
+    return "", seen
+
+
+def _check_batches_match_plan(artifact: dict, gate: dict):
+    """The batches this run made are the ones the plan pre-registered.
+
+    Read from the plan the gate names, and compared against this artifact — not
+    against a preflight that ran at some other time against some other cache.
+    """
+    import json
+    from pathlib import Path
+
+    from react_review.contracts import repo_root
+
+    applies = gate.get("applies_to") or {}
+    name = applies.get("expected_plan") or ""
+    benchmark = applies.get("benchmark") or ""
+    path = (repo_root() / "eval/benchmarks" / benchmark / name) if name else None
+    batches = _batches_of(artifact)
+    seen = {"batches": len(batches), "plan": name}
+    if path is None or not path.is_file():
+        return (f"hard condition 'batches_match_expected_plan': the gate names "
+                f"plan {name!r} and it is not in this checkout, so the "
+                "condition cannot be read"), seen
+
+    plan = json.loads(path.read_text(encoding="utf-8-sig"))
+    # The expected plan names them `claim_ids` and an excerpt key names them
+    # `audit_ids`. They are the same claims; reading only one spelling made
+    # every batch look unplanned.
+    planned = {tuple(sorted(b.get("claim_ids") or b.get("audit_ids") or ()))
+               for b in plan.get("expected_batches") or ()}
+    made = {tuple(sorted(b.get("claim_ids") or ())) for b in batches}
+    seen["plan_batches"] = len(planned)
+    if planned != made:
+        missing = sorted(planned - made)
+        extra = sorted(made - planned)
+        return (f"hard condition 'batches_match_expected_plan': "
+                f"{len(missing)} planned batch(es) were not made {missing[:2]} "
+                f"and {len(extra)} unplanned were {extra[:2]}"), seen
+    return "", seen
+
+
+_STRUCTURAL_CONDITIONS = {
+    "every_batched_row_resolves_its_execution_id": _check_execution_ids,
+    "batches_match_expected_plan": _check_batches_match_plan,
+}
 
 
 def grade(gate: dict, rows, *, baseline_key: str = "baseline_state",
@@ -202,8 +297,10 @@ def grade(gate: dict, rows, *, baseline_key: str = "baseline_state",
     }
 
     unmet: list[str] = []
+    evidence: dict = {}
     if artifact is not None:
-        unmet.extend(check_hard_conditions(gate, artifact))
+        found, evidence = check_hard_conditions(gate, artifact)
+        unmet.extend(found)
     elif gate.get("hard_conditions"):
         unmet.append(
             "the gate declares hard conditions and was applied to rows alone, "
@@ -235,4 +332,5 @@ def grade(gate: dict, rows, *, baseline_key: str = "baseline_state",
         # is a prohibition, and refusing every row satisfies all of them.
         verdict = "pass_prohibitions_only"
     return GateResult(verdict, tuple(transitions), violations, tuple(unmet),
-                      capability, capability_judged=judged)
+                      capability, hard_condition_evidence=(evidence or None),
+                      capability_judged=judged)

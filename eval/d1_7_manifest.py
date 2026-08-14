@@ -249,10 +249,25 @@ def _one_reanalysis(name: str, gate_version: str, note: str):
         "compare_runtime": {k: compare.get(k) for k in
                             ("compare_version", "status", "release_eligible")},
         "unmet_hard_conditions": list(result.unmet_hard_conditions),
-        "what": ("The same recording, replayed under evaluator 1.7.0, which "
-                 "verifies each reading's numeric components against its own "
-                 "quote and carries the survivors to the result. No model was "
-                 "asked: backend_requests is 0."),
+        "hard_condition_evidence": result.hard_condition_evidence,
+        # Not a safety violation, so it does not contradict the gate — and not
+        # something a release note may omit either.
+        "benchmark_diagnostics": {
+            k: v for k, v in (scored.get("benchmark_diagnostics") or {}).items()
+            if k in ("status", "unexpected_count", "unexpected_differences",
+                     "silent_releases")},
+        # Generated from the structured runtime, never typed. Both entries used
+        # to say "evaluator 1.7.0" because the sentence was written once and
+        # reused; the structured field said 1.8.0 for the second, so the numbers
+        # were right and the explanation was wrong — the failure mode a
+        # hand-written manifest has, arriving in prose instead of a hash.
+        "what": (f"The same recording, replayed under aggregation evaluator "
+                 f"{runtime.get('evaluator_version') or 'unknown'}"
+                 + (f" and comparator {compare.get('compare_version')}"
+                    if compare.get("compare_version") else "")
+                 + ". Numeric components are verified against each reading's own "
+                   "quote and the survivors carried to the result. No model was "
+                   "asked: backend_requests is 0."),
         "artifact": {"path": path.relative_to(REPO).as_posix(),
                      "sha256": _digest(path)},
         "extraction": "replay of the D1-7 cache, unchanged",
@@ -307,11 +322,20 @@ def build() -> dict:
                      "comparator identity did not exist yet and are NOT listed "
                      "here. They govern the reanalyses below."),
         },
+        # NOT the current HEAD. A manifest generated in the same batch as the
+        # generator would record the commit BEFORE its own — the file cannot
+        # contain the hash of a commit that contains the file. What is stable
+        # and checkable is the generator's own bytes and the commit that last
+        # touched it.
         "manifest_generation": {
-            "code_commit": subprocess.run(
-                ["git", "rev-parse", "HEAD"], capture_output=True, text=True,
-                cwd=REPO).stdout.strip(),
             "generator": "eval/d1_7_manifest.py",
+            "generator_sha256": _digest(REPO / "eval/d1_7_manifest.py"),
+            "generator_last_changed_commit": subprocess.run(
+                ["git", "log", "-1", "--format=%H", "--", "eval/d1_7_manifest.py"],
+                capture_output=True, text=True, cwd=REPO).stdout.strip(),
+            "note": ("the generator is committed BEFORE the manifest it "
+                     "produces, so these two values describe a state that "
+                     "already exists in history"),
         },
         "model": {
             "provider": plan["model_settings"].get("provider"),
@@ -433,6 +457,55 @@ def build() -> dict:
     }
 
 
+def _reanalysis_agrees(entry: dict, artifact_path: Path) -> list[str]:
+    """The numbers a reanalysis publishes are the ones its artifact holds.
+
+    A manifest can hash a file correctly and still describe it wrongly. The
+    version written in prose said 1.7.0 for a run whose structured runtime said
+    1.8.0, and nothing compared the two.
+    """
+    from react_review.acceptance_transitions import grade
+
+    scored = json.loads(artifact_path.read_text(encoding="utf-8-sig"))
+    problems: list[str] = []
+    name = entry.get("id")
+
+    published = entry.get("label_accuracy")
+    actual = scored.get("metrics", {}).get("label_accuracy")
+    if published != actual:
+        problems.append(f"reanalysis {name} publishes label_accuracy "
+                        f"{published} and its artifact holds {actual}")
+
+    for section, key in (("aggregation_runtime", "evaluator_version"),
+                         ("compare_runtime", "compare_version")):
+        was = (entry.get(section) or {}).get(key)
+        now = (scored.get("run", {}).get(section) or {}).get(key)
+        if was != now:
+            problems.append(f"reanalysis {name}: {section}.{key} is {was!r} in "
+                            f"the manifest and {now!r} in the artifact")
+
+    version = (entry.get("aggregation_runtime") or {}).get("evaluator_version")
+    if version and version not in (entry.get("what") or ""):
+        problems.append(f"reanalysis {name} describes itself without naming the "
+                        f"evaluator its runtime records ({version})")
+
+    gate_name = entry.get("gate")
+    gate_path = REPO / f"configs/gates/{gate_name}.json" if gate_name else None
+    if gate_path is not None and gate_path.is_file():
+        gate = json.loads(gate_path.read_text(encoding="utf-8-sig"))
+        result = grade(gate, scored["rows"], artifact=scored)
+        if result.verdict.upper() != entry.get("gate_verdict"):
+            problems.append(
+                f"reanalysis {name} publishes verdict "
+                f"{entry.get('gate_verdict')} and {gate_name} applied to its "
+                f"artifact gives {result.verdict.upper()}")
+        if list(result.unmet_hard_conditions) != list(
+                entry.get("unmet_hard_conditions") or ()):
+            problems.append(f"reanalysis {name}: the unmet conditions it "
+                            "publishes are not the ones its gate reports")
+    return problems
+
+
 def verify(path: Path) -> list[str]:
     """Every way the manifest disagrees with the artifacts it describes."""
     body = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -447,12 +520,66 @@ def verify(path: Path) -> list[str]:
             problems.append(f"{name}: {entry['path']} has changed since it was "
                             "hashed")
 
-    for field in ("sha256_after", "seeded_from_sha256"):
-        value = (body.get("cache") or {}).get(field, "")
+    # Recomputed, not measured for length. A 64-character string that is not
+    # the file's hash passes a length check and fails nothing else, which is
+    # the exact shape of the pin this repository once published without ever
+    # computing it.
+    cache = body.get("cache") or {}
+    for field, target in (("sha256_after", CACHE),
+                          ("seeded_from_sha256",
+                           RUNS / "phase7_extraction_cache.json")):
+        value = cache.get(field, "")
         if len(value) != 64:
             problems.append(f"cache.{field} is {len(value)} characters; a "
                             "sha256 is 64, and a truncated one still looks like "
                             "a hash")
+        elif not target.is_file():
+            problems.append(f"cache.{field} describes {target.name}, which is "
+                            "not in this checkout, so it cannot be checked")
+        elif _digest(target) != value:
+            problems.append(f"cache.{field} does not match {target.name} as it "
+                            "stands now")
+
+    for entry in body.get("reanalyses") or ():
+        artifact = entry.get("artifact") or {}
+        target = REPO / artifact.get("path", "")
+        if not artifact.get("sha256"):
+            problems.append(f"reanalysis {entry.get('id')} records no hash for "
+                            "the artifact its numbers come from")
+        elif not target.is_file():
+            problems.append(f"reanalysis {entry.get('id')}: {artifact['path']} "
+                            "is not in this checkout")
+        elif _digest(target) != artifact["sha256"]:
+            problems.append(f"reanalysis {entry.get('id')}: its artifact has "
+                            "changed since it was hashed")
+        else:
+            problems.extend(_reanalysis_agrees(entry, target))
+
+    for name, digest in (body.get("reanalysis_contracts") or {}).items():
+        path = REANALYSIS_CONTRACTS.get(name, "")
+        if path and (REPO / path).is_file() and sha256_file(REPO / path) != digest:
+            problems.append(f"reanalysis_contracts.{name} does not match "
+                            f"{path} as it stands now")
+
+    recording = body.get("recording") or {}
+    commit = recording.get("code_commit", "")
+    for name, digest in (recording.get("contracts_in_force_then") or {}).items():
+        path = RECORDING_CONTRACTS.get(name, "")
+        if not path or not commit:
+            continue
+        actual = _at_commit(commit, path)
+        if actual and actual != digest:
+            problems.append(f"recording.contracts_in_force_then.{name} is not "
+                            f"what {path} was at {commit[:12]}")
+
+    prompts = body.get("prompts") or ()
+    recomputed = hashlib.sha256(json.dumps(
+        [[r["question_id"], r["attempt"], r["prompt_sha256"], r["cache_key"]]
+         for r in prompts], sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")).hexdigest().upper()
+    if body.get("prompt_set_sha256") != recomputed:
+        problems.append("prompt_set_sha256 is not the hash of the prompt rows "
+                        "beneath it")
 
     for section in ("recording", "reanalysis_contracts"):
         node = body.get(section) or {}
@@ -461,6 +588,13 @@ def verify(path: Path) -> list[str]:
         for name, digest in (digests or {}).items():
             if len(digest) != 64:
                 problems.append(f"{section}.{name} is not a full sha256")
+    generation = body.get("manifest_generation") or {}
+    generator = REPO / generation.get("generator", "")
+    if generator.is_file() and _digest(generator) != generation.get(
+            "generator_sha256"):
+        problems.append(
+            "the generator has changed since this manifest was produced, so "
+            "the manifest was not made by the code that claims to have made it")
     if not (body.get("recording") or {}).get("code_commit"):
         problems.append("the manifest does not say which commit the recording "
                         "ran under, so its contracts cannot be checked")
