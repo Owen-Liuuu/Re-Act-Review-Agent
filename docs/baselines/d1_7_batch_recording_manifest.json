@@ -18,8 +18,8 @@
   },
   "manifest_generation": {
     "generator": "eval/d1_7_manifest.py",
-    "generator_sha256": "776A0904E1A0F49A9B4D8093DBE0055D058B00B719281AD9B4BA9084A8CB061A",
-    "generator_last_changed_commit": "2fd5e9dfe60bc386a69d16e2ba038f7b0be46e6d",
+    "generator_sha256": "17EB9F443A98F4BFADDBBFF5220B370616B79FC94D68EEDDE01D33AB764E2FEE",
+    "generator_last_changed_commit": "85a732affb153bff34d04659067a73f5014af605",
     "note": "the generator is committed BEFORE the manifest it produces, so these two values describe a state that already exists in history"
   },
   "model": {
@@ -70,14 +70,31 @@
     }
   },
   "artifact_storage": {
-    "status": "LOCAL ONLY — not yet retrievable by anyone else",
-    "why_it_matters": "These hashes prove that a file with this content existed on the machine that ran it. They do not let a reader obtain the recording and replay it. Until an immutable location is agreed, or a sanitised recording is committed, every conclusion here is reproducible by the author alone.",
-    "location": "",
-    "what_would_close_it": {
-      "option_a": "an immutable location the reviewer can read — a release asset, an archive DOI, anything whose content cannot change under its own address. Put it in `location` and the verifier stops objecting.",
-      "option_b": "commit a sanitised recording. The cache holds the model's decoded answers about a copyrighted paper, including verbatim quotes from it. The publishing policy allows an answer key to carry SHORT attributed snippets and keeps raw model responses out of the repository, so this needs a decision about what 'sanitised' means before it can be done — it is not a mechanical step.",
-      "not_an_option": "declaring it closed. The verifier fails on an empty location on purpose, and a test asserts that the failure is still there."
-    }
+    "status": "blocked",
+    "why_it_matters": "The hashes above prove a file with this content existed on the machine that ran it. They do not let a reader obtain the recording and replay it, and they cannot be told apart from the hash of a file that no longer exists. Until this is closed, every conclusion here is reproducible by the author alone.",
+    "states": {
+      "blocked": "no legitimate location. The current state.",
+      "available_unverified": "a uri exists and nobody outside has checked it",
+      "independently_verified": "another machine downloaded it, verified it, replayed it and left an attestation"
+    },
+    "bundle": {
+      "uri": null,
+      "sha256": null,
+      "size_bytes": null,
+      "media_type": "application/zip",
+      "access_mode": null,
+      "copyright_restrictions": null
+    },
+    "independent_verification": null,
+    "tooling": {
+      "build_and_verify": "eval/verify_d1_7_bundle.py",
+      "note": "the protocol and its verifier exist and are tested; writing a verification script is not performing a verification, so the status stays blocked"
+    },
+    "decisions_not_mine": [
+      "which platform the bundle goes to",
+      "public or controlled access",
+      "whether a cache quoting a copyrighted paper verbatim may be published at all"
+    ]
   },
   "cache": {
     "path": "output/baselines/melanoma_checkpoint_2017/phase8_batch_extraction_cache.json",
