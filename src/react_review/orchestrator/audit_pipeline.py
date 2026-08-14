@@ -16,6 +16,7 @@ stopped — or interrupted — keeps the evidence it had already collected.
 from __future__ import annotations
 
 import uuid
+from collections import Counter
 from typing import TYPE_CHECKING, Callable
 
 import structlog
@@ -32,6 +33,7 @@ from react_review.schemas.knowledge import KnowledgeImportRecord
 from react_review.schemas.package import EvidencePackage
 from react_review.schemas.resolution import FieldResolutionRecord
 from react_review.schemas.table import CapturedTableSet
+from react_review.steps.data_extraction.schemas import DocumentScope
 from react_review.store.evidence_package import EvidencePackageStore
 
 if TYPE_CHECKING:  # avoid an agents <-> orchestrator import cycle at runtime
@@ -173,6 +175,7 @@ class AuditPipeline:
             per_study.append({
                 "study_id": study_id, "subject": subject,
                 "n_claims": len(claims), "n_found": len(claims) - len(warnings),
+                "document_scope": self._scope_for(source),
                 "warnings": warnings,
             })
             # Shown in full, not gated — see StepStage.COLLECT_STUDY.
@@ -265,6 +268,18 @@ class AuditPipeline:
         return out
 
     @staticmethod
+    def _scope_for(source) -> str:
+        """Return the retriever-declared scope, never one inferred from text."""
+        if source is None:
+            return DocumentScope.UNKNOWN.value
+        document = getattr(source, "document", None)
+        scope = getattr(document, "document_scope", None)
+        if scope is not None:
+            return getattr(scope, "value", str(scope))
+        provenance = getattr(source, "provenance", None) or {}
+        return str(provenance.get("document_scope") or DocumentScope.UNKNOWN.value)
+
+    @staticmethod
     def _render_study(study_id: str, claims: list, collected: list) -> str:
         lines = [f"  {study_id}: {len(claims)} claim(s)"]
         for claim, src in zip(claims, collected):
@@ -282,14 +297,26 @@ class AuditPipeline:
     def _render_collection(per_study: list[dict], n_evidence: int) -> str:
         """The one screen a reviewer reads before letting the audit proceed."""
         found = sum(p["n_found"] for p in per_study)
+        scopes = Counter(
+            p.get("document_scope") or DocumentScope.UNKNOWN.value
+            for p in per_study
+        )
         lines = [f"  {len(per_study)} paper(s) · {n_evidence} claim(s) · "
                  f"{found} found · {n_evidence - found} missing", ""]
+        lines.extend([
+            "  document scope:",
+            f"    full_text       {scopes[DocumentScope.FULL_TEXT.value]}",
+            f"    abstract_only   {scopes[DocumentScope.ABSTRACT_ONLY.value]}",
+            f"    metadata_only   {scopes[DocumentScope.METADATA_ONLY.value]}",
+            f"    unknown         {scopes[DocumentScope.UNKNOWN.value]}",
+            "",
+        ])
         width = max((len(p["study_id"]) for p in per_study), default=10)
         for p in per_study:
             missing = p["n_claims"] - p["n_found"]
             mark = "ok" if not missing else f"! {missing} missing"
             lines.append(f"    {p['study_id']:<{width}}  {p['n_found']}/{p['n_claims']}"
-                         f"  {mark}")
+                         f"  {mark}  [{p.get('document_scope', 'unknown')}]")
             if p["subject"]:
                 lines.append(f"      {p['subject']}")
         return "\n".join(lines)

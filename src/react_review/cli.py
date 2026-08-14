@@ -804,6 +804,7 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
         retriever = dependencies.papers(lambda: FullTextRetriever(
             pubmed_settings=config.pubmed,
             unpaywall_email=config.unpaywall.email or config.pubmed.email,
+            unpaywall_enabled=config.unpaywall.enabled,
         ))
         reference_resolver = build_reference_resolver_from_parsed(parsed.studies)
     if args.limit:

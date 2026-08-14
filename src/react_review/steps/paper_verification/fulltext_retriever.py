@@ -27,7 +27,7 @@ import httpx
 import structlog
 
 from react_review.core.config import PubMedSettings
-from react_review.steps.data_extraction.schemas import PaperDocument
+from react_review.steps.data_extraction.schemas import DocumentScope, PaperDocument
 from react_review.steps.paper_verification.interfaces import PaperRetriever
 from react_review.steps.paper_verification.schemas import ReferenceEntry
 
@@ -81,16 +81,20 @@ class FullTextRetriever(PaperRetriever):
         pubmed_settings: PubMed/PMC API settings.
         unpaywall_email: Email for Unpaywall API (required by their TOS).
             If empty, Unpaywall tier is skipped.
+        unpaywall_enabled: Whether the Unpaywall tier may issue requests.
+            This switch wins over a configured email.
     """
 
     def __init__(
         self,
         pubmed_settings: PubMedSettings,
         unpaywall_email: str = "",
+        unpaywall_enabled: bool = True,
     ) -> None:
         self._pubmed_base = pubmed_settings.base_url.rstrip("/")
         self._api_key = pubmed_settings.api_key
         self._unpaywall_email = unpaywall_email or pubmed_settings.email
+        self._unpaywall_enabled = unpaywall_enabled
         self._timeout = httpx.Timeout(60.0, connect=15.0)
 
     async def retrieve(self, reference: ReferenceEntry) -> PaperDocument | None:
@@ -162,6 +166,7 @@ class FullTextRetriever(PaperRetriever):
                 paper_id=reference.doi or f"pmc:{pmc_id}",
                 reference=reference,
                 full_text=core_text[:_MAX_FULLTEXT_CHARS],
+                document_scope=DocumentScope.FULL_TEXT,
                 sections=self._split_sections(full_text),
                 metadata={"source": "pmc", "pmc_id": pmc_id},
             )
@@ -273,7 +278,11 @@ class FullTextRetriever(PaperRetriever):
         Unpaywall provides free OA locations for papers identified by DOI.
         It can return PDF or HTML links.
         """
-        if not reference.doi or not self._unpaywall_email:
+        if (
+            not self._unpaywall_enabled
+            or not reference.doi
+            or not self._unpaywall_email
+        ):
             return None
 
         try:
@@ -306,6 +315,7 @@ class FullTextRetriever(PaperRetriever):
                 paper_id=reference.doi,
                 reference=reference,
                 full_text=core_text[:_MAX_FULLTEXT_CHARS],
+                document_scope=DocumentScope.FULL_TEXT,
                 sections=self._split_sections(full_text),
                 metadata={
                     "source": "unpaywall",
@@ -464,6 +474,7 @@ class FullTextRetriever(PaperRetriever):
                         paper_id=reference.doi,
                         reference=reference,
                         full_text=core_text[:_MAX_FULLTEXT_CHARS],
+                        document_scope=DocumentScope.FULL_TEXT,
                         sections=self._split_sections(full_text),
                         metadata={
                             "source": "openalex_pdf",
@@ -486,6 +497,7 @@ class FullTextRetriever(PaperRetriever):
                     paper_id=reference.doi,
                     reference=reference,
                     full_text=text,
+                    document_scope=DocumentScope.ABSTRACT_ONLY,
                     sections={"abstract": abstract},
                     metadata={
                         "source": "openalex_abstract",
@@ -602,6 +614,7 @@ class FullTextRetriever(PaperRetriever):
                 paper_id=reference.doi or f"pmid:{pmid}",
                 reference=reference,
                 full_text=abstract,
+                document_scope=DocumentScope.ABSTRACT_ONLY,
                 sections={"abstract": abstract},
                 metadata={"source": "pubmed_abstract", "pmid": pmid},
             )
@@ -850,6 +863,7 @@ class FullTextRetriever(PaperRetriever):
             paper_id=reference.doi or f"fallback-{reference.title[:20]}",
             reference=reference,
             full_text=text,
+            document_scope=DocumentScope.METADATA_ONLY,
             metadata={"source": "fallback-metadata-only"},
         )
 

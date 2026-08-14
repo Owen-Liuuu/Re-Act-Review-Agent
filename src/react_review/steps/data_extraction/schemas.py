@@ -2,10 +2,25 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_serializer
 
 from react_review.steps.paper_verification.schemas import ReferenceEntry
+
+
+class DocumentScope(str, Enum):
+    """How much primary-source content a retriever actually obtained.
+
+    ``UNKNOWN`` is reserved for artifacts written before this field existed.
+    New retrievers must declare one of the other three values explicitly; text
+    length is deliberately not used to infer it.
+    """
+
+    FULL_TEXT = "full_text"
+    ABSTRACT_ONLY = "abstract_only"
+    METADATA_ONLY = "metadata_only"
+    UNKNOWN = "unknown"
 
 
 class PaperDocument(BaseModel):
@@ -17,6 +32,7 @@ class PaperDocument(BaseModel):
         full_text: Complete text content of the paper.
         sections: Named sections (e.g. methods, results).
         metadata: Additional metadata from the source.
+        document_scope: Explicit extent of the retrieved source document.
     """
 
     paper_id: str
@@ -24,6 +40,15 @@ class PaperDocument(BaseModel):
     full_text: str = ""
     sections: dict[str, str] = Field(default_factory=dict)
     metadata: dict[str, str] = Field(default_factory=dict)
+    document_scope: DocumentScope = DocumentScope.UNKNOWN
+
+    @model_serializer(mode="wrap")
+    def _omit_legacy_unknown_scope(self, handler):
+        """Do not change the bytes of legacy documents with no scope field."""
+        body = handler(self)
+        if self.document_scope is DocumentScope.UNKNOWN:
+            body.pop("document_scope", None)
+        return body
 
 
 class ExtractedField(BaseModel):

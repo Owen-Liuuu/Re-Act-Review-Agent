@@ -149,6 +149,7 @@ def create_pipeline(config: AppConfig) -> PipelineOrchestrator:
     paper_retriever = FullTextRetriever(
         pubmed_settings=config.pubmed,
         unpaywall_email=unpaywall_email,
+        unpaywall_enabled=config.unpaywall.enabled,
     )
 
     # Step 3: LLM-based data extraction (dual-LLM cross-validation)

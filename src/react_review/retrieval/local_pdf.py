@@ -12,7 +12,7 @@ from pathlib import Path
 import structlog
 
 from react_review.normalize.doi import normalize_doi
-from react_review.steps.data_extraction.schemas import PaperDocument
+from react_review.steps.data_extraction.schemas import DocumentScope, PaperDocument
 from react_review.steps.paper_verification.interfaces import PaperRetriever
 from react_review.steps.paper_verification.schemas import ReferenceEntry
 
@@ -60,5 +60,6 @@ class LocalPdfRetriever(PaperRetriever):
             paper_id=reference.doi or str(path),
             reference=reference,
             full_text=text,
+            document_scope=DocumentScope.FULL_TEXT,
             metadata={"source": "local_pdf", "path": str(path)},
         )

@@ -172,12 +172,15 @@ def _provenance(document) -> dict[str, str]:
     meta = getattr(document, "metadata", None) or {}
     uri = next((str(meta[k]) for k in _URI_KEYS if meta.get(k)), "")
     reference = getattr(document, "reference", None)
+    scope = getattr(document, "document_scope", "unknown")
+    scope_value = getattr(scope, "value", str(scope or "unknown"))
     return {
         "source_file": str(meta.get("path") or ""),
         "source_uri": uri,
         "source_paper_id": str(getattr(document, "paper_id", "") or ""),
         "source_doi": str(getattr(reference, "doi", "") or ""),
         "retriever_kind": str(meta.get("source") or ""),
+        "document_scope": scope_value,
     }
 
 

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from react_review.core.enums import VerificationStatus
-from react_review.steps.data_extraction.schemas import PaperDocument
+from react_review.steps.data_extraction.schemas import DocumentScope, PaperDocument
 from react_review.steps.paper_verification.interfaces import (
     PaperRetriever,
     ReferenceVerifier,
@@ -44,6 +44,7 @@ class MockPaperRetriever(PaperRetriever):
                 "Results: The treatment showed significant improvement (p<0.05). "
                 "Sample size: 200 patients were enrolled."
             ),
+            document_scope=DocumentScope.FULL_TEXT,
             sections={"methods": "A systematic review was conducted.", "results": "Significant improvement found."},
             metadata={"source": "mock-retriever"},
         )

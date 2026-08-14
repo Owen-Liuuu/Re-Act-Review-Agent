@@ -123,6 +123,7 @@ def build_catalogue(
         retriever = FullTextRetriever(
             pubmed_settings=config.pubmed,
             unpaywall_email=config.unpaywall.email or config.pubmed.email,
+            unpaywall_enabled=config.unpaywall.enabled,
         )
         backend = _create_llm_backend(config)
         extractor = LLMExtractor(
