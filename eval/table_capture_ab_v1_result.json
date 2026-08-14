@@ -1,0 +1,188 @@
+{
+  "schema_version": 1,
+  "result_id": "table_capture_ab_v1_result",
+  "executed_on": "2026-08-15",
+  "scope": "Paired diagnostic on the first characteristics table of two fixed reviews. This result does not establish cross-domain stability.",
+  "parent_manifest": "eval/table_capture_ab_v1.json",
+  "parent_manifest_sha256": "68E35AE880AC87DDFB1A33D2EF3B0284BF238FE3A554B995271B10F734BAD9FC",
+  "controls": {
+    "provider": "glm",
+    "model": "glm-4.5-flash",
+    "temperature": 0.1,
+    "seed": 42,
+    "max_tokens": 8192,
+    "control_fingerprint": "28007F82FC297415DDCE27917F4EFDE5576D034918C05E3B3130DE1313D27AD3",
+    "execution_mode": "live",
+    "calls": 4,
+    "input_prompt_characters": 181894,
+    "output_characters": 34196,
+    "provider_token_usage_available": false,
+    "actual_cost_available": false,
+    "cost_note": "The backend retained response text but not provider token usage, and the repository has no versioned provider pricing table. No currency cost is inferred from character counts."
+  },
+  "calls": [
+    {
+      "document_id": "eat_t1dm_review_2025",
+      "prompt_id": "table_capture_v1",
+      "pdf_sha256": "30170539BDB5F46755A2F56B6ED66A2CB4B0FD6AB3DD7D13BFB7070394236EDD",
+      "gold_sha256": "B265407B71895717464172C1D3697577EB8269EE21879E3154D3D0D9684161D0",
+      "review_text_sha256": "7F180E511FC3E80132519CC5E3BBDF745547ECF069090CF4A86796F40253CDF4",
+      "prompt_contract_sha256": "3AAC303F18EC25CEEFEB7C3B8D2D0507DFA8A00A912BA5ECB5FB8242B9E9A6B6",
+      "rendered_prompt_sha256": "973249B365E81FA967D02510DDDCFF5F6020EE52B67D81EB0F57A0F7C3B5642A",
+      "response_sha256": "C6AE531C30B7E88741B9B5F34D16E7960C9473C33232B9B367E1A71DD983DC4D",
+      "capture_sha256": "119C323CA9D81E392D7A23ADD827E6D7DE8BCF0C9DE18D0C61FDC4F88E0D95F1",
+      "control_fingerprint": "28007F82FC297415DDCE27917F4EFDE5576D034918C05E3B3130DE1313D27AD3",
+      "response_reused": false,
+      "tables_returned": 1,
+      "text_layer_unanchored_cells": 0,
+      "forbidden_domain_terms_introduced": 0,
+      "live_assertion": "passed",
+      "metrics": {
+        "json_success_rate": 1.0,
+        "schema_success_rate": 1.0,
+        "table_recall": 1.0,
+        "row_recall": 1.0,
+        "exact_cell_accuracy": 0.9084967320261438,
+        "normalized_cell_accuracy": 0.9738562091503268,
+        "cell_precision": 0.9824561403508771,
+        "cell_recall": 0.9655172413793104,
+        "unanchored_cells": 2,
+        "hallucinated_cells": 2,
+        "error_counts": {
+          "extra_geometry": 2,
+          "layout_normalization_only": 10,
+          "missing_value": 4
+        }
+      }
+    },
+    {
+      "document_id": "eat_t1dm_review_2025",
+      "prompt_id": "table_capture_v2",
+      "pdf_sha256": "30170539BDB5F46755A2F56B6ED66A2CB4B0FD6AB3DD7D13BFB7070394236EDD",
+      "gold_sha256": "B265407B71895717464172C1D3697577EB8269EE21879E3154D3D0D9684161D0",
+      "review_text_sha256": "7F180E511FC3E80132519CC5E3BBDF745547ECF069090CF4A86796F40253CDF4",
+      "prompt_contract_sha256": "46D4542E30B63941549FCC5BFA5044031D7DE15AFCA8494B75DA19EB0885AD94",
+      "rendered_prompt_sha256": "E40438227E3037311F243B6AAAC80305A89EFC4CC2711DA68B56347B4BF18231",
+      "response_sha256": "D6328C832C978099BA19D77843B727DB591FBACFAD5B61860929F097E352AB45",
+      "capture_sha256": "1DC1ED2F7972082E5F339413FDFD2FF9273E0569804EF67825FD8FBED2906989",
+      "control_fingerprint": "28007F82FC297415DDCE27917F4EFDE5576D034918C05E3B3130DE1313D27AD3",
+      "response_reused": false,
+      "tables_returned": 1,
+      "text_layer_unanchored_cells": 0,
+      "forbidden_domain_terms_introduced": 0,
+      "live_assertion": "passed",
+      "metrics": {
+        "json_success_rate": 1.0,
+        "schema_success_rate": 1.0,
+        "table_recall": 1.0,
+        "row_recall": 1.0,
+        "exact_cell_accuracy": 0.6862745098039216,
+        "normalized_cell_accuracy": 0.7712418300653595,
+        "cell_precision": 0.7682119205298014,
+        "cell_recall": 1.0,
+        "unanchored_cells": 35,
+        "hallucinated_cells": 35,
+        "error_counts": {
+          "layout_normalization_only": 13,
+          "merged_filled": 35
+        }
+      }
+    },
+    {
+      "document_id": "melanoma_checkpoint_review_2017",
+      "prompt_id": "table_capture_v1",
+      "pdf_sha256": "9976C59EC6CA2C72F137E1FEF39EBECCBF604704D0F2C5637F0BAAE7AD8A7401",
+      "gold_sha256": "B2B811F64B24346EEEBEDD637513EB7D902B987E817FE11469BC7EEE84449CD0",
+      "review_text_sha256": "4E726307ACE3EF819951CD4958E30B90EF6E0268C53DFDF62F83FA75D6BC9EC0",
+      "prompt_contract_sha256": "3AAC303F18EC25CEEFEB7C3B8D2D0507DFA8A00A912BA5ECB5FB8242B9E9A6B6",
+      "rendered_prompt_sha256": "1E4D39F8F76387F52A03525A5FA8CF57C1CCBC85F5CD04A204797E0935E74366",
+      "response_sha256": "82252F5824E25E20A27F05EED0420AD78E12BB2573954E360A9B16BE82D27B88",
+      "capture_sha256": "C36ACBCC3878DA14F2752AD0DED712EFA3C4B8110A3DE9730F256801666518C4",
+      "control_fingerprint": "28007F82FC297415DDCE27917F4EFDE5576D034918C05E3B3130DE1313D27AD3",
+      "response_reused": false,
+      "tables_returned": 6,
+      "text_layer_unanchored_cells": 3,
+      "forbidden_domain_terms_introduced": 0,
+      "live_assertion": "failed_text_layer_anchor",
+      "metrics": {
+        "json_success_rate": 1.0,
+        "schema_success_rate": 1.0,
+        "table_recall": 1.0,
+        "row_recall": 1.0,
+        "exact_cell_accuracy": 0.4583333333333333,
+        "normalized_cell_accuracy": 1.0,
+        "cell_precision": 1.0,
+        "cell_recall": 1.0,
+        "unanchored_cells": 0,
+        "hallucinated_cells": 0,
+        "error_counts": {
+          "layout_normalization_only": 26
+        }
+      }
+    },
+    {
+      "document_id": "melanoma_checkpoint_review_2017",
+      "prompt_id": "table_capture_v2",
+      "pdf_sha256": "9976C59EC6CA2C72F137E1FEF39EBECCBF604704D0F2C5637F0BAAE7AD8A7401",
+      "gold_sha256": "B2B811F64B24346EEEBEDD637513EB7D902B987E817FE11469BC7EEE84449CD0",
+      "review_text_sha256": "4E726307ACE3EF819951CD4958E30B90EF6E0268C53DFDF62F83FA75D6BC9EC0",
+      "prompt_contract_sha256": "46D4542E30B63941549FCC5BFA5044031D7DE15AFCA8494B75DA19EB0885AD94",
+      "rendered_prompt_sha256": "172589EFE83AFECDF563398BA777BD11DF45B2C63AC910C9B68BAC6FDE1CD8D7",
+      "response_sha256": "E844286F943115BED4FCB8A90BE5381D5306F9A9B60CFC8996F0C8673330BDA5",
+      "capture_sha256": "F566EC0627552DC57891C567A8A014FFF23CFA4B74AA54CF5B6C34A213E60D68",
+      "control_fingerprint": "28007F82FC297415DDCE27917F4EFDE5576D034918C05E3B3130DE1313D27AD3",
+      "response_reused": false,
+      "tables_returned": 6,
+      "text_layer_unanchored_cells": 3,
+      "forbidden_domain_terms_introduced": 0,
+      "live_assertion": "failed_ragged_table",
+      "metrics": {
+        "json_success_rate": 1.0,
+        "schema_success_rate": 0.0,
+        "table_recall": 1.0,
+        "row_recall": 1.0,
+        "exact_cell_accuracy": 0.4583333333333333,
+        "normalized_cell_accuracy": 1.0,
+        "cell_precision": 1.0,
+        "cell_recall": 1.0,
+        "unanchored_cells": 0,
+        "hallucinated_cells": 0,
+        "error_counts": {
+          "layout_normalization_only": 26,
+          "ragged_table": 1
+        }
+      }
+    }
+  ],
+  "error_type_transitions": [
+    {"document_id": "eat_t1dm_review_2025", "error_type": "missing_value", "v1": 4, "v2": 0, "transition": "improved"},
+    {"document_id": "eat_t1dm_review_2025", "error_type": "extra_geometry", "v1": 2, "v2": 0, "transition": "improved"},
+    {"document_id": "eat_t1dm_review_2025", "error_type": "merged_filled", "v1": 0, "v2": 35, "transition": "regressed"},
+    {"document_id": "eat_t1dm_review_2025", "error_type": "layout_normalization_only", "v1": 10, "v2": 13, "transition": "regressed"},
+    {"document_id": "melanoma_checkpoint_review_2017", "error_type": "layout_normalization_only", "v1": 26, "v2": 26, "transition": "unchanged"},
+    {"document_id": "melanoma_checkpoint_review_2017", "error_type": "ragged_table", "v1": 0, "v2": 1, "transition": "regressed"},
+    {"document_id": "melanoma_checkpoint_review_2017", "error_type": "text_layer_unanchored_cells", "v1": 3, "v2": 3, "transition": "unchanged"}
+  ],
+  "decision": {
+    "diagnosis": "regressed",
+    "candidate_v2": "not_promoted",
+    "production_default": "table_capture_v1",
+    "document_results": {
+      "eat_t1dm_review_2025": [
+        "cell_accuracy_regressed",
+        "unanchored_cells_increased",
+        "hallucinated_cells_increased"
+      ],
+      "melanoma_checkpoint_review_2017": [
+        "schema_failed"
+      ]
+    },
+    "scope_limit": "Four calls diagnose this fixed two-document pairing only; they do not prove prompt stability or cross-domain generalization."
+  },
+  "artifact_policy": {
+    "raw_responses_committed": false,
+    "review_text_committed": false,
+    "full_gold_committed": false,
+    "local_artifact_root": "output/live_tests/table_capture/"
+  }
+}

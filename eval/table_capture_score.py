@@ -76,31 +76,42 @@ def _capture_object(capture: object) -> tuple[dict[str, Any], bool]:
     return (capture, True) if isinstance(capture, dict) else ({}, False)
 
 
-def _valid_schema(body: dict[str, Any]) -> bool:
+def _schema_error_counts(body: dict[str, Any]) -> dict[str, int]:
+    errors: defaultdict[str, int] = defaultdict(int)
     tables = body.get("tables")
     if not isinstance(tables, list):
-        return False
+        errors["tables_not_list"] += 1
+        return dict(errors)
     ids: set[str] = set()
     for table in tables:
         if not isinstance(table, dict):
-            return False
+            errors["table_not_object"] += 1
+            continue
         table_id = table.get("table_id")
         headers = table.get("header_rows")
         rows = table.get("rows")
         if not isinstance(table_id, str) or not table_id or table_id in ids:
-            return False
-        ids.add(table_id)
+            errors["invalid_or_duplicate_table_id"] += 1
+        else:
+            ids.add(table_id)
         if not isinstance(headers, list) or not isinstance(rows, list):
-            return False
+            errors["rows_not_lists"] += 1
+            continue
         if any(not isinstance(row, list) for row in [*headers, *rows]):
-            return False
+            errors["row_not_list"] += 1
+            continue
         widths = [len(row) for row in headers]
         if rows and not widths:
-            return False
+            errors["missing_header"] += 1
+            continue
         width = max(widths, default=0)
         if any(len(row) != width for row in [*headers, *rows]):
-            return False
-    return True
+            errors["ragged_table"] += 1
+    return dict(errors)
+
+
+def _valid_schema(body: dict[str, Any]) -> bool:
+    return not _schema_error_counts(body)
 
 
 def _column_index(column_id: str) -> int:
@@ -144,7 +155,13 @@ def _ratio(numerator: int, denominator: int) -> float:
 def score_table_capture(gold_path: Path | str, capture: object) -> dict[str, Any]:
     gold = load_gold(gold_path)
     body, json_ok = _capture_object(capture)
-    schema_ok = json_ok and _valid_schema(body)
+    errors: defaultdict[str, int] = defaultdict(int)
+    if not json_ok:
+        errors["invalid_json"] += 1
+    else:
+        for key, value in _schema_error_counts(body).items():
+            errors[key] += value
+    schema_ok = json_ok and not errors
     expected = _gold_layout(gold)
     actual = _actual_layout(body) if json_ok else {}
 
@@ -160,10 +177,14 @@ def score_table_capture(gold_path: Path | str, capture: object) -> dict[str, Any
 
     for table_id, gold_table in expected.items():
         actual_rows = actual.get(table_id, {}).get("rows", {})
+        if table_id not in actual:
+            errors["missing_table"] += 1
         for row_id in gold_table["rows"]:
             row = actual_rows.get(row_id)
             if row is not None:
                 found_rows += 1
+            else:
+                errors["missing_row"] += 1
             for (cell_row, col), record in gold_table["cells"].items():
                 if cell_row != row_id:
                     continue
@@ -174,6 +195,13 @@ def score_table_capture(gold_path: Path | str, capture: object) -> dict[str, Any
                 expected_normalized = record["normalized_value"]
                 if observed_normalized == expected_normalized:
                     normalized += 1
+                    if observed != record["raw_value"]:
+                        errors["layout_normalization_only"] += 1
+                if record["blank_kind"] == "value":
+                    if not observed:
+                        errors["missing_value"] += 1
+                    elif observed_normalized != expected_normalized:
+                        errors["value_mismatch"] += 1
                 if observed:
                     actual_values += 1
                     if record["blank_kind"] == "value" and (
@@ -183,6 +211,7 @@ def score_table_capture(gold_path: Path | str, capture: object) -> dict[str, Any
                         unanchored += 1
                         if record["blank_kind"] != "value":
                             hallucinated += 1
+                            errors[f"{record['blank_kind']}_filled"] += 1
 
     # Count values outside the annotated geometry as unanchored hallucinations.
     for table_id, table in actual.items():
@@ -199,6 +228,7 @@ def score_table_capture(gold_path: Path | str, capture: object) -> dict[str, Any
                     actual_values += 1
                     unanchored += 1
                     hallucinated += 1
+                    errors["extra_geometry"] += 1
 
     total_cells = len(gold)
     return {
@@ -212,6 +242,7 @@ def score_table_capture(gold_path: Path | str, capture: object) -> dict[str, Any
         "cell_recall": _ratio(true_positive, expected_values),
         "unanchored_cells": unanchored,
         "hallucinated_cells": hallucinated,
+        "error_counts": dict(sorted(errors.items())),
         "counts": {
             "gold_tables": expected_tables,
             "gold_rows": expected_rows,

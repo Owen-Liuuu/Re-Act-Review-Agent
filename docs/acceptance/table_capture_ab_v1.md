@@ -112,3 +112,37 @@ Every call writes `review_text.txt`, `prompt.txt`, `raw_response.txt`,
 `output/live_tests/table_capture/<prompt-profile>/`. Score each `capture.json`
 against the matching ignored gold JSONL. Preserve all four raw replies even
 when parsing or schema validation fails.
+
+## Recorded paired diagnostic
+
+The four approved calls were executed on 2026-08-15 with GLM-4.5-Flash,
+temperature 0.1, seed 42, and an 8,192-token output limit per call. The public
+result is `eval/table_capture_ab_v1_result.json`; its checker recomputes the
+decision from the per-document metrics and refuses a claimed promotion that
+contradicts them.
+
+| Document | Prompt | Table / row recall | Exact / normalized cell accuracy | Precision / recall | Unanchored / hallucinated | JSON / schema |
+|---|---|---:|---:|---:|---:|---:|
+| EAT/T1DM | v1 | 1.000 / 1.000 | 0.9085 / 0.9739 | 0.9825 / 0.9655 | 2 / 2 | 1 / 1 |
+| EAT/T1DM | v2 | 1.000 / 1.000 | 0.6863 / 0.7712 | 0.7682 / 1.0000 | 35 / 35 | 1 / 1 |
+| Melanoma | v1 | 1.000 / 1.000 | 0.4583 / 1.0000 | 1.0000 / 1.0000 | 0 / 0 | 1 / 1 |
+| Melanoma | v2 | 1.000 / 1.000 | 0.4583 / 1.0000 | 1.0000 / 1.0000 | 0 / 0 | 1 / 0 |
+
+The EAT v2 response filled all 35 visually merged continuation cells. This
+duplicates study-level Author, Country, total N, Measurement tool, and Overall
+quality into the second cohort row. Although v2 recovered four values v1 had
+missed, it therefore regressed both cell accuracy and hallucination controls.
+For melanoma, both prompts transcribed the scored first table perfectly after
+layout normalization, but v2 produced a ragged row in another captured table,
+so its whole-response schema check failed. Neither candidate response introduced
+the frozen EAT/T1DM example terms into the melanoma review.
+
+The paired decision is `regressed`; `table_capture_v2` is not promoted and the
+production default remains `table_capture_v1`. This does not claim v1 is ideal:
+its EAT output added two extra header coordinates and missed four values. It
+only says the tested v2 cannot safely replace it under the preregistered rules.
+
+All four raw replies remain under the ignored artifact directory. The provider
+token usage was not retained and this repository has no versioned pricing
+table, so an actual currency cost is not reported or inferred from character
+counts.

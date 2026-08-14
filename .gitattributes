@@ -34,6 +34,7 @@ eval/benchmarks/melanoma_checkpoint_2017/d1_7_expected_plan.json text eol=lf
 configs/prompt_contracts/*.json text eol=lf
 eval/table_capture_gold_schema.json text eol=lf
 eval/table_capture_ab_v1.json text eol=lf
+eval/table_capture_ab_v1_result.json text eol=lf
 
 # The comparator has an identity of its own; its manifests are pinned too.
 configs/compare/evaluators/*.json text eol=lf

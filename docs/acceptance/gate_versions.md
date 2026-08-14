@@ -355,6 +355,7 @@ restored to its original bytes and the corrections published as v2.
 | B0 | `configs/prompt_contracts/table_capture_v2.json` | `285D676ED59098F0` | frozen A/B candidate |
 | B0 | `configs/run_profiles/phase8_batch_v6.json` | `46888B89138AAFFC` | current; pins TableCapture v1 |
 | B1 | `eval/table_capture_ab_v1.json` | `68E35AE880AC87DD` | frozen pre-live A/B manifest |
+| B2 | `eval/table_capture_ab_v1_result.json` | `03B6A9DB7A66F628` | paired diagnostic; v2 not promoted |
 
 ## Claim identity provenance: safe_aggregation 1.8.0 → 1.8.1
 

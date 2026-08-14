@@ -98,6 +98,7 @@ PINNED = {
     "configs/prompt_contracts/table_capture_v2.json": "285D676ED59098F0",
     "configs/run_profiles/phase8_batch_v6.json": "46888B89138AAFFC",
     "eval/table_capture_ab_v1.json": "68E35AE880AC87DD",
+    "eval/table_capture_ab_v1_result.json": "03B6A9DB7A66F628",
 }
 
 

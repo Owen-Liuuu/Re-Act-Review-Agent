@@ -63,6 +63,7 @@ def test_perfect_transcription_scores_every_expected_cell(tmp_path):
     assert result["cell_recall"] == 1.0
     assert result["unanchored_cells"] == 0
     assert result["hallucinated_cells"] == 0
+    assert result["error_counts"] == {}
 
 
 def test_tables_outside_the_declared_gold_scope_are_not_hallucinations(tmp_path):
@@ -85,6 +86,7 @@ def test_pdf_line_end_hyphenation_only_relaxes_normalized_accuracy(tmp_path):
 
     assert result["exact_cell_accuracy"] < 1.0
     assert result["normalized_cell_accuracy"] == 1.0
+    assert result["error_counts"] == {"layout_normalization_only": 1}
 
 
 def test_deleting_a_table_degrades_recall(tmp_path):
@@ -100,6 +102,7 @@ def test_deleting_a_row_degrades_row_and_cell_recall(tmp_path):
     result = score_table_capture(_gold(tmp_path), capture)
     assert result["row_recall"] < 1.0
     assert result["cell_recall"] < 1.0
+    assert result["error_counts"]["missing_value"] == 1
 
 
 def test_changing_a_value_degrades_both_cell_accuracies(tmp_path):
@@ -110,6 +113,7 @@ def test_changing_a_value_degrades_both_cell_accuracies(tmp_path):
     assert result["normalized_cell_accuracy"] < 1.0
     assert result["cell_precision"] < 1.0
     assert result["cell_recall"] < 1.0
+    assert result["error_counts"]["value_mismatch"] == 1
 
 
 def test_value_in_a_true_or_merged_blank_is_hallucinated(tmp_path):
@@ -119,6 +123,8 @@ def test_value_in_a_true_or_merged_blank_is_hallucinated(tmp_path):
     result = score_table_capture(_gold(tmp_path), capture)
     assert result["unanchored_cells"] == 2
     assert result["hallucinated_cells"] == 2
+    assert result["error_counts"]["merged_filled"] == 1
+    assert result["error_counts"]["true_blank_filled"] == 1
 
 
 def test_ragged_capture_fails_schema_even_when_json_is_valid(tmp_path):
@@ -127,6 +133,7 @@ def test_ragged_capture_fails_schema_even_when_json_is_valid(tmp_path):
     result = score_table_capture(_gold(tmp_path), capture)
     assert result["json_success_rate"] == 1.0
     assert result["schema_success_rate"] == 0.0
+    assert result["error_counts"]["ragged_table"] == 1
 
 
 def test_invalid_json_fails_json_and_schema_without_crashing(tmp_path):
