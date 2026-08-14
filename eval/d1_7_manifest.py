@@ -357,34 +357,43 @@ def build() -> dict:
                    "sha256": _digest(path)}
             for name, path in ARTIFACTS.items() if path.is_file()
         },
+        # Three states, and only the last one closes this. "I uploaded it" and
+        # "somebody else reproduced it" are different claims, and one `location`
+        # string could not tell them apart — which is why filling it in used to
+        # be enough to silence the objection.
         "artifact_storage": {
-            "status": "LOCAL ONLY — not yet retrievable by anyone else",
-            "why_it_matters": ("These hashes prove that a file with this content "
-                               "existed on the machine that ran it. They do not "
-                               "let a reader obtain the recording and replay it. "
-                               "Until an immutable location is agreed, or a "
-                               "sanitised recording is committed, every "
-                               "conclusion here is reproducible by the author "
-                               "alone."),
-            "location": "",
-            "what_would_close_it": {
-                "option_a": ("an immutable location the reviewer can read — a "
-                             "release asset, an archive DOI, anything whose "
-                             "content cannot change under its own address. Put "
-                             "it in `location` and the verifier stops "
-                             "objecting."),
-                "option_b": ("commit a sanitised recording. The cache holds the "
-                             "model's decoded answers about a copyrighted "
-                             "paper, including verbatim quotes from it. The "
-                             "publishing policy allows an answer key to carry "
-                             "SHORT attributed snippets and keeps raw model "
-                             "responses out of the repository, so this needs a "
-                             "decision about what 'sanitised' means before it "
-                             "can be done — it is not a mechanical step."),
-                "not_an_option": ("declaring it closed. The verifier fails on an "
-                                  "empty location on purpose, and a test asserts "
-                                  "that the failure is still there."),
+            "status": "blocked",
+            "why_it_matters": (
+                "The hashes above prove a file with this content existed on the "
+                "machine that ran it. They do not let a reader obtain the "
+                "recording and replay it, and they cannot be told apart from "
+                "the hash of a file that no longer exists. Until this is "
+                "closed, every conclusion here is reproducible by the author "
+                "alone."),
+            "states": {
+                "blocked": "no legitimate location. The current state.",
+                "available_unverified": ("a uri exists and nobody outside has "
+                                         "checked it"),
+                "independently_verified": ("another machine downloaded it, "
+                                           "verified it, replayed it and left "
+                                           "an attestation"),
             },
+            "bundle": {"uri": None, "sha256": None, "size_bytes": None,
+                       "media_type": "application/zip", "access_mode": None,
+                       "copyright_restrictions": None},
+            "independent_verification": None,
+            "tooling": {
+                "build_and_verify": "eval/verify_d1_7_bundle.py",
+                "note": ("the protocol and its verifier exist and are tested; "
+                         "writing a verification script is not performing a "
+                         "verification, so the status stays blocked"),
+            },
+            "decisions_not_mine": [
+                "which platform the bundle goes to",
+                "public or controlled access",
+                "whether a cache quoting a copyrighted paper verbatim may be "
+                "published at all",
+            ],
         },
         "cache": {
             "path": CACHE.relative_to(REPO).as_posix(),
@@ -606,11 +615,18 @@ def verify(path: Path) -> list[str]:
                                 "pre-registration requires")
                 break
 
-    if not (body.get("artifact_storage") or {}).get("location"):
+    sys.path.insert(0, str(REPO / "eval"))
+    from verify_d1_7_bundle import BLOCKED, check_storage_block
+
+    storage = body.get("artifact_storage") or {}
+    problems.extend(check_storage_block(storage))
+    if storage.get("status") == BLOCKED:
         problems.append(
-            "artifact_storage.location is empty: the recording is not "
+            "artifact_storage.status is blocked: the recording is not "
             "retrievable by anyone but its author, so the conclusions are not "
-            "independently reproducible. This is a known, declared gap")
+            "independently reproducible. This is a known, declared gap, and it "
+            "is meant to keep failing until a bundle is published AND verified "
+            "somewhere else")
     return problems
 
 

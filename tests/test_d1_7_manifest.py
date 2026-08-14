@@ -32,20 +32,26 @@ def test_the_manifest_agrees_with_the_artifacts_it_hashes():
     import d1_7_manifest
 
     problems = d1_7_manifest.verify(MANIFEST)
-    unexpected = [p for p in problems if "artifact_storage.location" not in p]
+    unexpected = [p for p in problems if "artifact_storage" not in p]
     assert unexpected == [], unexpected
 
 
 def test_the_unreachable_recording_is_declared_and_not_quietly_dropped():
     """A manifest that hashes files nobody else can obtain proves that a file
-    existed, not that a result can be reproduced. Saying so is the minimum."""
+    existed, not that a result can be reproduced.
+
+    The gap is closed by a bundle published AND verified elsewhere, not by
+    filling in a string: `location: "foo"` used to satisfy the old check.
+    """
     import d1_7_manifest
 
     problems = d1_7_manifest.verify(MANIFEST)
-    assert any("artifact_storage.location" in p for p in problems), (
-        "either a retrievable location was agreed — in which case fill it in — "
-        "or the gap must keep announcing itself")
-    assert not _body()["artifact_storage"]["location"]
+    assert any("blocked" in p for p in problems), (
+        "either a bundle was published and independently verified — in which "
+        "case the status says so — or the gap must keep announcing itself")
+    storage = _body()["artifact_storage"]
+    assert storage["status"] == "blocked"
+    assert storage["bundle"]["uri"] is None
 
 
 def test_every_hash_is_a_whole_sha256():
