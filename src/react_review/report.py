@@ -12,6 +12,7 @@ from __future__ import annotations
 from html import escape
 from typing import Any
 
+from react_review.claim_ids import declared_claim_id
 from react_review.schemas.package import EvidencePackage
 
 _VERDICT = {
@@ -44,6 +45,11 @@ def _locator(item) -> tuple:
         getattr(item, "cell_ref", None),
         getattr(item, "checklist_id", "") or "",
     )
+
+
+def _identity(item) -> tuple:
+    claim_id = declared_claim_id(item)
+    return ("claim", claim_id) if claim_id else ("legacy", *_locator(item))
 
 
 def _provenance_html(item) -> str:
@@ -165,10 +171,10 @@ def render_html_report(pkg: EvidencePackage) -> str:
     v_text, v_cls = _VERDICT.get(fv.verdict.value, (fv.verdict.value, "muted"))
     # Keyed on the full locator: two rows of the same study/cohort/field would
     # otherwise collapse here, showing one row's quote next to the other's number.
-    src = {_locator(s): s for s in pkg.source_items}
-    flags_by_locator: dict[tuple, list] = {}
+    src = {_identity(s): s for s in pkg.source_items}
+    flags_by_identity: dict[tuple, list] = {}
     for flag in fv.human_review_flags:
-        flags_by_locator.setdefault(_locator(flag), []).append(flag)
+        flags_by_identity.setdefault(_identity(flag), []).append(flag)
 
     tiles = [("Match", rep.n_match, "good"), ("Mismatch", rep.n_mismatch, "bad"),
              ("Unit mismatch", rep.n_unit_mismatch, "warn"),
@@ -185,7 +191,8 @@ def render_html_report(pkg: EvidencePackage) -> str:
     flags_html = ""
     for label, items in grouped.items():
         rows = "".join(
-            f'<li><code>{escape(f.study_id)}/{escape(f.group)}/{escape(f.field_type)}</code>'
+            f'<li><code>[{escape(f.audit_id or "-")}] '
+            f'{escape(f.study_id)}/{escape(f.group)}/{escape(f.field_type)}</code>'
             f' — {escape(f.reason)}</li>' for f in items)
         flags_html += (f'<div class="fg">{_chip(label)}'
                        f'<span class="fgn">{len(items)}</span><ul>{rows}</ul></div>')
@@ -199,11 +206,11 @@ def render_html_report(pkg: EvidencePackage) -> str:
 
     studies_html = ""
     for study_id, results in by_study.items():
-        flagged = sum(bool(flags_by_locator.get(_locator(r))) for r in results)
+        flagged = sum(bool(flags_by_identity.get(_identity(r))) for r in results)
         body_rows = ""
         for r in results:
-            s = src.get(_locator(r))
-            row_flags = flags_by_locator.get(_locator(r), [])
+            s = src.get(_identity(r))
+            row_flags = flags_by_identity.get(_identity(r), [])
             quote = escape(s.source_quote) if s and s.source_quote else ""
             loc = escape(s.source_location_in_paper) if s and s.source_location_in_paper else ""
             ev = (f'<div class="q">“{quote}”</div>' if quote else "") + \
@@ -214,6 +221,7 @@ def render_html_report(pkg: EvidencePackage) -> str:
                          _LABEL.get(r.label.value, ("", "muted"))[1])
             body_rows += (
                 f'<tr class="r-{row_class}">'
+                f'<td><code>{escape(r.audit_id or "-")}</code></td>'
                 f'<td>{escape(r.group)}</td>'
                 f'<td>{escape(r.field_type)}</td>'
                 f'<td class="num">{escape(str(r.review_value))} <span class="u">{escape(r.review_unit)}</span></td>'
@@ -226,7 +234,7 @@ def render_html_report(pkg: EvidencePackage) -> str:
         studies_html += (
             f'<section class="study"><div class="stitle"><h3>{escape(study_id)}</h3>{cnt}</div>'
             '<div class="scroll"><table><thead><tr>'
-            '<th>Group</th><th>Field</th><th>Review value</th><th>Source value</th>'
+            '<th>ID</th><th>Group</th><th>Field</th><th>Review value</th><th>Source value</th>'
             '<th>Verdict</th><th>Error</th>'
             '<th>Source evidence (quote · file · derivation · semantic · review flag)</th>'
             f'</tr></thead><tbody>{body_rows}</tbody></table></div></section>')

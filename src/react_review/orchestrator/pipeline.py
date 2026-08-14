@@ -12,6 +12,8 @@ from collections import Counter
 
 import structlog
 
+from react_review.claim_ids import claim_id_of, declared_claim_id
+from react_review.contracts import ContractError
 from react_review.core.enums import AuditLabel, ReportVerdict
 from react_review.orchestrator.matcher import build_pairs
 from react_review.schemas.audit import MatchResult
@@ -52,9 +54,18 @@ class AuditOrchestrator:
         results: list[MatchResult] = []
         flags: list[str] = []
         for review, source in pairs:
+            review_id = declared_claim_id(review)
+            source_id = declared_claim_id(source)
+            if bool(review_id) != bool(source_id) or (
+                    review_id and review_id != source_id):
+                raise ContractError(
+                    "matched review/source rows disagree on claim identity: "
+                    f"review={review_id!r}, source={source_id!r}")
+            verified_id = review_id or claim_id_of(review)
             try:
                 res: MatchResult = await self._compare.run(
                     CompareInput(
+                        audit_id=verified_id,
                         field_type=review.field_type,
                         review_value=review.value,
                         source_value=source.source_value,

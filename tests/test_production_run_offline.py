@@ -184,6 +184,9 @@ def test_a_production_run_parses_resolves_extracts_and_publishes(workspace, tmp_
     assert package.status == "complete"
     assert package.review_items and package.source_items
     assert package.final_verification is not None
+    assert [item.review_data_id for item in package.review_items] == ["A_01", "A_02"]
+    assert [item.review_data_id for item in package.source_items] == ["A_01", "A_02"]
+    assert [result.audit_id for result in package.report.results] == ["A_01", "A_02"]
 
 
 def test_the_published_package_is_the_one_on_disk_and_it_reloads(workspace, tmp_path):
@@ -312,7 +315,7 @@ def test_the_batch_contract_reads_once_and_records_what_it_sent(workspace, tmp_p
     from react_review.contracts import repo_root
     from react_review.schemas.telemetry import BATCH_EXTRACTION
 
-    profile = repo_root() / "configs/run_profiles/phase8_batch_v4.json"
+    profile = repo_root() / "configs/run_profiles/phase8_batch_v5.json"
     backend = ScriptedBackend()
     store = _run(workspace, tmp_path, backend, run_id="batched1",
                  argv_extra=("--profile", str(profile)))
@@ -329,6 +332,11 @@ def test_the_batch_contract_reads_once_and_records_what_it_sent(workspace, tmp_p
     assert batched and all(i.batch_provenance.batch_execution_id in known
                            for i in batched)
     assert len(record.claim_ids) == len(batched)
+    assert sorted(record.claim_ids) == ["A_01", "A_02"]
+    assert sorted(item.review_data_id for item in batched) == ["A_01", "A_02"]
+    assert all(item.review_data_id == item.batch_provenance.claim_id
+               for item in batched)
+    assert sorted(result.audit_id for result in package.report.results) == ["A_01", "A_02"]
 
     # And it says what it SENT — the paper here is short, so nothing was cut,
     # which is itself the answer rather than a missing measurement.
@@ -349,10 +357,10 @@ def test_the_batched_package_records_which_evaluator_decided(workspace, tmp_path
     requires_frozen_evaluator()
     from react_review.contracts import repo_root
 
-    profile = repo_root() / "configs/run_profiles/phase8_batch_v4.json"
+    profile = repo_root() / "configs/run_profiles/phase8_batch_v5.json"
     store = _run(workspace, tmp_path, ScriptedBackend(), run_id="batched2",
                  argv_extra=("--profile", str(profile)))
 
     runtime = store.load("batched2").run_manifest.aggregation_runtime
     assert runtime["policy_id"] == "safe_sum_v5"
-    assert runtime["evaluator_version"] == "1.8.0"
+    assert runtime["evaluator_version"] == "1.8.1"

@@ -90,6 +90,8 @@ async def test_parse_produces_normalized_long_items(monkeypatch):
         ("ahmad_2022", "t1dm", "", None, "years"),              # placeholder → KEPT, value null
     }
     assert len(parsed.items) == 5
+    assert [item.review_data_id for item in parsed.items] == [
+        "A_01", "A_02", "A_03", "A_04", "A_05"]
     placeholder = next(i for i in parsed.items if i.value is None)
     assert placeholder.reasons[0].code == "placeholder_cell"
     assert "'N/A'" in placeholder.reasons[0].message
@@ -114,6 +116,10 @@ async def test_parse_produces_normalized_long_items(monkeypatch):
     resolution_event = next(
         event for event in gate.seen if event.stage is StepStage.FIELD_RESOLUTION)
     assert resolution_event.payload["resolutions"]
+    long_event = next(
+        event for event in gate.seen if event.stage is StepStage.LONG_FORMAT_ROWS)
+    assert long_event.payload["claim_index"]["A_01"]["cell_ref"] == [0, 1]
+    assert "[A_01" in long_event.render_blocks[0]
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,31 @@
+{
+  "evaluator_id": "safe_aggregation",
+  "evaluator_version": "1.8.1",
+  "written_on": "2026-08-15",
+  "hash_algorithm": "sha256-path-lf-v1",
+  "purpose": "The code whose behaviour IS this evaluator. A policy hash says what the conditions were; this says what enforced them. Both are recorded on every aggregation outcome, because the wrong totals this phase found were policies that read correctly and code that did not keep them.",
+  "boundary": "Files that can change what the same response becomes, OR whether the verdict may be published. batch_prompt.py stays outside: what is ASKED is versioned by the extraction profile, and folding it in would make every wording change a new evaluator without changing how a response is judged.",
+  "versioning": {
+    "patch": "logging, wording and provenance only; proven not to move any claim between states",
+    "minor": "a new refusal, a safety fix, or any change to scope or set selection",
+    "major": "an incompatible input/output contract or a different aggregation algorithm",
+    "rule": "If the set of claims landing in derived / rejected / protocol_error / not_applicable can change, it is at least a MINOR — including when the author is sure it is only a bug fix."
+  },
+  "source_files": {
+    "src/react_review/audit/scope.py": "sha256:bee073eef8216f04cf2514dc149b949fdc9fa73f90cc518627be1e79c9ba6e05",
+    "src/react_review/normalize/anchors.py": "sha256:c816d4daf0b877c3313ba0e19f67b6708f6366977dc499574a7cb22e05866475",
+    "src/react_review/normalize/cohorts.py": "sha256:22c3f111aa4a910be2345285629e26233801d86d0d170a276c88b7dbf3a991a8",
+    "src/react_review/normalize/population.py": "sha256:e5f71fa85d68ad283c379872b19154714da64a29c05273e06afd000b3351f150",
+    "src/react_review/schemas/batch.py": "sha256:bebdeaef730ec254094135a6a1cc20f5d1bad8e4cec2f016e1a1a1de398444a4",
+    "src/react_review/schemas/evidence.py": "sha256:aaca7f237cd3484f69464245c9d82597dc8142ece8d875b4fbec879b2865baab",
+    "src/react_review/tools/aggregation_identity.py": "sha256:c9b4f683d0206252cd35c649eacff3fafab508add5fd534c646e4908921817df",
+    "src/react_review/tools/batch_parse.py": "sha256:1c46c8fede930839a79c2d13212e9fbeb7d65a2a289555d7be442f5c89b39fe0",
+    "src/react_review/tools/batch_project.py": "sha256:ccf236eb35ca6dfc37206313a0cf950791846483bc9c10586191a62215edd7d1",
+    "src/react_review/tools/batch_result.py": "sha256:b65b7fb46bebaba55dea1765d16d36cf132d8a19707c80b0133f1b1412623ff0",
+    "src/react_review/tools/evidence_binding.py": "sha256:dd27bf169d7b97275b677d980b4b9218876cc060a2db1f41d5ee9210ab8665a7",
+    "src/react_review/tools/safe_aggregation.py": "sha256:4e09157c1a1aa978300f381109fd15a642b99f7118ec52854f00cc8487b836c1"
+  },
+  "evaluator_hash": "sha256:fd7013eb841542e4192ce98eda08fc97a35444d2568def5598497ca9a25c7331",
+  "supersedes": "1.8.0",
+  "why_1_8_1": "P0-1 carries the review claim identity directly on SourceEvidenceItem and conditionally omits it when empty, so legacy artifact bytes retain their old shape. This changes provenance, not aggregation decisions. The rule was registered in PENDING.json before the boundary changed, and eval/aggregation_behavior.py --compare reported all 26 frozen cases identical on status, released value, selected object, verified scope, required axes, counts and refusal stage. That evidence supports PATCH 1.8.1; it does not claim the corpus tests the new identity chain itself, which is covered by dedicated source, matcher, judge, report and legacy-byte tests."
+}

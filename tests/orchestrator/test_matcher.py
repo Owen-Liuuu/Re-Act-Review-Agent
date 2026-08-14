@@ -2,17 +2,22 @@
 from __future__ import annotations
 
 from react_review.orchestrator.matcher import build_pairs, match_key
+from react_review.schemas.evidence import BatchProjectionProvenance
 from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
 
 
-def _rv(study, group, ft, value="1", *, table_id="", cell_ref=None):
-    return ReviewDataItem(study_id=study, group=group, field_type=ft, value=value,
+def _rv(study, group, ft, value="1", *, claim_id="", table_id="", cell_ref=None):
+    return ReviewDataItem(review_data_id=claim_id, study_id=study, group=group,
+                          field_type=ft, value=value,
                           table_id=table_id, cell_ref=cell_ref)
 
 
-def _sv(study, group, ft, value="1", *, table_id="", cell_ref=None):
-    return SourceEvidenceItem(study_id=study, group=group, field_type=ft,
-                              source_value=value, table_id=table_id, cell_ref=cell_ref)
+def _sv(study, group, ft, value="1", *, claim_id="", table_id="", cell_ref=None):
+    provenance = (BatchProjectionProvenance(claim_id=claim_id) if claim_id else None)
+    return SourceEvidenceItem(
+        review_data_id=claim_id, study_id=study, group=group, field_type=ft,
+        source_value=value, table_id=table_id, cell_ref=cell_ref,
+        batch_provenance=provenance)
 
 
 def test_key_is_normalized():
@@ -64,6 +69,70 @@ def test_duplicate_key_is_paired_when_both_sides_name_the_same_cell():
     assert len(pairs) == 2 and not ur and not us
     for r, s in pairs:                       # paired by cell, not by order
         assert r.value == s.source_value
+
+
+def test_duplicate_key_is_paired_by_claim_id_without_cell_coordinates():
+    review = [_rv("s1", "t1dm", "bmi", "24", claim_id="A_01"),
+              _rv("s1", "t1dm", "bmi", "25", claim_id="A_02")]
+    source = [_sv("s1", "t1dm", "bmi", "25", claim_id="A_02"),
+              _sv("s1", "t1dm", "bmi", "24", claim_id="A_01")]
+
+    pairs, ur, us = build_pairs(review, source)
+
+    assert len(pairs) == 2 and not ur and not us
+    assert all(r.review_data_id == s.review_data_id for r, s in pairs)
+    assert all(s.review_data_id == s.batch_provenance.claim_id for _, s in pairs)
+    assert all(r.value == s.source_value for r, s in pairs)
+
+
+def test_conflicting_explicit_claim_ids_are_not_ignored():
+    review = [_rv("s1", "t1dm", "bmi", claim_id="A_01")]
+    source = [_sv("s1", "t1dm", "bmi", claim_id="A_02")]
+    pairs, ur, us = build_pairs(review, source)
+    assert pairs == []
+    assert ur[0].reason_code == "claim_identity_missing"
+    assert us[0].reason_code == "claim_identity_missing"
+
+
+def test_duplicate_claim_id_across_different_match_keys_is_rejected_globally():
+    review = [
+        _rv("study_a", "treatment", "age", claim_id="A_01"),
+        _rv("study_b", "control", "bmi", claim_id="A_01"),
+    ]
+    source = [
+        _sv("study_a", "treatment", "age", claim_id="A_01"),
+        _sv("study_b", "control", "bmi", claim_id="A_01"),
+    ]
+
+    pairs, ur, us = build_pairs(review, source)
+
+    assert pairs == []
+    assert [item.reason_code for item in ur] == ["duplicate_claim_id"] * 2
+    assert [item.reason_code for item in us] == ["duplicate_claim_id"] * 2
+
+
+def test_same_explicit_id_with_different_locator_is_a_key_conflict():
+    review = [_rv("s1", "t1dm", "bmi", claim_id="A_01",
+                  table_id="table_1", cell_ref=(0, 3))]
+    source = [_sv("s1", "t1dm", "bmi", claim_id="A_01",
+                  table_id="table_1", cell_ref=(1, 3))]
+
+    pairs, ur, us = build_pairs(review, source)
+
+    assert pairs == []
+    assert ur[0].reason_code == "claim_identity_key_conflict"
+    assert us[0].reason_code == "claim_identity_key_conflict"
+
+
+def test_explicit_identity_never_falls_back_to_an_unidentified_source():
+    review = [_rv("s1", "t1dm", "bmi", claim_id="A_01")]
+    source = [_sv("s1", "t1dm", "bmi")]
+
+    pairs, ur, us = build_pairs(review, source)
+
+    assert pairs == []
+    assert ur[0].reason_code == "claim_identity_missing"
+    assert us[0].reason_code == "claim_identity_missing"
 
 
 def test_same_coordinates_in_different_tables_do_not_collide():

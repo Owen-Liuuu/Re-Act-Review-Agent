@@ -115,6 +115,33 @@ def test_two_cells_of_the_same_field_do_not_overwrite_each_other():
     assert [f.cell_ref for f in flags] == [(0, 3), (1, 3)]
 
 
+def test_same_locator_flags_keep_distinct_claim_ids():
+    rep = AuditReport(
+        run_id="r",
+        results=[
+            MatchResult(audit_id="A_01", study_id="same", group="same",
+                        field_type="bmi", table_id="t1", cell_ref=(0, 3),
+                        label=AuditLabel.NOT_COMPARABLE, reason="first"),
+            MatchResult(audit_id="A_02", study_id="same", group="same",
+                        field_type="bmi", table_id="t1", cell_ref=(0, 3),
+                        label=AuditLabel.NOT_COMPARABLE, reason="second"),
+        ],
+        n_not_comparable=2, verdict=ReportVerdict.PARTIAL)
+    source = [
+        SourceEvidenceItem(review_data_id="A_01", study_id="same", group="same",
+                           field_type="bmi", table_id="t1", cell_ref=(0, 3),
+                           collection_outcome=CollectionOutcome.SOURCE_ACCESS_FAILED),
+        SourceEvidenceItem(review_data_id="A_02", study_id="same", group="same",
+                           field_type="bmi", table_id="t1", cell_ref=(0, 3),
+                           collection_outcome=CollectionOutcome.MISSING_SOURCE),
+    ]
+
+    flags = Judge().adjudicate(rep, source).human_review_flags
+
+    assert [flag.audit_id for flag in flags] == ["A_01", "A_02"]
+    assert [flag.label for flag in flags] == ["source_access_failed", "missing_source"]
+
+
 def test_refusing_to_pair_is_not_reported_as_a_missing_source():
     # An ambiguous key must not read as "the paper doesn't say this", which the
     # report presents as a possible fabrication.

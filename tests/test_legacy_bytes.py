@@ -29,6 +29,7 @@ from react_review.schemas.evidence import (
 from react_review.schemas.telemetry import BatchStats, RunTelemetry
 
 BATCH_KEYS = {"batch_provenance", "aggregation_provenance"}
+CLAIM_ID_KEY = "review_data_id"
 
 
 def _legacy_item() -> SourceEvidenceItem:
@@ -41,6 +42,7 @@ def _legacy_item() -> SourceEvidenceItem:
 def test_a_legacy_row_carries_no_batch_keys_at_all():
     body = _legacy_item().model_dump(mode="json")
     assert not (BATCH_KEYS & set(body)), sorted(BATCH_KEYS & set(body))
+    assert CLAIM_ID_KEY not in body
 
 
 def test_a_batch_row_carries_exactly_the_provenance_it_has():
@@ -59,6 +61,22 @@ def test_both_appear_when_both_are_set():
         "aggregation_provenance": AggregationProvenance(policy_id="safe_sum_v5")})
     body = item.model_dump(mode="json")
     assert BATCH_KEYS <= set(body)
+
+
+def test_new_source_identity_is_written_only_when_nonempty():
+    body = _legacy_item().model_copy(
+        update={"review_data_id": "A_01"}).model_dump(mode="json")
+    assert body[CLAIM_ID_KEY] == "A_01"
+
+
+def test_top_level_and_batch_claim_identity_must_agree_when_both_exist():
+    body = _legacy_item().model_dump(mode="json")
+    body[CLAIM_ID_KEY] = "A_01"
+    body["batch_provenance"] = BatchProjectionProvenance(
+        claim_id="A_02").model_dump(mode="json")
+
+    with pytest.raises(ValueError, match="conflicting claim identities"):
+        SourceEvidenceItem.model_validate(body)
 
 
 def test_a_meaningful_null_is_not_dropped_with_them():

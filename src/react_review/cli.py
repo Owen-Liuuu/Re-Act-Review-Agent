@@ -456,7 +456,10 @@ def _audit_main(argv: list[str] | None = None) -> None:
         _safe_print("\n" + report.summary)
         for r in report.results:
             if r.label.value != "match":
-                _safe_print(f"  [{r.label.value}] {r.study_id}/{r.group}/{r.field_type}: {r.reason}")
+                claim_id = r.audit_id or "-"
+                _safe_print(
+                    f"  [{claim_id}] [{r.label.value}] "
+                    f"{r.study_id}/{r.group}/{r.field_type}: {r.reason}")
     _safe_print(f"\n[PACKAGE] {pkg_path.resolve()}")
 
 
@@ -917,7 +920,9 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
     fv = pkg.final_verification
     _safe_print("\n" + fv.summary)
     for f in fv.human_review_flags[:40]:
-        _safe_print(f"  [{f.label}] {f.study_id}/{f.group}/{f.field_type}: {f.reason}")
+        _safe_print(
+            f"  [{f.audit_id or '-'}] [{f.label}] "
+            f"{f.study_id}/{f.group}/{f.field_type}: {f.reason}")
     if semantic_cache is not None:
         path = execution.semantic_cache
         _safe_print(

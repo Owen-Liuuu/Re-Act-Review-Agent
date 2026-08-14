@@ -9,7 +9,7 @@ compare time, so the raw spread is preserved for the report.
 """
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, model_serializer
+from pydantic import BaseModel, Field, model_serializer, model_validator
 
 from react_review.core.enums import CollectionOutcome
 from react_review.normalize.population import PopulationScope
@@ -176,6 +176,10 @@ class SourceEvidenceItem(BaseModel):
     Mirrors the source side of ``audit_template.csv``.
     """
 
+    # The review claim this row answers. Empty only for artifacts and call sites
+    # that predate explicit claim identities; the serializer omits that empty
+    # field so their bytes do not change.
+    review_data_id: str = ""
     study_id: str
     group: str = "-"
     timepoint: str = "single"
@@ -237,7 +241,20 @@ class SourceEvidenceItem(BaseModel):
 
     #: Fields that exist only for the batch path. Present when a batch produced
     #: this row; absent — not null — otherwise.
-    _BATCH_ONLY = ("batch_provenance", "aggregation_provenance")
+    _CONDITIONALLY_OMITTED = (
+        "review_data_id", "batch_provenance", "aggregation_provenance")
+
+    @model_validator(mode="after")
+    def _claim_identity_is_consistent(self):
+        top_level = (self.review_data_id or "").strip()
+        provenance = (self.batch_provenance.claim_id.strip()
+                      if self.batch_provenance is not None else "")
+        if top_level and provenance and top_level != provenance:
+            raise ValueError(
+                "conflicting claim identities: SourceEvidenceItem.review_data_id "
+                f"is {top_level!r} but batch_provenance.claim_id is "
+                f"{provenance!r}")
+        return self
 
     @model_serializer(mode="wrap")
     def _omit_unused_batch_fields(self, handler):
@@ -254,8 +271,8 @@ class SourceEvidenceItem(BaseModel):
         change exactly the bytes this exists to protect.
         """
         body = handler(self)
-        for name in self._BATCH_ONLY:
-            if body.get(name) is None:
+        for name in self._CONDITIONALLY_OMITTED:
+            if body.get(name) is None or body.get(name) == "":
                 body.pop(name, None)
         return body
 

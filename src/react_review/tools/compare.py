@@ -66,6 +66,7 @@ class CompareValuesTool(Tool):
     async def run(self, payload: CompareInput) -> MatchResult:
         ft = payload.field_type
         result = compare_values(
+            audit_id=payload.audit_id,
             field_type=ft,
             review_value=payload.review_value,
             source_value=payload.source_value,

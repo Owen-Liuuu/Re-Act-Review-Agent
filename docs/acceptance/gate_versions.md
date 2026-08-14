@@ -342,11 +342,32 @@ restored to its original bytes and the corrections published as v2.
 3. Results are attributed to the gate version and hash that produced them.
 4. Withdrawn results stay published as withdrawn, with the defect named.
 
-| — | `configs/aggregation/registry_v7.json` | `CBAB63703AA30014` | current |
-| — | `configs/aggregation/evaluators/safe_aggregation_1.8.0.json` | `D566BA50B65FCF7A` | current |
+| — | `configs/aggregation/registry_v7.json` | `CBAB63703AA30014` | superseded; bytes frozen |
+| — | `configs/aggregation/evaluators/safe_aggregation_1.8.0.json` | `D566BA50B65FCF7A` | superseded; bytes frozen |
 | — | `configs/compare/evaluators/deterministic_compare_1.0.0.json` | `44B1F8045D405BD7` | current |
-| — | `configs/run_profiles/phase8_batch_v4.json` | `19A412345ECAD1EA` | current |
-| — | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v5_profile.json` | `B7F5EE9E1FC95D4F` | current |
+| — | `configs/run_profiles/phase8_batch_v4.json` | `19A412345ECAD1EA` | superseded; bytes frozen |
+| — | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v5_profile.json` | `B7F5EE9E1FC95D4F` | superseded; bytes frozen |
+| — | `configs/aggregation/registry_v8.json` | `27F66638AE845DAD` | current |
+| — | `configs/aggregation/evaluators/safe_aggregation_1.8.1.json` | `7DCEB9C565CECF68` | current |
+| — | `configs/run_profiles/phase8_batch_v5.json` | `C7F38629DA4EADBB` | current |
+| — | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v6_profile.json` | `5FB8CE66A4C05194` | current |
+
+## Claim identity provenance: safe_aggregation 1.8.0 → 1.8.1
+
+`SourceEvidenceItem` now carries the review claim identity directly. The field
+is conditionally omitted when empty, so artifacts from the legacy path retain
+their previous serialized shape. Batch evidence carries the same identity in
+the top-level field and `batch_provenance.claim_id`; loading or collecting a
+row where both are present and disagree is refused.
+
+The change touched `schemas/evidence.py`, which is inside the aggregation
+evaluator boundary, so it was declared in `PENDING.json` before the schema
+changed. `python eval/aggregation_behavior.py --compare` reported all 26 frozen
+behavior vectors identical. Under the pre-registered rule, this is PATCH
+`1.8.1`: provenance changed, while no case moved between `derived`, `rejected`,
+`protocol_error` or `not_applicable`. The identity chain itself is tested from
+review claim through source evidence, matcher, comparison, human-review flag,
+CLI and HTML; that is separate evidence from the aggregation corpus.
 
 ## The comparator gets an identity of its own
 

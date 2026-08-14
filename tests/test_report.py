@@ -21,20 +21,20 @@ from react_review.store import EvidencePackageStore
 
 def _package() -> EvidencePackage:
     mr = MatchResult(
-        study_id="ahmad_2022", group="t1dm", field_type="bmi",
+        audit_id="A_01", study_id="ahmad_2022", group="t1dm", field_type="bmi",
         review_value="20.57 ± 1.7", review_unit="kg/m2",
         source_value="20.57 ± 1.77", source_unit="kg/m2",
         label=AuditLabel.MISMATCH, rel_error_pct=0.0, sd_rel_error_pct=3.95,
         reason="SD 1.7 vs 1.77 = 3.95% > 3%")
     src = SourceEvidenceItem(
-        study_id="ahmad_2022", group="t1dm", field_type="bmi",
+        review_data_id="A_01", study_id="ahmad_2022", group="t1dm", field_type="bmi",
         source_value="20.57 ± 1.77", source_unit="kg/m2",
         source_quote="BMI (kg/m2) 20.57 ± 1.77", source_location_in_paper="Table 1")
     rep = AuditReport(run_id="demo", results=[mr], n_mismatch=1, verdict=ReportVerdict.FAIL)
     fv = FinalVerification(
         run_id="demo", verdict=ReportVerdict.FAIL,
         human_review_flags=[HumanReviewFlag(
-            study_id="ahmad_2022", group="t1dm", field_type="bmi",
+            audit_id="A_01", study_id="ahmad_2022", group="t1dm", field_type="bmi",
             label="mismatch", reason="SD 差异超容差")],
         summary="[FAIL] 0 match, 1 mismatch")
     return EvidencePackage(run_id="demo", source_items=[src], report=rep,
@@ -51,6 +51,19 @@ def test_render_html_report():
     assert "FAIL" in html                             # verdict banner (English)
     assert "Mismatch" in html                         # mismatch chip (English)
     assert "Evidence by source paper" in html         # grouped-by-study section
+    assert "A_01" in html                             # readable claim identity
+
+
+def test_report_uses_flag_identity_without_locator_reverse_lookup():
+    package = _package()
+    duplicate = package.final_verification.human_review_flags[0].model_copy(
+        update={"audit_id": "A_02"})
+    package.final_verification.human_review_flags.append(duplicate)
+
+    html = render_html_report(package)
+
+    assert "[A_01]" in html
+    assert "[A_02]" in html
 
 
 def test_render_escapes_html():

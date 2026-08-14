@@ -19,6 +19,7 @@ import json
 
 from pydantic import BaseModel
 
+from react_review.claim_ids import claim_id_of, declared_claim_id
 from react_review.contracts import ContractError
 from react_review.core.enums import CollectionOutcome, ReflectionDecision
 from react_review.dkb import KnowledgeBase, evidence_contradicts
@@ -104,14 +105,7 @@ def _claim_id(claim) -> str:
     CSV-loaded claim identifiable; position in a list is never used, because a
     list that is grouped and regrouped does not preserve one.
     """
-    declared = str(getattr(claim, "review_data_id", "") or "")
-    if declared:
-        return declared
-    return "|".join(str(part) for part in (
-        claim.study_id, claim.group, getattr(claim, "timepoint", "single"),
-        claim.field_type, getattr(claim, "table_id", "") or "",
-        getattr(claim, "cell_ref", None) or "",
-        getattr(claim, "checklist_id", "") or ""))
+    return claim_id_of(claim)
 
 
 class StudySource(BaseModel):
@@ -538,6 +532,11 @@ class Collector:
 
     def _project_one(self, claim, group, record, source, binding) -> CollectResult:
         """One claim's answer out of the shared reading, or why there is none."""
+        explicit_id = declared_claim_id(claim)
+        if explicit_id and binding.claim_id != explicit_id:
+            raise ContractError(
+                "batch binding claim identity conflicts with its input claim: "
+                f"{binding.claim_id!r} != {explicit_id!r}")
         steps = [StepRecord(
             index=0,
             thought=f"read {group.describe()} in one batch "
@@ -720,7 +719,14 @@ class Collector:
         provenance: dict[str, str] | None = None,
         batch_provenance=None,
     ) -> CollectResult:
+        explicit_id = declared_claim_id(review_item)
+        batch_id = str(getattr(batch_provenance, "claim_id", "") or "").strip()
+        if explicit_id and batch_id and explicit_id != batch_id:
+            raise ContractError(
+                "batch provenance claim identity conflicts with its input claim: "
+                f"{batch_id!r} != {explicit_id!r}")
         source_item = SourceEvidenceItem(
+            review_data_id=explicit_id,
             study_id=review_item.study_id,
             group=review_item.group,
             timepoint=review_item.timepoint,

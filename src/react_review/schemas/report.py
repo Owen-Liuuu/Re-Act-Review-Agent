@@ -1,7 +1,7 @@
 """The audit report produced by the deterministic orchestrator."""
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_serializer
 
 from react_review.core.enums import ReportVerdict
 from react_review.schemas.audit import MatchResult
@@ -16,6 +16,7 @@ class UnmatchedClaim(BaseModel):
     very different findings, so the reason travels with the item.
     """
 
+    audit_id: str = ""
     study_id: str = ""
     group: str = "-"
     timepoint: str = "single"
@@ -26,6 +27,13 @@ class UnmatchedClaim(BaseModel):
     # no_source_evidence | ambiguous_match_key | unclaimed_source
     reason_code: str = "no_source_evidence"
     message: str = ""
+
+    @model_serializer(mode="wrap")
+    def _omit_legacy_empty_audit_id(self, handler):
+        body = handler(self)
+        if not body.get("audit_id"):
+            body.pop("audit_id", None)
+        return body
 
     @property
     def key_text(self) -> str:
@@ -62,6 +70,7 @@ class AuditReport(BaseModel):
 class HumanReviewFlag(BaseModel):
     """One item the Judge routes to a human (architecture: Human Review Flag)."""
 
+    audit_id: str = ""
     study_id: str = ""
     group: str = "-"
     # Carried so a flag points at ONE cell: without the timepoint and the cell
@@ -79,6 +88,13 @@ class HumanReviewFlag(BaseModel):
     affected_cells: int = 1
     label: str = ""          # the audit label, or "escalated"/"unmatched"
     reason: str = ""
+
+    @model_serializer(mode="wrap")
+    def _omit_legacy_empty_audit_id(self, handler):
+        body = handler(self)
+        if not body.get("audit_id"):
+            body.pop("audit_id", None)
+        return body
 
 
 class FinalVerification(BaseModel):

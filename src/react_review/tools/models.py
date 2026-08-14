@@ -13,6 +13,7 @@ Value = str | int | float | bool | list | None
 class CompareInput(BaseModel):
     """Input to the compare_values tool (one review↔source value pair)."""
 
+    audit_id: str = ""
     field_type: str
     review_value: Value = None
     source_value: Value = None

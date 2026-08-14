@@ -18,6 +18,7 @@ from react_review.checklist import (
     merge_checklist_applications,
     render_checklist,
 )
+from react_review.claim_ids import assign_claim_ids, claim_index
 from react_review.hitl.events import StepStage, SubjectKind
 from react_review.hitl.reporter import StepReporter
 from react_review.llm.base import LLMBackend, parse_llm_response
@@ -342,11 +343,17 @@ class ReviewParser:
             # No rows are added: a checklist cannot manufacture a missing value.
             items = annotate_checklist_claims(self._checklist, items)
 
+        # Human-readable claim identities belong to the normalised claims, not
+        # to the verbatim table.  Assign them after study-level de-duplication
+        # and checklist annotation, in approved table/cell order.
+        items = assign_claim_ids(items, table_set)
+
         await self._reporter.step_or_stop(
             StepStage.LONG_FORMAT_ROWS,
             title="Table converted to long format",
             payload={"rows": raw_rows,
-                     "items": [i.model_dump(mode="json") for i in items]},
+                     "items": [i.model_dump(mode="json") for i in items],
+                     "claim_index": claim_index(items)},
             render_blocks=[self._render_items(items)],
             warnings=self._unpivot_warnings(table_set, raw_rows, items),
         )
@@ -858,7 +865,10 @@ class ReviewParser:
         for i in items[:limit]:
             concept = i.field_type or f"UNRESOLVED «{i.raw_field_name}»"
             cohort = i.cohort_label or i.group
-            lines.append(f"    {i.study_id:<24} {cohort:<12} {concept:<18} {i.value!r}")
+            claim_id = i.review_data_id or "-"
+            lines.append(
+                f"    [{claim_id:<6}] {i.study_id:<24} {cohort:<12} "
+                f"{concept:<18} {i.value!r}")
         if len(items) > limit:
             lines.append(f"    … {len(items) - limit} more")
         return "\n".join(lines)

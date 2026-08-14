@@ -111,6 +111,18 @@ def test_a_v4_contract_reads_every_claim_one_at_a_time(tmp_path):
     assert result.batch_records == []
 
 
+def test_v4_single_target_source_carries_the_review_claim_id(tmp_path):
+    claims = [claim.model_copy(update={"review_data_id": f"A_0{i}"})
+              for i, claim in enumerate(_claims(), start=1)]
+    collector = Collector(_registry(_Backend()),
+                          contract=_contract(tmp_path, "targeted_v4"))
+
+    result = asyncio.run(collector.collect_study(claims, REFERENCE))
+
+    assert [row.source_item.review_data_id for row in result.claim_results] == \
+        ["A_01", "A_02", "A_03"]
+
+
 def test_claims_come_back_in_the_order_they_arrived(tmp_path):
     """Grouping reorders them internally; nothing downstream should know."""
     claims = _claims()
@@ -257,6 +269,18 @@ def test_both_claims_point_at_the_same_reading(tmp_path):
                   for r in result.claim_results}
     assert len(executions) == 1
     assert executions == {result.batch_records[0].execution_id}
+
+
+def test_v5_batch_source_carries_one_consistent_claim_identity(tmp_path):
+    collector, _ = _batched(tmp_path)
+    claims = [claim.model_copy(update={"review_data_id": f"A_0{i}"})
+              for i, claim in enumerate(_claims()[:2], start=1)]
+
+    result = asyncio.run(collector.collect_study(claims, REFERENCE))
+
+    for expected, row in zip(("A_01", "A_02"), result.claim_results):
+        assert row.source_item.review_data_id == expected
+        assert row.source_item.batch_provenance.claim_id == expected
 
 
 def test_each_claim_records_the_route_that_actually_read_it(tmp_path):

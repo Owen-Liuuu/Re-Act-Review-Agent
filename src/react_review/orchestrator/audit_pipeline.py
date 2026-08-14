@@ -259,7 +259,9 @@ class AuditPipeline:
         for s in collected:
             outcome = getattr(s.collection_outcome, "value", str(s.collection_outcome))
             if outcome != "found":
-                out.append(f"{s.group}/{s.field_type}: {outcome}")
+                claim_id = getattr(s, "review_data_id", "") or ""
+                prefix = f"[{claim_id}] " if claim_id else ""
+                out.append(f"{prefix}{s.group}/{s.field_type}: {outcome}")
         return out
 
     @staticmethod
@@ -268,8 +270,9 @@ class AuditPipeline:
         for claim, src in zip(claims, collected):
             outcome = getattr(src.collection_outcome, "value", str(src.collection_outcome))
             got = src.source_value if src.source_value is not None else f"— ({outcome})"
+            claim_id = claim.review_data_id or getattr(src, "review_data_id", "") or "-"
             lines.append(
-                f"    {claim.group}/{claim.field_type or claim.raw_field_name}: "
+                f"    [{claim_id}] {claim.group}/{claim.field_type or claim.raw_field_name}: "
                 f"review {claim.value!r} vs source {got!r}")
             if src.source_quote:
                 lines.append(f"        “{src.source_quote[:110]}”")
@@ -296,5 +299,6 @@ class AuditPipeline:
         if not final.human_review_flags:
             return "  (no items flagged)"
         return "\n".join(
-            f"  [{f.label}] {f.study_id}/{f.group}/{f.field_type}: {f.reason}"
+            f"  [{f.audit_id or '-'}] [{f.label}] "
+            f"{f.study_id}/{f.group}/{f.field_type}: {f.reason}"
             for f in final.human_review_flags[:40])

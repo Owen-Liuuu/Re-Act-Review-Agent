@@ -82,6 +82,14 @@ PINNED = {
         "19A412345ECAD1EA",
     "eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v5_profile.json":
         "B7F5EE9E1FC95D4F",
+    "configs/aggregation/registry_v8.json":
+        "27F66638AE845DAD",
+    "configs/aggregation/evaluators/safe_aggregation_1.8.1.json":
+        "7DCEB9C565CECF68",
+    "configs/run_profiles/phase8_batch_v5.json":
+        "C7F38629DA4EADBB",
+    "eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v6_profile.json":
+        "5FB8CE66A4C05194",
     # Identical judging content to v2; it changes only what the gate says about
     # ITSELF, because v2 inherited v1's "fixed before the recording exists" and
     # that was false of v2.

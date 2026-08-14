@@ -22,6 +22,7 @@ def test_csv_loaders_read_benchmark():
     a022_s = source[[i for i, s in enumerate(source)
                      if s.study_id == "keles_2016" and s.group == "t1dm"
                      and s.field_type == "eat_thickness"][0]]
+    assert a022_s.review_data_id == "A022"
     assert a022_s.source_unit == "cm"
 
 

@@ -1,0 +1,69 @@
+{
+  "registry_id": "aggregation_policies_v8",
+  "version": 8,
+  "supersedes": "registry_v7.json",
+  "written_on": "2026-08-15",
+  "purpose": "Which aggregation policies exist, which evaluator versions were meant to apply them, and which of those pairs a formal result may be attributed to. A policy file cannot say this: it does not know what code read it.",
+  "why_v2": "v1 was pinned by hash and therefore could never gain a policy or an evaluator without breaking its own immutability rule. It also recorded no hash for the policy files themselves, so readiness had to be handed one by its caller and had no way to disagree. Each entry now carries the file and the bytes it must have.",
+  "statuses": {
+    "active": "the pair a run selects; formal results allowed",
+    "superseded": "retired by a later version; kept byte-identical for the record",
+    "record_only": "kept so anything recorded under it stays interpretable. No formal result was produced under it, and none may be"
+  },
+  "policies": {
+    "safe_sum_v1": {
+      "status": "record_only",
+      "formal_results": false,
+      "file": "configs/aggregation/safe_sum_v1.json",
+      "sha256": "1C99DCE79E4FDD3AE4134484C3582E79A24A975C381453937C605109C4FA96E3",
+      "evaluators": [],
+      "note": "superseded before any run reached it"
+    },
+    "safe_sum_v2": {
+      "status": "record_only",
+      "formal_results": false,
+      "file": "configs/aggregation/safe_sum_v2.json",
+      "sha256": "5FED9271920DF0A4521F07ABA0EE1F7DCF6EC65544B62B8F013259C82DDC87EB",
+      "evaluators": [],
+      "note": "superseded before any run reached it"
+    },
+    "safe_sum_v3": {
+      "status": "superseded",
+      "formal_results": false,
+      "file": "configs/aggregation/safe_sum_v3.json",
+      "sha256": "93E381F2ED633E06E963CAA27D0C9A667682BC611693D78DF4758423A3C32EC2",
+      "evaluators": [],
+      "note": "four release paths found in review; see why_v4"
+    },
+    "safe_sum_v4": {
+      "status": "superseded",
+      "formal_results": false,
+      "file": "configs/aggregation/safe_sum_v4.json",
+      "sha256": "FE1B925C28FA7558D34B2F82FFFFF1B633B5B74B2C4836F00D971B21695F70E4",
+      "evaluators": [
+        "1.4.0"
+      ],
+      "note": "the explicit-total path never applied the axes the result claimed; see why_v5"
+    },
+    "safe_sum_v5": {
+      "status": "active",
+      "formal_results": true,
+      "file": "configs/aggregation/safe_sum_v5.json",
+      "sha256": "DAEB6715F812E88E8193B5991E464B7F97890F56FFC0D0DE1A5C08FE217747AF",
+      "evaluators": [
+        "1.6.1",
+        "1.6.2",
+        "1.7.0",
+        "1.8.0",
+        "1.8.1"
+      ]
+    }
+  },
+  "note_on_growth": "Adding a policy or an evaluator pair means a new registry version, because this file is pinned. That is deliberate: changing which pairs may publish is a change to what a result means, and should cost a version.",
+  "why_v3": "v2 authorised safe_sum_v5 with evaluator 1.5.0. That evaluator resolved its policy and its identity as two independent objects, so a caller could run one policy while readiness had cleared another and the result still reported itself release-eligible. 1.6.0 binds them.",
+  "why_v4": "D1-5 changed three files inside the evaluator's hashed boundary — the batch schemas, the evidence schemas and the result mapping — while adding no new refusal and moving no claim between states. The behaviour comparison against f2adc5e is identical across all 26 corpus cases, so this is a PATCH: safe_sum_v5 is unchanged and is now cleared by evaluator 1.6.1.",
+  "why_v5_registry": "D1-6.2 records WHICH REGIONS of a paper were sent before it was read. That provenance belongs on BatchReadingRecord, and schemas/batch.py is inside the evaluator boundary, so the tree stopped matching 1.6.1. The record is written and never read back into any decision, and the behaviour comparison against the 26-case corpus is identical, so this is a PATCH: safe_sum_v5 is unchanged and is now also cleared by evaluator 1.6.2. 1.6.1 stays listed because runs made under it remain interpretable.",
+  "why_v6_registry": "D1-7.3 makes the batch route verify its readings numeric components against their own quotes and map the verified parts onto the result. That adds a REFUSAL: a reading whose quote states an interval the extraction did not return is incomplete, and an incomplete source may no longer produce a bare MATCH. A new refusal is MINOR by the rule registered in PENDING.json before the change, so safe_sum_v5 — unchanged — is now also cleared by evaluator 1.7.0. 1.6.1 and 1.6.2 stay listed so runs made under them remain interpretable.",
+  "why_v7_registry": "D1-7.4 makes component attribution fail closed on equal point estimates and gives a comparison an identity in the result. Both are new refusals or new facts on the artifact, so MINOR, and safe_sum_v5 — unchanged — is now also cleared by evaluator 1.8.0.",
+  "why_v8_registry": "P0-1 adds a conditionally omitted review claim identity to source evidence. It is provenance only: eval/aggregation_behavior.py --compare reported all 26 frozen cases identical, so this is PATCH 1.8.1. safe_sum_v5 is unchanged, and all older registry and evaluator files remain byte-identical."
+}

@@ -84,6 +84,7 @@ def load_source_items(path: Path | str) -> list[SourceEvidenceItem]:
         if not study_id or not field_type:
             continue
         items.append(SourceEvidenceItem(
+            review_data_id=_first(r, "review_data_id", "audit_id"),
             study_id=study_id,
             group=_first(r, "group", default="-"),
             timepoint=_first(r, "timepoint", default="single"),

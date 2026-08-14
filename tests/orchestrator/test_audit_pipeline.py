@@ -72,7 +72,7 @@ async def test_pipeline_match_pass(tmp_path):
     checklist = ChecklistApplication(
         name="clinical", version="1", source_file="checklist.yaml", sha256="check-hash")
     review = [
-        ReviewDataItem(study_id="ahmad_2022", group="t1dm",
+        ReviewDataItem(review_data_id="A_01", study_id="ahmad_2022", group="t1dm",
                        field_type="eat_thickness", value="6.60 ± 0.71", unit="mm",
                        resolution_key="resolution-eat"),
     ]
@@ -93,6 +93,8 @@ async def test_pipeline_match_pass(tmp_path):
     assert pkg.final_verification.verdict == ReportVerdict.PASS
     assert pkg.final_verification.human_review_flags == []
     assert pkg.source_items[0].source_value == "6.60 ± 0.71"
+    assert pkg.source_items[0].review_data_id == "A_01"
+    assert pkg.report.results[0].audit_id == "A_01"
     assert pkg.field_resolutions[0].resolution_key == "resolution-eat"
     assert pkg.knowledge_imports[0].source == "ontology:labs"
     assert pkg.knowledge_fingerprint == "effective-kb-hash"
@@ -101,6 +103,9 @@ async def test_pipeline_match_pass(tmp_path):
     # persisted + round-trips
     loaded = store.load("r1")
     assert loaded.final_verification.verdict == ReportVerdict.PASS
+    assert loaded.review_items[0].review_data_id == "A_01"
+    assert loaded.source_items[0].review_data_id == "A_01"
+    assert loaded.report.results[0].audit_id == "A_01"
     assert loaded.field_resolutions[0].field_type == "eat_thickness"
     assert loaded.knowledge_imports[0].added == 3
     assert loaded.knowledge_fingerprint == "effective-kb-hash"

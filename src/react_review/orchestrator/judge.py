@@ -10,6 +10,7 @@ genuinely ambiguous cases) can slot in later.
 """
 from __future__ import annotations
 
+from react_review.claim_ids import declared_claim_id
 from react_review.checklist.schema import ChecklistApplication
 from react_review.core.enums import AuditLabel, CollectionOutcome, ReportVerdict
 from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
@@ -58,12 +59,29 @@ def _locator(item) -> tuple:
     )
 
 
+def _identity(item) -> tuple:
+    """Prefer the carried claim identity; locator is legacy fallback only."""
+
+    claim_id = declared_claim_id(item)
+    return ("claim", claim_id) if claim_id else ("legacy", *_locator(item))
+
+
+def _identity_lookup(mapping: dict[tuple, object], item):
+    """Use explicit identity first; locator fallback exists for legacy runs."""
+
+    direct = mapping.get(_identity(item))
+    if direct is not None:
+        return direct
+    return mapping.get(("legacy", *_locator(item)))
+
+
 def _flag(
     item, label: str, reason: str, *, field_type: str | None = None,
     resolution_key: str = "", affected_cells: int = 1,
 ) -> HumanReviewFlag:
     """A flag that points at ONE cell, so a human can go and check it."""
     return HumanReviewFlag(
+        audit_id=declared_claim_id(item),
         study_id=item.study_id, group=item.group,
         timepoint=getattr(item, "timepoint", "single"),
         field_type=item.field_type if field_type is None else field_type,
@@ -89,11 +107,11 @@ class Judge:
         # same study/cohort/field would otherwise overwrite each other here, and
         # the report would show one row's evidence beside the other's number.
         outcome_by_key = {
-            _locator(s): s.collection_outcome for s in (source_items or [])
+            _identity(s): s.collection_outcome for s in (source_items or [])
         }
         # Source evidence that refutes a candidate translation (unit/range).
         mismatch_by_key = {
-            _locator(s): s.concept_mismatch_reason
+            _identity(s): s.concept_mismatch_reason
             for s in (source_items or []) if s.concept_mismatch
         }
         flags: list[HumanReviewFlag] = []
@@ -108,17 +126,17 @@ class Judge:
                 continue
             label, reason = r.label.value, r.reason
             if r.label == AuditLabel.NOT_COMPARABLE:
-                refined = _OUTCOME_FLAG.get(outcome_by_key.get(_locator(r)))
+                refined = _OUTCOME_FLAG.get(_identity_lookup(outcome_by_key, r))
                 if refined:
                     label, reason = refined
             flags.append(_flag(r, label, reason))
 
         for claim in report.unmatched_review:
-            refined = _OUTCOME_FLAG.get(outcome_by_key.get(_locator(claim)))
-            if claim.reason_code == "ambiguous_match_key":
-                # Refusing to pair is its own finding — never dress it up as a
-                # missing source, which would read as a possible fabrication.
-                label, reason = "ambiguous_match_key", claim.message
+            refined = _OUTCOME_FLAG.get(_identity_lookup(outcome_by_key, claim))
+            if claim.reason_code != "no_source_evidence":
+                # Refusing an ambiguous or conflicting identity is its own
+                # finding — never dress it up as a missing source.
+                label, reason = claim.reason_code, claim.message
             else:
                 label, reason = refined or ("unmatched", claim.message or
                                             "no source evidence for this review claim")
@@ -166,9 +184,11 @@ class Judge:
 
         for key, items in concept_groups.items():
             statuses = {getattr(item, "resolution_status", "resolved") for item in items}
-            contradictions = [
-                (item, mismatch_by_key[_locator(item)])
-                for item in items if _locator(item) in mismatch_by_key]
+            contradictions = []
+            for item in items:
+                mismatch = _identity_lookup(mismatch_by_key, item)
+                if mismatch is not None:
+                    contradictions.append((item, mismatch))
             exemplar = contradictions[0][0] if contradictions else items[0]
             raw_name = exemplar.raw_field_name or exemplar.field_type
             scope = (f"affects {len(items)} review cell(s) across "

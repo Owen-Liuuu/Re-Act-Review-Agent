@@ -1,0 +1,34 @@
+{
+  "schema_version": 2,
+  "profile_id": "phase8_batch_v5",
+  "written_on": "2026-08-15",
+  "purpose": "The Phase 8 contract, read in batch. Same tolerances, semantic profile, scope axes and extraction routes as phase8_batch_v4; this version names the evaluator whose source-evidence schema carries claim identity directly.",
+  "why_routed": "Values are worth batching: one reading of a table answers every arm in it, and three separate readings could disagree with each other for no reason except that they were three acts of reading. Arm identities are not: there is one per arm, and asking what an arm is CALLED needs a different prompt from asking what it reports. A run doing both must say so, or half its answers are attributable to a profile the artifact never names.",
+  "extraction_routes": {
+    "value": "targeted_v5_batch",
+    "arm_identity": "targeted_v4"
+  },
+  "aggregation_policy_id": "safe_sum_v5",
+  "evaluator_version": "1.8.1",
+  "semantic_prompt_profile": "semantic_v2_specificity",
+  "tolerances": "../tolerances.phase8.yaml",
+  "tolerances_sha256": "B2C217445C1AC7CF9F140ACC97459278B9A76D269FBF41D12E49115EB1269EDF",
+  "population_contract": null,
+  "context_policy": "cli_then_parsed",
+  "scope_policy": "on",
+  "required_scope_axes": {
+    "sample_size": [
+      "population_basis"
+    ],
+    "cohort_n": [
+      "population_basis"
+    ],
+    "event_count": [
+      "population_basis",
+      "analysis_set"
+    ]
+  },
+  "supersedes": "phase8_batch_v4.json",
+  "compare_version": "1.0.0",
+  "why_v5": "Identical decision contract. It names evaluator 1.8.1 because SourceEvidenceItem now carries the review claim identity directly while omitting the field from legacy artifacts. The frozen 26-case aggregation behavior vector is unchanged; phase8_batch_v4.json remains byte-identical."
+}

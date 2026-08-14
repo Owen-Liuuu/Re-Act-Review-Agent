@@ -175,11 +175,25 @@ def test_the_manifest_makes_no_claim_the_recording_cannot_support():
     not (repo_root() / "output/baselines/melanoma_checkpoint_2017"
          / "phase8_batch_extraction_cache.json").is_file(),
     reason="the recording is local-only and not in this checkout")
-def test_the_recorded_prompts_still_produce_the_keys_the_run_wrote():
+def test_the_recorded_prompts_still_produce_the_keys_the_run_wrote(monkeypatch):
     """The prompt shas are re-derived offline, so they are only trustworthy if
     the keys they compute are the ones actually in the cache."""
     requires_frozen_evaluator()
     import d1_7_manifest
+    import d1_7_preflight
+
+    # The historical manifest pins d1_7_manifest.py byte-for-byte, including
+    # the reanalysis profile that existed when it was generated. Do not rewrite
+    # that generator. For this current-tree diagnostic only, route its prompt
+    # derivation through the new evaluator profile; prompt bytes are then still
+    # checked against the cache keys the recording actually wrote.
+    observe = d1_7_preflight.observe
+
+    def observe_under_current_profile(benchmark, _profile, cache, attempts, model):
+        return observe(benchmark, "phase8_batch_v6_profile.json", cache,
+                       attempts, model)
+
+    monkeypatch.setattr(d1_7_preflight, "observe", observe_under_current_profile)
 
     rows, _ = d1_7_manifest._prompt_rows()
     published = {(r["question_id"], r["attempt"]): r["prompt_sha256"]
