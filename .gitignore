@@ -21,6 +21,7 @@ htmlcov/
 logs/
 output/
 *.log
+/LOG.txt
 
 # Local config with secrets
 config.yaml
