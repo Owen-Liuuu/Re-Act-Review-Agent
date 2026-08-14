@@ -17,8 +17,10 @@
     "note": "d1_batch_v2 and v3, evaluator 1.7.0 and 1.8.0 and the comparator identity did not exist yet and are NOT listed here. They govern the reanalyses below."
   },
   "manifest_generation": {
-    "code_commit": "a233d0780e12204603154a75dfbb85a5b5fe6eb8",
-    "generator": "eval/d1_7_manifest.py"
+    "generator": "eval/d1_7_manifest.py",
+    "generator_sha256": "776A0904E1A0F49A9B4D8093DBE0055D058B00B719281AD9B4BA9084A8CB061A",
+    "generator_last_changed_commit": "2fd5e9dfe60bc386a69d16e2ba038f7b0be46e6d",
+    "note": "the generator is committed BEFORE the manifest it produces, so these two values describe a state that already exists in history"
   },
   "model": {
     "provider": "glm",
@@ -227,7 +229,36 @@
       "unmet_hard_conditions": [
         "hard condition 'wrong_target_accepted_count': the gate requires 0 and the run reports 1 (from metrics.target.gold.identity_wrong_released)"
       ],
-      "what": "The same recording, replayed under evaluator 1.7.0, which verifies each reading's numeric components against its own quote and carries the survivors to the result. No model was asked: backend_requests is 0.",
+      "hard_condition_evidence": {
+        "silent_releases": {
+          "value": 0,
+          "read_from": "metrics.safety.silent_release_count"
+        },
+        "scope_wrong_released_count": {
+          "value": 0,
+          "read_from": "metrics.scope.scope_wrong_released_count"
+        },
+        "batches_match_expected_plan": {
+          "batches": 7,
+          "plan": "d1_7_expected_plan.json",
+          "plan_batches": 7
+        },
+        "every_batched_row_resolves_its_execution_id": {
+          "batches": 7,
+          "batched_rows": 12,
+          "distinct_execution_ids": 7
+        }
+      },
+      "benchmark_diagnostics": {
+        "status": "fail_unexpected_differences",
+        "silent_releases": {
+          "total": 0,
+          "declared_known_gap_count": 0,
+          "unexpected_count": 0,
+          "rows": []
+        }
+      },
+      "what": "The same recording, replayed under aggregation evaluator 1.7.0. Numeric components are verified against each reading's own quote and the survivors carried to the result. No model was asked: backend_requests is 0.",
       "artifact": {
         "path": "output/baselines/melanoma_checkpoint_2017/d1_7_3_scored.json",
         "sha256": "0F33BAA7051F80081743BF17A10F11C2E8368CD84CD0F737BAA3719F3A0F6EE9"
@@ -265,7 +296,40 @@
         "release_eligible": true
       },
       "unmet_hard_conditions": [],
-      "what": "The same recording, replayed under evaluator 1.7.0, which verifies each reading's numeric components against its own quote and carries the survivors to the result. No model was asked: backend_requests is 0.",
+      "hard_condition_evidence": {
+        "silent_releases": {
+          "value": 0,
+          "read_from": "metrics.safety.silent_release_count"
+        },
+        "wrong_target_accepted_count": {
+          "value": 0,
+          "read_from": "metrics.target.gold.identity_wrong_released"
+        },
+        "scope_wrong_released_count": {
+          "value": 0,
+          "read_from": "metrics.scope.scope_wrong_released_count"
+        },
+        "batches_match_expected_plan": {
+          "batches": 7,
+          "plan": "d1_7_expected_plan.json",
+          "plan_batches": 7
+        },
+        "every_batched_row_resolves_its_execution_id": {
+          "batches": 7,
+          "batched_rows": 12,
+          "distinct_execution_ids": 7
+        }
+      },
+      "benchmark_diagnostics": {
+        "status": "fail_unexpected_differences",
+        "silent_releases": {
+          "total": 0,
+          "declared_known_gap_count": 0,
+          "unexpected_count": 0,
+          "rows": []
+        }
+      },
+      "what": "The same recording, replayed under aggregation evaluator 1.8.0 and comparator 1.0.0. Numeric components are verified against each reading's own quote and the survivors carried to the result. No model was asked: backend_requests is 0.",
       "artifact": {
         "path": "output/baselines/melanoma_checkpoint_2017/d1_7_5_scored.json",
         "sha256": "4D15557ADA265B3C602FFD084C49B87CD83FD1BF91CB4237A0C433505D9FD5F6"
