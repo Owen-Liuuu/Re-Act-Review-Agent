@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, model_serializer
 
 from react_review.core.enums import ReportVerdict
 from react_review.schemas.audit import MatchResult
+from react_review.steps.data_extraction.schemas import DocumentScope
 
 
 class UnmatchedClaim(BaseModel):
@@ -88,12 +89,26 @@ class HumanReviewFlag(BaseModel):
     affected_cells: int = 1
     label: str = ""          # the audit label, or "escalated"/"unmatched"
     reason: str = ""
+    # Populated for evidence-gate refusals so a reviewer sees both the decision
+    # and the extent of source material it was based on.
+    document_scope: DocumentScope = DocumentScope.UNKNOWN
+    evidence_adequacy_status: str = ""
+    evidence_adequacy_reason_codes: list[str] = Field(default_factory=list)
+    review_required: bool = False
 
     @model_serializer(mode="wrap")
     def _omit_legacy_empty_audit_id(self, handler):
         body = handler(self)
         if not body.get("audit_id"):
             body.pop("audit_id", None)
+        if self.document_scope is DocumentScope.UNKNOWN:
+            body.pop("document_scope", None)
+        if not body.get("evidence_adequacy_status"):
+            body.pop("evidence_adequacy_status", None)
+        if not body.get("evidence_adequacy_reason_codes"):
+            body.pop("evidence_adequacy_reason_codes", None)
+        if not body.get("review_required"):
+            body.pop("review_required", None)
         return body
 
 

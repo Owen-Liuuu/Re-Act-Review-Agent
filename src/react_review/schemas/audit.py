@@ -3,9 +3,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_serializer
 
 from react_review.core.enums import AuditLabel
+from react_review.schemas.adequacy import EvidenceAdequacy
 
 Value = str | int | float | None
 
@@ -79,3 +80,13 @@ class MatchResult(BaseModel):
     semantic: Any = None
     semantic_relation: str = ""
     semantic_controls: dict[str, bool] = Field(default_factory=dict)
+    # Present only when a claim-level evidence gate actually ran. Historical
+    # results predate that gate and must keep their exact serialised shape.
+    evidence_adequacy: EvidenceAdequacy | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_unused_evidence_adequacy(self, handler):
+        body = handler(self)
+        if body.get("evidence_adequacy") is None:
+            body.pop("evidence_adequacy", None)
+        return body

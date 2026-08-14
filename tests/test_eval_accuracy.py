@@ -8,8 +8,16 @@ import pytest
 from react_review.audit import ToleranceTable
 from react_review.core.enums import CollectionOutcome
 from react_review.eval_accuracy import RowResult, run_rows, score_rows
+from react_review.schemas.adequacy import (
+    AdequacyStatus,
+    AxisResult,
+    AxisStatus,
+    EvidenceAdequacy,
+)
 from react_review.schemas.evidence import SourceEvidenceItem
+from react_review.steps.data_extraction.schemas import DocumentScope
 from react_review.steps.paper_verification.schemas import ReferenceEntry
+from react_review.tools.compare import CompareValuesTool
 
 
 def _row(expected, predicted, *, found=True, outcome="found", extraction=True):
@@ -82,6 +90,54 @@ class _FakeCollector:
             value_origin="verbatim",
             collection_outcome=oc)
         return SimpleNamespace(source_item=si)
+
+
+class _CountingComparator:
+    def __init__(self):
+        self.calls = 0
+        self.delegate = CompareValuesTool(ToleranceTable())
+
+    async def run(self, payload):
+        self.calls += 1
+        return await self.delegate.run(payload)
+
+
+@pytest.mark.asyncio
+async def test_run_rows_applies_adequacy_before_the_production_comparator():
+    class Collector:
+        async def collect(self, review_item, reference, *, research_context=""):
+            source = SourceEvidenceItem(
+                review_data_id=review_item.review_data_id,
+                study_id=review_item.study_id, group=review_item.group,
+                field_type=review_item.field_type, source_value="24.19",
+                source_unit="yr", document_scope=DocumentScope.ABSTRACT_ONLY,
+                evidence_adequacy=EvidenceAdequacy(
+                    status=AdequacyStatus.INSUFFICIENT,
+                    document_scope=DocumentScope.ABSTRACT_ONLY,
+                    required_axes=["field"],
+                    axis_results={"field": AxisResult(
+                        status=AxisStatus.FAIL,
+                        reason="the value belongs to age, not BMI")},
+                    reason_codes=["field_binding_unresolved"]))
+            return SimpleNamespace(source_item=source)
+
+    rows = [{
+        "audit_id": "A028", "study_id": "aslan_2015", "group": "t1dm",
+        "field_type": "bmi", "review_value": "23.31", "unit": "kg/m2",
+        "source_value": "24.19", "source_unit": "yr",
+        "expected_label": "not_comparable",
+    }]
+    comparator = _CountingComparator()
+
+    result = (await run_rows(
+        rows, Collector(), ToleranceTable(),
+        lambda sid: ReferenceEntry(title=sid), comparator=comparator,
+        require_evidence_adequacy=True))[0]
+
+    assert comparator.calls == 0
+    assert result.predicted_label == "not_comparable"
+    assert result.evidence_adequacy_status == "insufficient"
+    assert result.document_scope == "abstract_only"
 
 
 @pytest.mark.asyncio

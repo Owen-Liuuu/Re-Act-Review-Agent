@@ -73,6 +73,9 @@ class RunManifest(BaseModel):
     #: Omitted when the contract names none, so every manifest already written
     #: is unchanged.
     compare_runtime: dict[str, Any] = Field(default_factory=dict)
+    #: The claim-level evidence gate resolved for a schema-v4 run. Omitted for
+    #: all historical contracts so old manifests retain their exact shape.
+    adequacy_runtime: dict[str, Any] = Field(default_factory=dict)
     complete: bool = False
 
     @model_serializer(mode="wrap")
@@ -82,7 +85,27 @@ class RunManifest(BaseModel):
             body.pop("aggregation_runtime", None)
         if not body.get("compare_runtime"):
             body.pop("compare_runtime", None)
+        if not body.get("adequacy_runtime"):
+            body.pop("adequacy_runtime", None)
         return body
+
+    @staticmethod
+    def adequacy_of(evaluator) -> dict[str, Any]:
+        """The policy/evaluator/commit identity of the gate that actually ran."""
+        if evaluator is None:
+            return {}
+        who = evaluator.identity
+        return {
+            "policy_id": who.policy_id,
+            "policy_sha256": who.policy_sha256,
+            "evaluator_id": who.evaluator_id,
+            "evaluator_version": who.evaluator_version,
+            "evaluator_hash": who.evaluator_hash,
+            "git_commit": who.git_commit,
+            "git_commit_matches_evaluator": who.git_commit_matches_evaluator,
+            "status": who.evaluator_status,
+            "release_eligible": who.release_eligible,
+        }
 
     @staticmethod
     def compare_of(contract) -> dict[str, Any]:

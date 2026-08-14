@@ -64,3 +64,15 @@ Validate the frozen transition table with:
 ```powershell
 python eval/check_evidence_adequacy.py
 ```
+
+After producing a schema-v4 replay artifact, join the frozen expectations to
+the actual claim IDs (including positive controls A034/A035) with:
+
+```powershell
+python eval/check_evidence_adequacy.py --results path\to\full_accuracy.json
+```
+
+The first command validates the precommitted transition contract. The second
+is the implementation acceptance check; without a produced `--results` file,
+the expected 77-row totals are a preregistered target, not a claim that the
+full replay has already run.

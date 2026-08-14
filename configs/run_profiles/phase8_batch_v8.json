@@ -1,0 +1,42 @@
+{
+  "schema_version": 4,
+  "profile_id": "phase8_batch_v8",
+  "written_on": "2026-08-15",
+  "purpose": "The Phase 8 batch contract with a registered claim-level evidence-adequacy gate before value comparison.",
+  "why_routed": "Values are read in batches while arm identities use the single-claim route; this is unchanged from phase8_batch_v7.",
+  "extraction_routes": {
+    "value": "targeted_v5_batch",
+    "arm_identity": "targeted_v4"
+  },
+  "aggregation_policy_id": "safe_sum_v5",
+  "evaluator_version": "1.8.2",
+  "semantic_prompt_profile": "semantic_v2_specificity",
+  "table_capture_prompt_profile": "table_capture_v1",
+  "table_capture_prompt_id": "table_capture_v1",
+  "table_capture_prompt_hash": "3AAC303F18EC25CEEFEB7C3B8D2D0507DFA8A00A912BA5ECB5FB8242B9E9A6B6",
+  "adequacy_policy_id": "evidence_adequacy_v1",
+  "adequacy_policy_hash": "9DA56A30430B6B2B78C4A051DA9DB620A559A6802E3DDBA606551C5ECCD42FC4",
+  "adequacy_evaluator_id": "evidence_adequacy",
+  "adequacy_evaluator_version": "1.0.0",
+  "adequacy_evaluator_hash": "sha256:4c04abf8b32e959b74d9dd6e0100c5c49c10ba09a31f727a1f39c3c1266e1931",
+  "tolerances": "../tolerances.phase8.yaml",
+  "tolerances_sha256": "B2C217445C1AC7CF9F140ACC97459278B9A76D269FBF41D12E49115EB1269EDF",
+  "population_contract": null,
+  "context_policy": "cli_then_parsed",
+  "scope_policy": "on",
+  "required_scope_axes": {
+    "sample_size": [
+      "population_basis"
+    ],
+    "cohort_n": [
+      "population_basis"
+    ],
+    "event_count": [
+      "population_basis",
+      "analysis_set"
+    ]
+  },
+  "supersedes": "phase8_batch_v7.json",
+  "compare_version": "1.0.0",
+  "why_v8": "D4c makes evidence adequacy a mandatory pre-comparison gate. Only sufficient claim-level evidence reaches deterministic_compare; insufficient or unknown evidence becomes NOT_COMPARABLE directly."
+}

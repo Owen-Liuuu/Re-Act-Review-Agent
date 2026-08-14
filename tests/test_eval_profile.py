@@ -343,6 +343,18 @@ def test_a_v2_profile_resolves_its_run_contract(tmp_path):
     assert profile.provenance()["run_scope_policy"] == "on"
 
 
+def test_v4_benchmark_profile_requires_and_exposes_the_evidence_gate():
+    profile = load_profile(
+        BENCHMARK, "phase8_batch_v8_profile.json",
+        answer_key_ids=_answer_key_ids())
+
+    assert profile.schema_version == 4
+    assert profile.run_contract.adequacy_enabled is True
+    provenance = profile.provenance()
+    assert provenance["run_adequacy_policy_id"] == "evidence_adequacy_v1"
+    assert provenance["run_adequacy_evaluator_version"] == "1.0.0"
+
+
 def test_a_v2_profile_with_a_stale_run_contract_hash_is_refused(tmp_path):
     path = _v2_profile(tmp_path, run_profile_sha256="0" * 64)
     with pytest.raises(ProfileError, match="does not match the run_profile_sha256"):

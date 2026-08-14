@@ -63,6 +63,39 @@ def _provenance_html(item) -> str:
     return f'<div class="src">read from: <code>{escape(where)}</code>{kind}</div>'
 
 
+def _enum_text(value: Any) -> str:
+    return str(getattr(value, "value", value) or "")
+
+
+def _adequacy_html(result, source) -> str:
+    """Show the claim-level gate, including why comparison was refused."""
+    adequacy = getattr(result, "evidence_adequacy", None)
+    if adequacy is None and source is not None:
+        adequacy = getattr(source, "evidence_adequacy", None)
+    if adequacy is None:
+        return ""
+    status = _enum_text(_field(adequacy, "status"))
+    scope = _enum_text(_field(adequacy, "document_scope"))
+    axes = _field(adequacy, "axis_results", {}) or {}
+    failed = []
+    for name, decision in axes.items():
+        axis_status = _enum_text(_field(decision, "status"))
+        if axis_status in {"pass", "not_required"}:
+            continue
+        reason = str(_field(decision, "reason", "") or axis_status)
+        failed.append(f"<li><b>{escape(str(name))}</b>: {escape(reason)}</li>")
+    codes = _field(adequacy, "reason_codes", []) or []
+    code_html = (
+        f'<div class="loc">reason codes · {escape(", ".join(map(str, codes)))}</div>'
+        if codes else "")
+    return (
+        f'<div class="adequacy"><b>evidence adequacy · {escape(status)}</b>'
+        f'<div class="loc">document scope · {escape(scope)}</div>'
+        + (f'<ul class="why">{"".join(failed)}</ul>' if failed else "")
+        + code_html + "</div>"
+    )
+
+
 def _reasons_html(item) -> str:
     """Why this outcome — including whatever the model said about its difficulty."""
     reasons = getattr(item, "reasons", None) or []
@@ -215,7 +248,8 @@ def render_html_report(pkg: EvidencePackage) -> str:
             loc = escape(s.source_location_in_paper) if s and s.source_location_in_paper else ""
             ev = (f'<div class="q">“{quote}”</div>' if quote else "") + \
                  (f'<div class="loc">{loc}</div>' if loc else "") + \
-                 _provenance_html(s) + _derivation_html(s) + _reasons_html(s) + \
+                 _provenance_html(s) + _adequacy_html(r, s) + \
+                 _derivation_html(s) + _reasons_html(s) + \
                  _semantic_html(r) + _row_flags_html(row_flags)
             row_class = ("warn" if row_flags and r.label.value == "match" else
                          _LABEL.get(r.label.value, ("", "muted"))[1])

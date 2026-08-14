@@ -4,9 +4,11 @@ from __future__ import annotations
 from react_review.core.enums import AuditLabel, CollectionOutcome, ReportVerdict
 from react_review.checklist.schema import ChecklistApplication, ChecklistGap
 from react_review.orchestrator.judge import Judge
+from react_review.schemas.adequacy import AdequacyStatus, EvidenceAdequacy
 from react_review.schemas.audit import MatchResult
 from react_review.schemas.evidence import SourceEvidenceItem
 from react_review.schemas.report import AuditReport
+from react_review.steps.data_extraction.schemas import DocumentScope
 
 
 def _report(label: AuditLabel = AuditLabel.NOT_COMPARABLE) -> AuditReport:
@@ -44,6 +46,27 @@ def test_falls_back_to_not_comparable_without_source_outcome():
     # a FOUND source that still couldn't be compared is a genuine not_comparable
     fv2 = Judge().adjudicate(_report(), [_source(CollectionOutcome.FOUND)])
     assert fv2.human_review_flags[0].label == "not_comparable"
+
+
+def test_evidence_adequacy_context_reaches_the_human_review_flag():
+    result = MatchResult(
+        study_id="aslan_2015", group="t1dm", field_type="bmi",
+        label=AuditLabel.NOT_COMPARABLE, review_required=True,
+        reason="target binding not established from abstract",
+        evidence_adequacy=EvidenceAdequacy(
+            status=AdequacyStatus.INSUFFICIENT,
+            document_scope=DocumentScope.ABSTRACT_ONLY,
+            reason_codes=["target_binding_unresolved"]))
+    report = AuditReport(
+        run_id="r", results=[result], n_not_comparable=1,
+        verdict=ReportVerdict.INCOMPLETE)
+
+    flag = Judge().adjudicate(report).human_review_flags[0]
+
+    assert flag.document_scope is DocumentScope.ABSTRACT_ONLY
+    assert flag.evidence_adequacy_status == "insufficient"
+    assert flag.evidence_adequacy_reason_codes == ["target_binding_unresolved"]
+    assert flag.review_required is True
 
 
 def test_clean_match_produces_no_flag():

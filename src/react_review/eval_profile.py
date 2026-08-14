@@ -50,7 +50,7 @@ SCHEMA_VERSION = 1
 #: v3 routes by claim kind instead of naming one extraction profile, so a
 #: benchmark can express the mixed contract a batched run actually uses. v1 and
 #: v2 keep their meaning and their bytes.
-SCHEMA_VERSIONS = (1, 2, 3)
+SCHEMA_VERSIONS = (1, 2, 3, 4)
 
 EXTRACTION_PROFILES = ("legacy_v3", "targeted_v4", "targeted_v5_batch")
 SEMANTIC_PROFILES = ("semantic_v1", "semantic_v2_specificity")
@@ -393,6 +393,10 @@ def load_profile(
 
     run_contract = _run_contract_for(body, path, version, extraction,
                                      semantic_profile, routes)
+    if version >= 4 and not run_contract.adequacy_enabled:
+        raise ProfileError(
+            f"{path.name} schema_version 4 must name an evidence-adequacy-enabled "
+            "run profile")
 
     gold_path = gold_sha = ""
     gold: dict[str, TargetGoldRow] = {}

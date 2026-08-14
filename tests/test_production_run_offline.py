@@ -366,3 +366,21 @@ def test_the_batched_package_records_which_evaluator_decided(workspace, tmp_path
     runtime = store.load("batched2").run_manifest.aggregation_runtime
     assert runtime["policy_id"] == "safe_sum_v5"
     assert runtime["evaluator_version"] == "1.8.2"
+
+
+def test_schema_v4_production_run_records_and_applies_evidence_gate(
+    workspace, tmp_path,
+):
+    from react_review.contracts import repo_root
+
+    profile = repo_root() / "configs/run_profiles/phase8_batch_v8.json"
+    store = _run(workspace, tmp_path, ScriptedBackend(), run_id="adequacy-v8",
+                 argv_extra=("--profile", str(profile)))
+
+    package = store.load("adequacy-v8")
+    runtime = package.run_manifest.adequacy_runtime
+    assert runtime["policy_id"] == "evidence_adequacy_v1"
+    assert runtime["evaluator_version"] == "1.0.0"
+    assert runtime["release_eligible"] is True
+    assert all(item.evidence_adequacy is not None for item in package.source_items)
+    assert all(result.evidence_adequacy is not None for result in package.report.results)

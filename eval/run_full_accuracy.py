@@ -55,6 +55,7 @@ from react_review.schemas.telemetry import (
 from react_review.tools.extract_batch import ExtractSourceBatchTool
 from react_review.schemas.telemetry import RunTelemetry, wall_clock
 from react_review.pipeline.factory import _create_llm_backend
+from react_review.production import evidence_adequacy_runtime
 from react_review.retrieval.local_pdf import LocalPdfRetriever
 from react_review.steps.paper_verification.schemas import ReferenceEntry
 from react_review.tools.compare import CompareValuesTool
@@ -263,9 +264,12 @@ def main(argv: list[str] | None = None) -> None:
     contract = profile.run_contract if profile is not None else None
     runtime = _aggregation_runtime(contract)
     run_meta_runtime = RunManifest.runtime_of(runtime)
+    adequacy_evaluator = evidence_adequacy_runtime(contract)
+    run_meta_adequacy = RunManifest.adequacy_of(adequacy_evaluator)
     collector = Collector(
         reg, knowledge=kb, cohorts=cohorts, contract=contract,
         aggregation_runtime=runtime,
+        adequacy_evaluator=adequacy_evaluator,
         extraction_profile=(profile.extraction_profile if profile is not None
                             else "legacy_v3"))
 
@@ -304,7 +308,11 @@ def main(argv: list[str] | None = None) -> None:
         results = asyncio.run(run_rows(
             rows, collector, tol, reference_for, context, comparator=comparator,
             targets=(profile.targets if profile is not None else None),
-            gold=(profile.gold if profile is not None else None)))
+            gold=(profile.gold if profile is not None else None),
+            require_evidence_adequacy=(
+                bool(contract and contract.adequacy_enabled)),
+            adequacy_identity=(adequacy_evaluator.identity
+                               if adequacy_evaluator is not None else None)))
     if extraction_cache is not None:
         telemetry.record_cache(hits=extraction_cache.hits,
                                misses=extraction_cache.misses)
@@ -386,6 +394,8 @@ def main(argv: list[str] | None = None) -> None:
             # total, and recorded separately, because a comparator change that
             # rode on an aggregation version is the hole this closes.
             **({"compare_runtime": _compare_runtime} if _compare_runtime else {}),
+            **({"adequacy_runtime": run_meta_adequacy}
+               if run_meta_adequacy else {}),
             **({"excerpt_coverage": coverage.as_dict()}
                if coverage is not None else {}),
             "studies_file": str(studies_path.resolve()),

@@ -11,11 +11,18 @@ from react_review.report import (
     render_html_report,
     render_parser_report,
 )
+from react_review.schemas.adequacy import (
+    AdequacyStatus,
+    AxisResult,
+    AxisStatus,
+    EvidenceAdequacy,
+)
 from react_review.schemas.audit import MatchResult
 from react_review.schemas.evidence import CohortCount, SourceEvidenceItem
 from react_review.schemas.package import EvidencePackage
 from react_review.schemas.report import AuditReport, FinalVerification, HumanReviewFlag
 from react_review.schemas.semantic import SemanticVerdict
+from react_review.steps.data_extraction.schemas import DocumentScope
 from react_review.store import EvidencePackageStore
 
 
@@ -77,6 +84,37 @@ def test_render_escapes_html():
                                               report=rep, final_verification=fv))
     assert "<script>alert(1)</script>" not in html     # escaped, not injected
     assert "&lt;script&gt;" in html
+
+
+def test_report_explains_why_evidence_was_not_allowed_to_compare():
+    adequacy = EvidenceAdequacy(
+        status=AdequacyStatus.INSUFFICIENT,
+        document_scope=DocumentScope.ABSTRACT_ONLY,
+        required_axes=["target"],
+        axis_results={"target": AxisResult(
+            status=AxisStatus.FAIL,
+            reason="target binding not established from abstract")},
+        reason_codes=["target_binding_unresolved"])
+    source = SourceEvidenceItem(
+        study_id="aslan_2015", group="t1dm", field_type="bmi",
+        document_scope=DocumentScope.ABSTRACT_ONLY,
+        evidence_adequacy=adequacy)
+    result = MatchResult(
+        study_id="aslan_2015", group="t1dm", field_type="bmi",
+        label=AuditLabel.NOT_COMPARABLE, review_required=True,
+        reason="target binding not established from abstract",
+        evidence_adequacy=adequacy)
+    report = AuditReport(
+        run_id="d", results=[result], n_not_comparable=1,
+        verdict=ReportVerdict.INCOMPLETE)
+
+    html = render_html_report(EvidencePackage(
+        run_id="d", source_items=[source], report=report))
+
+    assert "evidence adequacy · insufficient" in html
+    assert "document scope · abstract_only" in html
+    assert "target binding not established from abstract" in html
+    assert "target_binding_unresolved" in html
 
 
 def test_final_checklist_verdict_controls_the_banner():

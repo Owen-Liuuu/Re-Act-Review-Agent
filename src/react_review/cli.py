@@ -753,7 +753,11 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
     from react_review.tools.compare import CompareValuesTool
     from react_review.tools.semantic_compare import SemanticCompareTool
     from react_review.tools.extract import FetchFullTextTool
-    from react_review.production import aggregation_runtime, build_collector
+    from react_review.production import (
+        aggregation_runtime,
+        build_collector,
+        evidence_adequacy_runtime,
+    )
     from react_review.tools.extract_batch import ExtractSourceBatchTool
     from react_review.tools.extract_source import ExtractSourceValueTool
     from react_review.contracts import repo_root
@@ -856,6 +860,7 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
         min_confidence=tol.semantic_min_confidence,
         semantic_profile=contract.semantic_prompt_profile))
     runtime = aggregation_runtime(contract)
+    adequacy_evaluator = evidence_adequacy_runtime(contract)
     manifest = RunManifest.of(
         contract, execution, context_source=context_source,
         inputs={"review_pdf": str(args.pdf.name),
@@ -867,6 +872,7 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
     # total. Empty when the contract names no comparator version, so nothing
     # already recorded gains a key.
     manifest.compare_runtime = RunManifest.compare_of(contract)
+    manifest.adequacy_runtime = RunManifest.adequacy_of(adequacy_evaluator)
     # So a run interrupted before the first paper still leaves an artifact that
     # says which contract it was running under.
     session.manifest = manifest
@@ -882,12 +888,23 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
     # would let a v2 contract be loaded, recorded, and then ignored.
     if runtime is not None:
         _safe_print(f"Aggregation: {runtime.evaluator.describe()}")
+    if adequacy_evaluator is not None:
+        who = adequacy_evaluator.identity
+        _safe_print(
+            f"Adequacy:  {who.evaluator_id} {who.evaluator_version} "
+            f"[{who.evaluator_status}]")
     pipeline = AuditPipeline(
         build_collector(reg, contract=contract, knowledge=kb,
                         cohorts=parsed.cohorts,
                         knowledge_fingerprint=parsed.knowledge_fingerprint,
-                        telemetry=telemetry, runtime=runtime),
-        AuditOrchestrator(reg), Judge(),
+                        telemetry=telemetry, runtime=runtime,
+                        adequacy_evaluator=adequacy_evaluator),
+        AuditOrchestrator(
+            reg,
+            require_evidence_adequacy=contract.adequacy_enabled,
+            adequacy_identity=(adequacy_evaluator.identity
+                               if adequacy_evaluator is not None else None)),
+        Judge(),
         store=store, reporter=reporter, run_manifest=manifest,
         telemetry=telemetry,
         # Per-study partials still come from the pipeline; the finished package

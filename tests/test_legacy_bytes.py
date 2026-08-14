@@ -106,6 +106,27 @@ def test_a_legacy_package_gains_no_key_anywhere():
         assert f'"{key}"' not in text, key
 
 
+def test_legacy_audit_and_flag_rows_gain_no_adequacy_keys():
+    from react_review.schemas.audit import MatchResult
+    from react_review.schemas.report import HumanReviewFlag
+
+    result = MatchResult(study_id="larkin", field_type="cohort_n")
+    flag = HumanReviewFlag(study_id="larkin", field_type="cohort_n")
+
+    assert "evidence_adequacy" not in result.model_dump(mode="json")
+    flag_body = flag.model_dump(mode="json")
+    assert "evidence_adequacy_status" not in flag_body
+    assert "evidence_adequacy_reason_codes" not in flag_body
+    assert "document_scope" not in flag_body
+    assert "review_required" not in flag_body
+
+
+def test_legacy_run_manifest_gains_no_adequacy_runtime_key():
+    from react_review.schemas.run_manifest import RunManifest
+
+    assert "adequacy_runtime" not in RunManifest().model_dump(mode="json")
+
+
 # --- 4. telemetry, which is dumped whole into every accuracy report --------
 
 def test_legacy_telemetry_has_no_batch_section():
@@ -160,6 +181,8 @@ def test_a_single_target_row_carries_no_batch_fields():
 
     body = row_payload(_row())
     assert not (set(BATCH_ROW_FIELDS) & set(body))
+    assert not ({"document_scope", "evidence_adequacy_status",
+                 "evidence_adequacy_reason_codes", "evidence_adequacy"} & set(body))
 
 
 def test_a_batched_row_carries_them():

@@ -47,8 +47,8 @@ from react_review.tools.semantic_compare import PROMPT_VERSIONS as SEMANTIC_PROF
 #: run can legitimately read values in batch and arm identities one at a time —
 #: and a run that does both while declaring one profile is a recording nobody
 #: can interpret. Both versions load; only v2 can express a mixed contract.
-CONTRACT_SCHEMA_VERSION = 3
-SUPPORTED_CONTRACT_VERSIONS = (1, 2, 3)
+CONTRACT_SCHEMA_VERSION = 4
+SUPPORTED_CONTRACT_VERSIONS = (1, 2, 3, 4)
 
 #: The kinds of claim a route can be declared for. Closed, so a contract cannot
 #: name a route for something nothing dispatches on.
@@ -87,6 +87,14 @@ class RunContractProfile(BaseModel):
     table_capture_prompt_profile: str = ""
     table_capture_prompt_id: str = ""
     table_capture_prompt_hash: str = ""
+    #: Schema v4: the exact registered evidence gate that must run before the
+    #: comparator. Empty for historical contracts, which retain their original
+    #: compare-without-gate behaviour.
+    adequacy_policy_id: str = ""
+    adequacy_policy_hash: str = ""
+    adequacy_evaluator_id: str = ""
+    adequacy_evaluator_version: str = ""
+    adequacy_evaluator_hash: str = ""
     # None means "the comparator's own defaults" — the Phase 6/7 behaviour. A
     # contract that names a file pins its hash; nothing loads a tolerance table
     # that no contract points at.
@@ -128,6 +136,10 @@ class RunContractProfile(BaseModel):
     def scope_enabled(self) -> bool:
         return self.scope_policy == "on"
 
+    @property
+    def adequacy_enabled(self) -> bool:
+        return bool(self.adequacy_policy_id and self.adequacy_evaluator_version)
+
     def axes_for(self, field_type: str) -> list[str]:
         return list(self.required_scope_axes.get((field_type or "").lower(), []))
 
@@ -160,6 +172,12 @@ class RunContractProfile(BaseModel):
             body["table_capture_prompt_profile"] = self.table_capture_prompt_profile
             body["table_capture_prompt_id"] = self.table_capture_prompt_id
             body["table_capture_prompt_hash"] = self.table_capture_prompt_hash
+        if self.schema_version >= 4:
+            body["adequacy_policy_id"] = self.adequacy_policy_id
+            body["adequacy_policy_hash"] = self.adequacy_policy_hash
+            body["adequacy_evaluator_id"] = self.adequacy_evaluator_id
+            body["adequacy_evaluator_version"] = self.adequacy_evaluator_version
+            body["adequacy_evaluator_hash"] = self.adequacy_evaluator_hash
         return body
 
 
@@ -204,6 +222,7 @@ def load_run_contract(path: Path | str) -> RunContractProfile:
         raise ContractError(
             f"{path} declares a TableCapture prompt identity under schema_version "
             f"{version}; use schema_version 3")
+    adequacy = _adequacy_contract(body, version, path)
     context_policy = one_of(body.get("context_policy"), CONTEXT_POLICIES,
                             field="context_policy")
     scope_policy = one_of(body.get("scope_policy"), SCOPE_POLICIES, field="scope_policy")
@@ -237,11 +256,81 @@ def load_run_contract(path: Path | str) -> RunContractProfile:
         table_capture_prompt_profile=table_capture_profile,
         table_capture_prompt_id=table_capture_id,
         table_capture_prompt_hash=table_capture_hash,
+        adequacy_policy_id=adequacy["policy_id"],
+        adequacy_policy_hash=adequacy["policy_hash"],
+        adequacy_evaluator_id=adequacy["evaluator_id"],
+        adequacy_evaluator_version=adequacy["evaluator_version"],
+        adequacy_evaluator_hash=adequacy["evaluator_hash"],
         tolerances_path=(tolerances_path or None), tolerances_sha256=tolerances_sha,
         population_contract_path=(population_path or None),
         population_contract_sha256=population_sha,
         context_policy=context_policy, scope_policy=scope_policy,
         required_scope_axes=axes)
+
+
+_ADEQUACY_FIELDS = (
+    "adequacy_policy_id",
+    "adequacy_policy_hash",
+    "adequacy_evaluator_id",
+    "adequacy_evaluator_version",
+    "adequacy_evaluator_hash",
+)
+
+
+def _adequacy_contract(body: dict, version: int, path: Path) -> dict[str, str]:
+    """Resolve schema-v4 gate pins against the registered evaluator."""
+    if version < 4:
+        if any(field in body for field in _ADEQUACY_FIELDS):
+            raise ContractError(
+                f"{path} declares evidence-adequacy fields under schema_version "
+                f"{version}; use schema_version 4")
+        return {
+            "policy_id": "", "policy_hash": "", "evaluator_id": "",
+            "evaluator_version": "", "evaluator_hash": "",
+        }
+
+    missing = [field for field in _ADEQUACY_FIELDS
+               if not str(body.get(field) or "").strip()]
+    if missing:
+        raise ContractError(
+            f"{path} schema_version 4 must declare {', '.join(missing)}")
+
+    from react_review.audit.evidence_adequacy import evaluator_readiness
+
+    policy_id = str(body["adequacy_policy_id"])
+    evaluator_version = str(body["adequacy_evaluator_version"])
+    identity, _ = evaluator_readiness(
+        policy_id=policy_id, evaluator_version=evaluator_version)
+    declared = {
+        "adequacy_policy_id": policy_id,
+        "adequacy_policy_hash": str(body["adequacy_policy_hash"]),
+        "adequacy_evaluator_id": str(body["adequacy_evaluator_id"]),
+        "adequacy_evaluator_version": evaluator_version,
+        "adequacy_evaluator_hash": str(body["adequacy_evaluator_hash"]),
+    }
+    actual = {
+        "adequacy_policy_id": identity.policy_id,
+        "adequacy_policy_hash": identity.policy_sha256,
+        "adequacy_evaluator_id": identity.evaluator_id,
+        "adequacy_evaluator_version": identity.evaluator_version,
+        "adequacy_evaluator_hash": identity.evaluator_hash,
+    }
+    for field in _ADEQUACY_FIELDS:
+        if declared[field] != actual[field]:
+            raise ContractError(
+                f"{path} {field} does not match the registered evidence "
+                "adequacy evaluator")
+    if not identity.release_eligible:
+        raise ContractError(
+            f"{path} names an evidence adequacy evaluator that is not "
+            f"release-eligible ({identity.evaluator_status})")
+    return {
+        "policy_id": identity.policy_id,
+        "policy_hash": identity.policy_sha256,
+        "evaluator_id": identity.evaluator_id,
+        "evaluator_version": identity.evaluator_version,
+        "evaluator_hash": identity.evaluator_hash,
+    }
 
 
 def _routes(body: dict, version: int, path: Path) -> tuple[dict[str, str], str, str]:

@@ -176,6 +176,10 @@ class AuditPipeline:
                 "study_id": study_id, "subject": subject,
                 "n_claims": len(claims), "n_found": len(claims) - len(warnings),
                 "document_scope": self._scope_for(source),
+                "adequacy": dict(Counter(
+                    (s.evidence_adequacy.status.value
+                     if s.evidence_adequacy is not None else "not_assessed")
+                    for s in collected)),
                 "warnings": warnings,
             })
             # Shown in full, not gated — see StepStage.COLLECT_STUDY.
@@ -301,6 +305,9 @@ class AuditPipeline:
             p.get("document_scope") or DocumentScope.UNKNOWN.value
             for p in per_study
         )
+        adequacy = Counter()
+        for paper in per_study:
+            adequacy.update(paper.get("adequacy") or {})
         lines = [f"  {len(per_study)} paper(s) · {n_evidence} claim(s) · "
                  f"{found} found · {n_evidence - found} missing", ""]
         lines.extend([
@@ -309,6 +316,12 @@ class AuditPipeline:
             f"    abstract_only   {scopes[DocumentScope.ABSTRACT_ONLY.value]}",
             f"    metadata_only   {scopes[DocumentScope.METADATA_ONLY.value]}",
             f"    unknown         {scopes[DocumentScope.UNKNOWN.value]}",
+            "",
+            "  evidence adequacy:",
+            f"    sufficient      {adequacy['sufficient']}",
+            f"    insufficient    {adequacy['insufficient']}",
+            f"    unknown         {adequacy['unknown']}",
+            f"    not_assessed    {adequacy['not_assessed']}",
             "",
         ])
         width = max((len(p["study_id"]) for p in per_study), default=10)
@@ -327,5 +340,7 @@ class AuditPipeline:
             return "  (no items flagged)"
         return "\n".join(
             f"  [{f.audit_id or '-'}] [{f.label}] "
-            f"{f.study_id}/{f.group}/{f.field_type}: {f.reason}"
+            f"{f.study_id}/{f.group}/{f.field_type} "
+            f"[scope={f.document_scope.value} "
+            f"adequacy={f.evidence_adequacy_status or 'not_assessed'}]: {f.reason}"
             for f in final.human_review_flags[:40])

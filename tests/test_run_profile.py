@@ -50,6 +50,21 @@ def test_the_phase8_contract_pins_its_tolerance_table():
     assert contract.axes_for("hazard_ratio") == []
 
 
+def test_the_phase8_v8_contract_pins_the_evidence_gate_identity():
+    contract = load_run_contract(PROFILES / "phase8_batch_v8.json")
+
+    assert contract.schema_version == 4
+    assert contract.adequacy_enabled is True
+    assert contract.adequacy_policy_id == "evidence_adequacy_v1"
+    assert contract.adequacy_policy_hash == (
+        "9DA56A30430B6B2B78C4A051DA9DB620A559A6802E3DDBA606551C5ECCD42FC4")
+    assert contract.adequacy_evaluator_id == "evidence_adequacy"
+    assert contract.adequacy_evaluator_version == "1.0.0"
+    assert contract.adequacy_evaluator_hash == (
+        "sha256:4c04abf8b32e959b74d9dd6e0100c5c49c10ba09a31f727a1f39c3c1266e1931")
+    assert contract.identity()["adequacy_evaluator_version"] == "1.0.0"
+
+
 def test_only_the_phase8_table_makes_counts_exact():
     """A head count is a count; everything else keeps the bands it had.
 
@@ -124,6 +139,27 @@ def test_an_undefined_scope_axis_is_refused(tmp_path):
 def test_enabling_the_scope_check_without_saying_which_axes_is_refused(tmp_path):
     with pytest.raises(ContractError, match="which axes"):
         load_run_contract(_contract_in(tmp_path, required_scope_axes={}))
+
+
+def test_old_contract_schema_may_not_silently_ignore_adequacy_fields(tmp_path):
+    with pytest.raises(ContractError, match="schema_version 4"):
+        load_run_contract(_contract_in(
+            tmp_path, adequacy_policy_id="evidence_adequacy_v1"))
+
+
+def test_v4_contract_refuses_an_unpinned_adequacy_evaluator(tmp_path):
+    run_dir = tmp_path / "run_profiles"
+    run_dir.mkdir(parents=True)
+    (tmp_path / "tolerances.phase8.yaml").write_bytes(
+        (ROOT / "configs" / "tolerances.phase8.yaml").read_bytes())
+    body = json.loads(
+        (PROFILES / "phase8_batch_v8.json").read_text(encoding="utf-8-sig"))
+    body["adequacy_evaluator_hash"] = "sha256:" + "0" * 64
+    path = run_dir / "bad-v4.json"
+    path.write_text(json.dumps(body), encoding="utf-8")
+
+    with pytest.raises(ContractError, match="adequacy_evaluator_hash"):
+        load_run_contract(path)
 
 
 # --- the override boundary ------------------------------------------------
@@ -208,6 +244,24 @@ def test_a_partial_manifest_carries_no_cache_hash(tmp_path):
     finished = partial.finalise(mode)
     assert finished.complete is True
     assert finished.extraction_cache_sha256 == sha256_file(cache)
+
+
+def test_manifest_records_the_resolved_evidence_gate_runtime():
+    from react_review.production import evidence_adequacy_runtime
+
+    contract = load_run_contract(PROFILES / "phase8_batch_v8.json")
+    evaluator = evidence_adequacy_runtime(contract)
+    manifest = RunManifest.of(contract, ExecutionMode())
+    manifest.adequacy_runtime = RunManifest.adequacy_of(evaluator)
+
+    runtime = manifest.model_dump(mode="json")["adequacy_runtime"]
+    assert runtime["policy_id"] == contract.adequacy_policy_id
+    assert runtime["policy_sha256"] == contract.adequacy_policy_hash
+    assert runtime["evaluator_id"] == contract.adequacy_evaluator_id
+    assert runtime["evaluator_version"] == contract.adequacy_evaluator_version
+    assert runtime["evaluator_hash"] == contract.adequacy_evaluator_hash
+    assert len(runtime["git_commit"]) == 40
+    assert runtime["release_eligible"] is True
 
 
 def test_a_different_context_source_is_a_different_question(tmp_path):

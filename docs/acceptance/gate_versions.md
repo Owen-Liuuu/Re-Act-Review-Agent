@@ -361,8 +361,10 @@ restored to its original bytes and the corrections published as v2.
 | D4 | `configs/evidence_adequacy/policy_v1.json` | `9DA56A30430B6B2B` | frozen policy |
 | D4 | `configs/evidence_adequacy/registry_v1.json` | `E2C75161EF9642DC` | current |
 | D4 | `configs/evidence_adequacy/evaluators/evidence_adequacy_1.0.0.json` | `03FC06FDA682DA83` | current |
-| D4 | `configs/run_profiles/phase8_batch_v7.json` | `E00D058C259AA4A9` | current; pins safe_aggregation 1.8.2 |
-| D4 | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v7_profile.json` | `9213358AC894C959` | current offline replay profile |
+| D4 | `configs/run_profiles/phase8_batch_v7.json` | `E00D058C259AA4A9` | superseded; bytes frozen |
+| D4 | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v7_profile.json` | `9213358AC894C959` | superseded; bytes frozen |
+| D4c | `configs/run_profiles/phase8_batch_v8.json` | `90951FD4B8E950B0` | current; evidence gate required before compare |
+| D4c | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v8_profile.json` | `F00D89C28BB24673` | current offline replay profile |
 
 ## Claim identity provenance: safe_aggregation 1.8.0 → 1.8.1
 
@@ -395,6 +397,14 @@ hashes the collector, schemas, normalizers and binding implementation that can
 move a claim among `sufficient`, `insufficient` and `unknown`. A result is not
 release-eligible unless the registered policy and evaluator hashes describe a
 clean Git commit.
+
+Schema-v4 run profile `phase8_batch_v8` pins that registered pair and makes it
+part of the answer contract. The Collector attaches the assessment to each
+source claim; the audit orchestrator sends only `sufficient` claims to the
+comparator. `insufficient`, `unknown`, and required-but-unassessed claims become
+`NOT_COMPARABLE` directly, with scope and reasons carried through Judge and the
+HTML report. The run manifest separately records the policy, evaluator hash and
+Git commit that actually ran.
 
 ## The comparator gets an identity of its own
 

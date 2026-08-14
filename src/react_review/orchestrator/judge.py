@@ -80,6 +80,10 @@ def _flag(
     resolution_key: str = "", affected_cells: int = 1,
 ) -> HumanReviewFlag:
     """A flag that points at ONE cell, so a human can go and check it."""
+    adequacy = getattr(item, "evidence_adequacy", None)
+    document_scope = (
+        adequacy.document_scope if adequacy is not None
+        else getattr(item, "document_scope", None))
     return HumanReviewFlag(
         audit_id=declared_claim_id(item),
         study_id=item.study_id, group=item.group,
@@ -90,6 +94,11 @@ def _flag(
         checklist_id=getattr(item, "checklist_id", "") or "",
         resolution_key=resolution_key or getattr(item, "resolution_key", ""),
         affected_cells=affected_cells, label=label, reason=reason,
+        document_scope=(document_scope or "unknown"),
+        evidence_adequacy_status=(adequacy.status.value if adequacy else ""),
+        evidence_adequacy_reason_codes=(list(adequacy.reason_codes)
+                                       if adequacy else []),
+        review_required=bool(getattr(item, "review_required", False)),
     )
 
 

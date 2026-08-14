@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
+from collections import Counter
 from pathlib import Path
 
 
@@ -34,6 +36,7 @@ REMAINDER = {
     "D_07", "E_07", "F_07", "G_07",
 }
 EXPECTED_IDS = HARD_NOT_COMPARABLE | TRUE_DIFFERENCES | REMAINDER
+POSITIVE_ABSTRACT_CONTROLS = {"A034", "A035"}
 
 
 def load_transition(path: Path = DEFAULT_TRANSITION) -> list[dict[str, str]]:
@@ -98,19 +101,119 @@ def validate_transition(rows: list[dict[str, str]]) -> list[str]:
     return errors
 
 
+def _field(value, name: str, default=None):
+    return value.get(name, default) if isinstance(value, dict) else default
+
+
+def _result_rows(payload) -> list[dict]:
+    if isinstance(payload, list):
+        return payload
+    if not isinstance(payload, dict):
+        raise ValueError("results JSON must be a list or object")
+    if isinstance(payload.get("rows"), list):
+        return payload["rows"]
+    report = payload.get("report") or {}
+    if isinstance(report, dict) and isinstance(report.get("results"), list):
+        return report["results"]
+    if isinstance(payload.get("results"), list):
+        return payload["results"]
+    raise ValueError("results JSON has no rows, results, or report.results list")
+
+
+def validate_results(
+    transition: list[dict[str, str]], produced: list[dict]
+) -> list[str]:
+    """Join frozen expectations to produced rows by claim identity."""
+    errors: list[str] = []
+    by_id: dict[str, dict] = {}
+    for row in produced:
+        audit_id = str(row.get("audit_id") or row.get("review_data_id") or "")
+        if not audit_id:
+            continue
+        if audit_id in by_id:
+            errors.append(f"produced results repeat audit_id {audit_id}")
+        by_id[audit_id] = row
+
+    for expected in transition:
+        audit_id = expected["audit_id"]
+        actual = by_id.get(audit_id)
+        if actual is None:
+            errors.append(f"produced results are missing {audit_id}")
+            continue
+        label = str(actual.get("predicted_label") or actual.get("label") or "")
+        if label != expected["expected_new_label"]:
+            errors.append(
+                f"{audit_id} label {label!r} != "
+                f"{expected['expected_new_label']!r}")
+        adequacy = actual.get("evidence_adequacy") or {}
+        status = str(actual.get("evidence_adequacy_status")
+                     or _field(adequacy, "status", ""))
+        scope = str(actual.get("document_scope")
+                    or _field(adequacy, "document_scope", ""))
+        if status != expected["expected_adequacy"]:
+            errors.append(
+                f"{audit_id} adequacy {status!r} != "
+                f"{expected['expected_adequacy']!r}")
+        if scope != expected["document_scope"]:
+            errors.append(
+                f"{audit_id} document_scope {scope!r} != "
+                f"{expected['document_scope']!r}")
+        failed_axis = expected["required_failed_axis"]
+        if failed_axis:
+            axis = (_field(adequacy, "axis_results", {}) or {}).get(failed_axis) or {}
+            axis_status = str(_field(axis, "status", ""))
+            if axis_status not in {"fail", "unknown"}:
+                errors.append(
+                    f"{audit_id} required axis {failed_axis!r} was not refused")
+
+    for audit_id in sorted(POSITIVE_ABSTRACT_CONTROLS):
+        actual = by_id.get(audit_id)
+        if actual is None:
+            errors.append(f"produced results are missing positive control {audit_id}")
+            continue
+        label = str(actual.get("predicted_label") or actual.get("label") or "")
+        adequacy = actual.get("evidence_adequacy") or {}
+        status = str(actual.get("evidence_adequacy_status")
+                     or _field(adequacy, "status", ""))
+        if label != "match" or status != "sufficient":
+            errors.append(
+                f"{audit_id} must remain sufficient/match; got {status}/{label}")
+
+    if len(produced) == 77:
+        labels = Counter(
+            str(row.get("predicted_label") or row.get("label") or "")
+            for row in produced)
+        expected_counts = {
+            "match": 30, "mismatch": 0,
+            "unit_mismatch": 2, "not_comparable": 45,
+        }
+        if any(labels[label] != count for label, count in expected_counts.items()):
+            errors.append(
+                f"77-row label counts changed: got {dict(labels)}, "
+                f"expected {expected_counts}")
+    return errors
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("transition", nargs="?", type=Path, default=DEFAULT_TRANSITION)
+    parser.add_argument("--results", type=Path,
+                        help="produced JSON rows or EvidencePackage to validate")
     args = parser.parse_args(argv)
     rows = load_transition(args.transition)
     errors = validate_transition(rows)
+    if args.results:
+        payload = json.loads(args.results.read_text(encoding="utf-8-sig"))
+        errors.extend(validate_results(rows, _result_rows(payload)))
     if errors:
         for error in errors:
             print(f"FAIL: {error}")
         return 1
+    suffix = (" and produced results satisfy the gate"
+              if args.results else "")
     print(
         "PASS: 19 accusations frozen "
-        "(17 -> not_comparable; 2 verified unit mismatches preserved)"
+        f"(17 -> not_comparable; 2 verified unit mismatches preserved){suffix}"
     )
     return 0
 

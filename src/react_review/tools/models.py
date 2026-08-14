@@ -1,9 +1,10 @@
 """Small input/output models for tools that don't reuse an existing schema."""
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from react_review.pipeline.schemas import EvidenceFieldSchema
+from react_review.schemas.adequacy import AdequacyStatus, EvidenceAdequacy
 from react_review.steps.data_extraction.schemas import PaperDocument
 from react_review.steps.paper_verification.schemas import ReferenceEntry
 
@@ -34,6 +35,19 @@ class CompareInput(BaseModel):
     # because it decides whether the arithmetic is about the same people.
     review_scope: dict | None = None
     source_scope: dict | None = None
+    # Defence in depth: the orchestrator owns the adequacy gate, but the tool
+    # input also refuses an explicitly non-sufficient claim. That makes it
+    # impossible for another caller to bypass the gate accidentally.
+    evidence_adequacy: EvidenceAdequacy | None = None
+
+    @model_validator(mode="after")
+    def _only_sufficient_evidence_may_be_compared(self):
+        if (self.evidence_adequacy is not None
+                and self.evidence_adequacy.status is not AdequacyStatus.SUFFICIENT):
+            raise ValueError(
+                f"{self.evidence_adequacy.status.value} evidence must not enter "
+                "value comparison")
+        return self
 
 
 class CountInput(BaseModel):

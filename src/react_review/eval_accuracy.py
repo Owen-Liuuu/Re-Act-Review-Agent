@@ -19,6 +19,11 @@ from typing import Any, Awaitable, Callable, Protocol
 
 from react_review.audit import ToleranceTable
 from react_review.schemas.audit import MatchResult
+from react_review.schemas.adequacy import AdequacyStatus
+from react_review.orchestrator.pipeline import (
+    adequacy_not_comparable,
+    resolved_evidence_adequacy,
+)
 from react_review.tools.compare import CompareValuesTool
 from react_review.tools.models import CompareInput
 from react_review.core.enums import AuditLabel
@@ -115,6 +120,11 @@ class RowResult:
     semantic_relation: str = ""
     semantic_controls: dict[str, bool] = field(default_factory=dict)
     semantic: dict[str, Any] = field(default_factory=dict)
+    # Present only for schema-v4 runs whose evidence gate actually ran.
+    document_scope: str = ""
+    evidence_adequacy_status: str = ""
+    evidence_adequacy_reason_codes: list[str] = field(default_factory=list)
+    evidence_adequacy: dict[str, Any] = field(default_factory=dict)
 
 
 class _CollectorLike(Protocol):
@@ -127,7 +137,8 @@ async def _compare(comparator, field_type: str, rv: Any, sv: Any, ru: str, su: s
                    research_context: str = "",
                    source_components: Any = None,
                    review_scope: Any = None,
-                   source_scope: Any = None) -> MatchResult:
+                   source_scope: Any = None,
+                   evidence_adequacy: Any = None) -> MatchResult:
     """Score through the TOOL, so the eval exercises the same path a run does.
 
     Calling ``compare_values`` directly here meant the eval could never reach the
@@ -142,7 +153,8 @@ async def _compare(comparator, field_type: str, rv: Any, sv: Any, ru: str, su: s
         source_components=(source_components.model_dump()
                            if hasattr(source_components, "model_dump")
                            else source_components),
-        review_scope=_as_dict(review_scope), source_scope=_as_dict(source_scope)))
+        review_scope=_as_dict(review_scope), source_scope=_as_dict(source_scope),
+        evidence_adequacy=evidence_adequacy))
 
 
 def _graded(gold: Any, field: str, actual: str, same) -> str:
@@ -212,6 +224,10 @@ def _semantic_dict(value: Any) -> dict[str, Any]:
 #: Fields a row has only when a batch produced it. Written when it did, absent
 #: when it did not — never present-and-empty, which is a changed artifact.
 BATCH_ROW_FIELDS = ("batch_execution_id", "batch_route", "projection_status")
+ADEQUACY_ROW_FIELDS = (
+    "document_scope", "evidence_adequacy_status",
+    "evidence_adequacy_reason_codes", "evidence_adequacy",
+)
 
 
 def row_payload(result) -> dict:
@@ -226,6 +242,9 @@ def row_payload(result) -> dict:
     body = asdict(result)
     if not any(body.get(name) for name in BATCH_ROW_FIELDS):
         for name in BATCH_ROW_FIELDS:
+            body.pop(name, None)
+    if not body.get("evidence_adequacy_status"):
+        for name in ADEQUACY_ROW_FIELDS:
             body.pop(name, None)
     return body
 
@@ -372,6 +391,8 @@ async def run_rows(
     comparator: Any = None,
     targets: dict[str, Any] | None = None,
     gold: dict[str, Any] | None = None,
+    require_evidence_adequacy: bool = False,
+    adequacy_identity: Any = None,
 ) -> list[RowResult]:
     """Collect + audit each answer-key row into a scored RowResult.
 
@@ -404,14 +425,24 @@ async def run_rows(
     for position, (r, review) in enumerate(zip(rows, reviews)):
         si = collected.for_row(position)
 
-        match = await _compare(
-            comparator, review.field_type, review.value, si.source_value,
-            review.unit, si.source_unit,
-            column_header=(r.get("column_header") or ""), quote=si.source_quote,
-            research_context=research_context,
-            source_components=getattr(si, "source_components", None),
-            review_scope=review.population_scope,
-            source_scope=getattr(si, "population_scope", None))
+        adequacy = resolved_evidence_adequacy(
+            si, required=require_evidence_adequacy,
+            evaluator_identity=adequacy_identity)
+        if (adequacy is not None
+                and adequacy.status is not AdequacyStatus.SUFFICIENT):
+            match = adequacy_not_comparable(
+                review, si, adequacy,
+                audit_id=(r.get("audit_id") or review.review_data_id))
+        else:
+            match = await _compare(
+                comparator, review.field_type, review.value, si.source_value,
+                review.unit, si.source_unit,
+                column_header=(r.get("column_header") or ""), quote=si.source_quote,
+                research_context=research_context,
+                source_components=getattr(si, "source_components", None),
+                review_scope=review.population_scope,
+                source_scope=getattr(si, "population_scope", None),
+                evidence_adequacy=adequacy)
         predicted = match.label
         # Extraction is "correct" when the extracted value matches the human's
         # hand-labeled source value within tolerance.  A partial structured
@@ -514,6 +545,12 @@ async def run_rows(
             semantic_relation=match.semantic_relation,
             semantic_controls=dict(match.semantic_controls),
             semantic=_semantic_dict(match.semantic),
+            document_scope=(adequacy.document_scope.value if adequacy else ""),
+            evidence_adequacy_status=(adequacy.status.value if adequacy else ""),
+            evidence_adequacy_reason_codes=(list(adequacy.reason_codes)
+                                              if adequacy else []),
+            evidence_adequacy=(adequacy.model_dump(mode="json")
+                               if adequacy else {}),
         ))
     # The readings, attached to the list the caller already holds. A row
     # names an execution id and this is where that reference resolves; a

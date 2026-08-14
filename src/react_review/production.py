@@ -92,9 +92,38 @@ def aggregation_runtime(contract):
         evaluator_version=contract.evaluator_version)
 
 
+def evidence_adequacy_runtime(contract):
+    """Resolve the registered claim-level gate named by a schema-v4 contract."""
+    if contract is None or not getattr(contract, "adequacy_enabled", False):
+        return None
+    from react_review.audit.evidence_adequacy import EvidenceAdequacyEvaluator
+    from react_review.contracts import ContractError
+
+    evaluator = EvidenceAdequacyEvaluator.resolve(
+        policy_id=contract.adequacy_policy_id,
+        evaluator_version=contract.adequacy_evaluator_version)
+    who = evaluator.identity
+    expected = (
+        contract.adequacy_policy_id,
+        contract.adequacy_policy_hash,
+        contract.adequacy_evaluator_id,
+        contract.adequacy_evaluator_version,
+        contract.adequacy_evaluator_hash,
+    )
+    actual = (
+        who.policy_id, who.policy_sha256, who.evaluator_id,
+        who.evaluator_version, who.evaluator_hash,
+    )
+    if actual != expected or not who.release_eligible:
+        raise ContractError(
+            "the resolved evidence adequacy evaluator is not the registered, "
+            "release-eligible identity pinned by the run contract")
+    return evaluator
+
+
 def build_collector(registry, *, contract, knowledge=None, cohorts=None,
                     knowledge_fingerprint: str = "", telemetry=None,
-                    runtime=None):
+                    runtime=None, adequacy_evaluator=None):
     """The Collector a production run uses.
 
     Everything it needs to honour its contract, in one call: the routes, the
@@ -108,6 +137,9 @@ def build_collector(registry, *, contract, knowledge=None, cohorts=None,
         registry, knowledge=knowledge, cohorts=cohorts, contract=contract,
         aggregation_runtime=(runtime if runtime is not None
                              else aggregation_runtime(contract)),
+        adequacy_evaluator=(
+            adequacy_evaluator if adequacy_evaluator is not None
+            else evidence_adequacy_runtime(contract)),
         knowledge_fingerprint=knowledge_fingerprint, telemetry=telemetry,
         extraction_profile=contract.extraction_profile)
 

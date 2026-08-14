@@ -7,6 +7,7 @@ against a real benchmark row.
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from react_review.audit import ToleranceTable
 from react_review.core.config import AppConfig
@@ -22,6 +23,24 @@ from react_review.tools.models import (
 )
 from react_review.pipeline.schemas import EvidenceFieldSchema
 from react_review.steps.data_extraction.schemas import PaperDocument
+
+
+def test_compare_input_refuses_an_explicitly_insufficient_adequacy_decision():
+    with pytest.raises(ValidationError, match="insufficient evidence"):
+        CompareInput(
+            field_type="bmi", review_value="23.31", source_value="24.19",
+            evidence_adequacy={
+                "status": "insufficient",
+                "document_scope": "abstract_only",
+                "reason_codes": ["target_binding_unresolved"],
+            })
+
+
+def test_compare_input_accepts_a_sufficient_adequacy_decision():
+    payload = CompareInput(
+        field_type="bmi", review_value="23.31", source_value="23.31",
+        evidence_adequacy={"status": "sufficient", "document_scope": "full_text"})
+    assert payload.evidence_adequacy.status.value == "sufficient"
 
 
 @pytest.fixture
