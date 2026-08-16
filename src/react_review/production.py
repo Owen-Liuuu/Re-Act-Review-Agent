@@ -396,14 +396,19 @@ class ProductionSession:
     def finalise_interrupted(self, *, reason: str = "interrupted (Ctrl-C)"):
         return self._finalise_early(INTERRUPTED, stage="", reason=reason)
 
-    def finalise_error(self, exc: BaseException):
+    def finalise_error(self, exc: BaseException, *, stage: str = ""):
         """A run that died of an exception is evidence too, and says so.
 
         It used to leave a partial marked `in_progress`, which reads as a run
         still going — the one thing it certainly is not.
+
+        ``stage`` is optional because most crashes cannot say where they were:
+        an arbitrary exception carries a traceback, not a pipeline stage. A
+        caller that DOES know — a failure raised by a named stage — passes it,
+        so the artifact locates the failure instead of only reporting it.
         """
         return self._finalise_early(
-            ERROR, stage="", reason=f"{type(exc).__name__}: {exc}")
+            ERROR, stage=stage, reason=f"{type(exc).__name__}: {exc}")
 
     def _finalise_early(self, status: str, *, stage: str, reason: str):
         """Leave an artifact that says how the run ended — always one.

@@ -18,7 +18,7 @@
 python -m pytest -q
 ```
 
-预期 `716 passed`。
+预期 `1556 passed, 2 skipped`。两个跳过都是有意的:一个要 `RUN_LIVE_LLM=1` 才会去调真实模型,一个在 evaluator 已冻结时无事可做。
 
 ```bash
 python eval/run_full_accuracy.py --extraction replay --extraction-cache output/baselines/phase6_0d_final_extraction_replay.json
@@ -62,6 +62,17 @@ ls output/demo/*/package.partial.json
 
 要点:**退出码 2 = 人工叫停**(Ctrl-C 是 130),并且已经落了 `package.partial.json` 和逐步 journal。
 "跑到一半被叫停"和"跑完"在产物上是分得清的。
+
+退出码一共四种,脚本可以据此分流:
+
+| 码 | 含义 | 产物 |
+|---|---|---|
+| 0 | 跑完 | `package.json` + `report.html` |
+| 2 | 人工在检查点叫停 | `package.partial.json`,`status: stopped_by_user` |
+| 3 | **模型不可用** —— 解析阶段每一次调用都失败 | `package.partial.json`,`status: error`,`stopped_at_stage: review_parsing` |
+| 130 | Ctrl-C | `package.partial.json`,`status: interrupted` |
+
+> 3 和 0 的区别是这次修复的重点,值得单独讲一句:**"供应商挂了"和"这篇综述确实没有可解析的表"以前产出同一个结果**(都是 `complete` + 0 items),现在前者判 `error`、后者仍是 `complete` 加警告。区分依据是"模型有没有给出过答案",而不是"答案是不是空的"。
 
 > 如果现场网络或 key 出问题:直接 `ls output/runs/` 找一次历史运行,打开它的 `steps/` 目录讲同样的事。门是代码结构,不是这一次运行的运气。
 

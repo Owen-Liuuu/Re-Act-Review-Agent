@@ -47,3 +47,21 @@ class RunStopped(LitInspectorError):
         self.index = index
         self.reason = reason or f"run stopped at {stage or 'a checkpoint'}"
         super().__init__(self.reason)
+
+
+class ModelUnavailable(LitInspectorError):
+    """Every model call a stage made failed, so the stage produced nothing.
+
+    Not the same as a review with no extractable table: both leave zero items,
+    and only this one means the run never received an answer to judge. Carries
+    the counts so the artifact can say what was observed rather than only that
+    the run gave up.
+    """
+
+    def __init__(self, *, stage: str, requests: int) -> None:
+        self.stage = stage
+        self.requests = requests
+        super().__init__(
+            f"all {requests} model call(s) during {stage} failed, so there is "
+            f"no parsed review to audit. This is a provider or transport "
+            f"failure, not a review whose table could not be found")

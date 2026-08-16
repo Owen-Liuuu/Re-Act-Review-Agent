@@ -202,6 +202,18 @@ class RunTelemetry(BaseModel):
             or self.cache_misses or self.repeated_attempts or self.call_seconds
             or self.wall_seconds or self.stages or self.batch)
 
+    def every_call_failed(self) -> bool:
+        """Whether the model was reached and never once answered.
+
+        This is what separates a provider that is down from a review with
+        nothing to extract: both leave zero items, and only this one means no
+        answer was ever received. At least one request is required, so a fully
+        replayed run — which reaches no backend at all — is not read as a run
+        whose every call failed.
+        """
+        return (self.backend_requests > 0
+                and self.backend_failures == self.backend_requests)
+
     def batch_stats(self) -> BatchStats:
         if self.batch is None:
             self.batch = BatchStats()

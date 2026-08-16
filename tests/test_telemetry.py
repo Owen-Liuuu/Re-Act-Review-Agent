@@ -81,3 +81,35 @@ def test_the_wrapper_never_changes_an_answer():
     backend = MeteredBackend(_Backend(output="the answer"), telemetry)
     assert asyncio.run(backend.complete("q")) == "the answer"
     assert backend.model_id == "stub"
+
+
+# --- "the model never answered" is a fact about the counters -----------------
+
+def test_a_run_that_reached_no_backend_did_not_fail_every_call():
+    """A fully replayed run makes no calls, which is not the same as failing
+    all of them — reading it that way would call every cached run a failure."""
+    telemetry = RunTelemetry()
+    telemetry.attempt("extract_source_value")
+    telemetry.record_cache(hits=4, misses=0)
+    assert telemetry.backend_requests == 0
+    assert telemetry.every_call_failed() is False
+
+
+def test_every_call_failing_is_distinguishable_from_some_of_them_failing():
+    every = RunTelemetry()
+    for _ in range(3):
+        try:
+            asyncio.run(MeteredBackend(_Backend(fail=True), every).complete("x"))
+        except RuntimeError:
+            pass
+    assert every.backend_requests == 3 and every.backend_failures == 3
+    assert every.every_call_failed() is True
+
+    some = RunTelemetry()
+    try:
+        asyncio.run(MeteredBackend(_Backend(fail=True), some).complete("x"))
+    except RuntimeError:
+        pass
+    asyncio.run(MeteredBackend(_Backend(), some).complete("x"))
+    assert some.backend_requests == 2 and some.backend_failures == 1
+    assert some.every_call_failed() is False

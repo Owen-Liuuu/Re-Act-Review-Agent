@@ -257,16 +257,15 @@ def test_a_stop_at_a_checkpoint_ends_the_run_through_the_real_entry_point(
     assert not (out / "stopped1" / "package.json").is_file()
 
 
-def test_a_model_that_fails_throughout_still_publishes_a_complete_run(
+def test_a_model_that_fails_throughout_ends_the_run_as_an_error(
         workspace, tmp_path):
-    """Documents what the entry point does today, which is not obviously right.
+    """A provider that is down is not a review with no extractable table.
 
-    `ReviewParser._call` catches every exception and returns an empty result, so
-    a provider that is down for the whole run is indistinguishable from a review
-    with no extractable tables: both publish `status: complete` with zero items.
-    Nothing here asserts that this is correct — it asserts what happens, so that
-    changing it is a decision somebody makes rather than a surprise. The gap is
-    recorded in docs/known-limitations.md.
+    Both leave zero items, and both used to publish `status: complete` — so a
+    run that never received an answer was indistinguishable from one that
+    received the answer "there is nothing here". The counters already knew the
+    difference; nothing acted on them. Now the run refuses to publish as
+    complete, and says where it failed.
     """
 
     class _Broken(ScriptedBackend):
@@ -275,14 +274,73 @@ def test_a_model_that_fails_throughout_still_publishes_a_complete_run(
             raise RuntimeError("the provider is down")
 
     backend = _Broken()
-    store = _run(workspace, tmp_path, backend, run_id="broken1")
-
+    out = tmp_path / "runs"
+    with pytest.raises(SystemExit) as exit_code:
+        _run(workspace, tmp_path, backend, run_id="broken1")
+    assert exit_code.value.code == 3
     assert backend.asked, "the run never even tried to reach the model"
-    package = store.load("broken1")
+
+    body = json.loads((out / "broken1" / "package.partial.json")
+                      .read_text(encoding="utf-8-sig"))
+    assert body["status"] == "error"
+    assert body["stopped_at_stage"] == "review_parsing"
+    assert "ModelUnavailable" in body["stop_reason"]
+    # Nothing was published as a finished audit.
+    assert not (out / "broken1" / "package.json").is_file()
+
+
+def test_a_review_with_no_table_still_completes_when_the_model_answered(
+        workspace, tmp_path):
+    """The other zero-item run, which must NOT become an error.
+
+    A model that answers "there are no tables here" has done its job, and the
+    advisor review asked for exactly that to be stated rather than crashed on.
+    Refusing to publish it would replace a silent false pass with a false
+    failure, so the two zero-item runs are separated by whether an answer
+    arrived — not by whether the answer was empty.
+    """
+
+    class _NoTables(ScriptedBackend):
+        async def complete(self, prompt: str, *, seed: int = 42) -> str:
+            if self._kind(prompt) == "table_capture":
+                self.asked.append("table_capture")
+                return json.dumps({"research_question": "", "tables": []})
+            return await super().complete(prompt, seed=seed)
+
+    store = _run(workspace, tmp_path, _NoTables(), run_id="notables1")
+
+    package = store.load("notables1")
     assert package.status == "complete"
     assert package.review_items == []
-    # The one thing that IS legible: it audited nothing and says so.
-    assert package.report.n_match == 0
+
+
+def test_one_failed_call_among_answered_ones_does_not_fail_the_run(
+        workspace, tmp_path):
+    """The guard fires on "never answered", not on "answered imperfectly".
+
+    A transient failure that a retry recovers from is ordinary, and a run that
+    died on it would trade a false pass for a false failure on every flaky
+    provider.
+    """
+
+    class _FlakyOnce(ScriptedBackend):
+        def __init__(self) -> None:
+            super().__init__()
+            self._failed = False
+
+        async def complete(self, prompt: str, *, seed: int = 42) -> str:
+            if not self._failed:
+                self._failed = True
+                self.asked.append(self._kind(prompt))
+                raise RuntimeError("one transient failure")
+            return await super().complete(prompt, seed=seed)
+
+    store = _run(workspace, tmp_path, _FlakyOnce(), run_id="flaky1")
+
+    package = store.load("flaky1")
+    assert package.status == "complete"
+    assert package.telemetry.backend_failures == 1
+    assert package.telemetry.backend_requests > 1
 
 
 # --- what may be substituted, and what may not ------------------------------

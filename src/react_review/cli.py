@@ -580,7 +580,7 @@ def _run_main(argv: list[str] | None = None, *, dependencies=None) -> None:
     import uuid
 
     from react_review.checklist import Checklist
-    from react_review.core.exceptions import RunStopped
+    from react_review.core.exceptions import ModelUnavailable, RunStopped
     from react_review.dkb import FieldResolver, load_runtime_knowledge
     from react_review.hitl import (
         AutoContinue,
@@ -709,6 +709,11 @@ def _run_main(argv: list[str] | None = None, *, dependencies=None) -> None:
     except RunStopped as exc:
         session.finalise_stopped(stage=exc.stage, reason=exc.reason)
         raise SystemExit(2)
+    except ModelUnavailable as exc:
+        # Its own exit code: a script must be able to tell "the provider was
+        # down" from "the audit found problems" and from "a human stopped it".
+        session.finalise_error(exc, stage=exc.stage)
+        raise SystemExit(3)
     except KeyboardInterrupt:
         session.finalise_interrupted()
         raise SystemExit(130)
@@ -735,6 +740,8 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
     """The audit itself, wrapped so a stop/interrupt can finalise cleanly."""
     from react_review.agents.collector import Collector
     from react_review.audit import ToleranceTable
+    from react_review.core.exceptions import ModelUnavailable
+    from react_review.schemas.telemetry import REVIEW_PARSING
     from react_review.audit.semantic_cache import SemanticCache
     from react_review.audit.semantic_control import (
         format_threshold_sensitivity,
@@ -775,6 +782,16 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
     _safe_print(f"Parsing review PDF: {args.pdf}")
     parsed = asyncio.run(review_parser.parse(args.pdf, research_context=args.context))
     _safe_print(f"  parsed {len(parsed.items)} review items")
+
+    # A run that got no answer from the model has not audited a review with no
+    # table — it has not audited anything, and publishing that as `complete` is
+    # how a totally failed run used to look exactly like a successful audit of
+    # an empty review. Checked HERE, before any source paper is opened, so
+    # `backend_requests` still counts only the parse: every call having failed
+    # at this point IS the parsing stage having failed entirely.
+    if not parsed.items and telemetry.every_call_failed():
+        raise ModelUnavailable(stage=REVIEW_PARSING,
+                               requests=telemetry.backend_requests)
 
     # Whose words describe this review. The parser reads one out of the review
     # itself, which was being extracted and then dropped; whether the audit may
