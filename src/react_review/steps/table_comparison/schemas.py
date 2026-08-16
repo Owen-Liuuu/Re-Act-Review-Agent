@@ -18,16 +18,16 @@ class FieldDiff(BaseModel):
     Attributes:
         field_name: Display field name — under the new direct-join
             architecture this is the student's verbatim column header
-            (e.g. "N", "EFT/EAT"). Step 4 joins by this exact string.
+            (e.g. "N", "Age (years)"). Step 4 joins by this exact string.
         canonical_concept: Snake_case abstract concept name from
             ``EvidenceFieldSchema.canonical_concept`` (e.g.
-            ``sample_size``, ``eat_or_eft``). Used by the report to
+            ``sample_size``, ``age_mean``). Used by the report to
             show students how their column maps to the cross-paper
             extraction concept the AI looked for.
         student_raw_name: Original column header used by the student
-            (e.g. "N", "EFT/ EAT"). Empty if the student had no value.
+            (e.g. "N", "Age (yrs)"). Empty if the student had no value.
         model_raw_names: Original field names used by the model(s)
-            (e.g. "sample_size", "eat_volume_mean").
+            (e.g. "sample_size", "age_mean").
         student_value: Value from the student's table (raw).
         student_value_normalized: Normalised version of ``student_value``.
         student_evidence: Evidence snippet from the student side

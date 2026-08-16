@@ -78,9 +78,9 @@ class EvidenceFieldSchema(BaseModel):
 
     Attributes:
         student_field_name: Verbatim column name as the student wrote it
-            (e.g. "N", "EFT/EAT", "Method"). Used as the join key in Step 4.
+            (e.g. "N", "Age (years)", "Method"). Used as the join key in Step 4.
         canonical_concept: Snake_case abstract concept (e.g. ``sample_size``,
-            ``eat_or_eft``, ``measurement_tool``). Used by Step 3 to instruct
+            ``age_mean``, ``measurement_tool``). Used by Step 3 to instruct
             the LLM extractor what to look for in source papers.
         type: Comparison family — selects the comparator in Step 4.
         threshold_match: For numeric type this is a relative-error bound for
@@ -117,9 +117,10 @@ class StudentReviewInput(BaseModel):
     Attributes:
         student_id: Student identifier.
         review_title: Title of the systematic review.
-        research_context: One-sentence description of what the review studies
-            (e.g. "EAT thickness in T1DM patients vs healthy controls"). Used
-            as research-context hint by Step 3 extractor prompts.
+        research_context: One-sentence description of what the review studies,
+            in the review's own terms (shape: "<primary measure> in <exposed
+            cohort> vs <comparison cohort>"). Used as research-context hint by
+            Step 3 extractor prompts.
         search_strategy: Structured search strategy (replaces the old flat
             ``search_strategy_text``).
         selected_papers: The 6-10 papers the student selected after screening.

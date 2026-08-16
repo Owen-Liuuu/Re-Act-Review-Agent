@@ -79,10 +79,12 @@ class KnowledgeBase(BaseModel):
     def resolve(self, raw_name: str, unit: str = "", modality: str = "") -> str | None:
         """Resolve a raw name to a field_type using name → unit → modality signals.
 
-        One candidate wins outright. For an ambiguous name (e.g. "EFT/ EAT" → both
-        eat_thickness and eat_volume) disambiguate by an explicit modality rule
-        first (CT→eat_volume, echo→eat_thickness), then by the reported unit. Still
-        ambiguous → None so the caller can fall back to the LLM (DKB-2).
+        One candidate wins outright. An ambiguous name is one surface form that
+        maps to several field_types — typically the same quantity measured two
+        ways, so the review's header alone cannot say which. Disambiguate by the
+        concept's explicit modality rule first, then by the reported unit; both
+        rules live in the KB DATA, not here, so a new domain supplies its own.
+        Still ambiguous → None so the caller can fall back to the LLM (DKB-2).
         """
         cands = self.candidates(raw_name)
         if not cands:

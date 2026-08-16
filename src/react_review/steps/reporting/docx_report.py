@@ -530,8 +530,8 @@ def generate_docx_report(
         "The table below compares the student's extracted data with "
         "AI-extracted values from each LLM, aligned on a canonical field "
         "schema (one row per logical field, after mapping student headers "
-        "like 'N', 'EFT/EAT' to canonical names like 'sample_size', "
-        "'eat_or_eft_t1dm'). Colours: Green = MATCH, Yellow = PARTIAL / "
+        "like 'N', 'Age (yrs)' to canonical names like 'sample_size', "
+        "'age_mean'). Colours: Green = MATCH, Yellow = PARTIAL / "
         "NEEDS REVIEW, Red = DIFF, Grey = missing on one side."
     )
 

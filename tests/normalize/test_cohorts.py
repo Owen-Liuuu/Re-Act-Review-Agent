@@ -115,9 +115,15 @@ def test_slug_is_stable_and_readable():
     assert slug("Non-survivors") == "non_survivors"
 
 
-# --- the legacy function must be out of the live path ---
+# --- the fixed-vocabulary mapper must not come back ---
 
 def test_the_parser_no_longer_uses_the_legacy_group_mapper():
+    """The removed mapper folded unplaceable labels into a catch-all cohort.
+
+    The module is gone, so an import would already fail; this pins the name so a
+    reintroduction has to be deliberate rather than a copy-paste back into the
+    parser.
+    """
     source = (Path(__file__).resolve().parents[2] / "src" / "react_review" /
               "parser" / "review_parser.py").read_text(encoding="utf-8")
     assert "normalize_group" not in source

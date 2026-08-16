@@ -1,30 +1,32 @@
 """Deciding WHICH arm an extracted value belongs to — deterministically.
 
 Phase 6B's dominant failure was not a misread number: it was a correctly read
-number attached to the wrong arm. Asked for the nivolumab arm's progression-free
-survival the extractor returned the combination arm's, and asked for one hazard
+number attached to the wrong arm. Asked for a single-agent arm's time-to-event
+outcome the extractor returned the combination arm's, and asked for one hazard
 ratio it returned another; nothing downstream could tell, because a value and a
 cohort name arrived with no evidence tying them together.
 
 So the model is asked to ENUMERATE what the paper reports for the field — every
 arm (or every comparison) with its own verbatim quote — and this module decides
-which of those the request was for. Three deterministic ideas do the work:
+which of those the request was for. Three deterministic ideas do the work. The
+examples below use placeholder arm names ``X`` and ``Y``; nothing here is tied to
+a therapy area.
 
-*Both-way label affinity.* "nivolumab" is a subset of "nivolumab plus
-ipilimumab", so one-directional overlap cannot separate a monotherapy arm from a
-combination arm. Scoring in both directions makes the label that also accounts
-for the other side's words win.
+*Both-way label affinity.* An arm named "X" is a subset of "X plus Y", so
+one-directional overlap cannot separate a single-agent arm from a combination
+arm. Scoring in both directions makes the label that also accounts for the other
+side's words win.
 
 *Global one-to-one assignment.* Even both-way affinity ties when the review says
-"Ipilimumab + placebo" and the paper says "ipilimumab group" — the combination
-arm shares that word. Assigning ALL the review's arms to ALL the paper's arms at
-once, and requiring a single best assignment, resolves what no per-cell choice
-can. A tie is refused, never broken by position.
+"Y + placebo" and the paper says "Y group" — the combination arm shares that
+word. Assigning ALL the review's arms to ALL the paper's arms at once, and
+requiring a single best assignment, resolves what no per-cell choice can. A tie
+is refused, never broken by position.
 
 *Locality inside the quote.* One sentence often carries every arm's value. The
 value the paper prints next to the target arm — under the same one-to-one rule,
-and with longer arm names masked first so "ipilimumab group" cannot match inside
-"nivolumab-plus-ipilimumab group" — is the one that may be returned.
+and with longer arm names masked first so "Y group" cannot match inside
+"X-plus-Y group" — is the one that may be returned.
 
 Anything that does not resolve uniquely is an explicit unresolved outcome with a
 reason. The nearest value is never the answer.
@@ -416,9 +418,9 @@ def _label_in_quote(label: str, quote: str) -> bool:
     """Whether the quote actually NAMES this arm.
 
     The arm's words must appear together and as a whole name. A loose token
-    check accepts "the ipilimumab group" as evidence for a sentence that only
-    says "the nivolumab-plus-ipilimumab group", which is precisely the confusion
-    that put one arm's value on another arm's row.
+    check accepts "the Y group" as evidence for a sentence that only says "the
+    X-plus-Y group", which is precisely the confusion that put one arm's value on
+    another arm's row.
     """
     pattern = _label_pattern(label)
     if pattern is None:
@@ -431,12 +433,11 @@ def resolve_sides(
 ) -> tuple[tuple[str, str] | None, str]:
     """The review's words for each side of a comparison — resolved TOGETHER.
 
-    Side by side does not work: a trial's short name for its control arm
-    ("ipilimumab") fits both the control arm ("Ipilimumab + placebo") and the
-    combination arm ("Nivolumab + ipilimumab") exactly as well, and each side's
-    own best guess is a coin flip. The two sides are one problem — they must
-    land on DIFFERENT arms — so they are assigned jointly, exactly as the arms
-    themselves are.
+    Side by side does not work: a trial's short name for its control arm ("Y")
+    fits both the control arm ("Y + placebo") and the combination arm ("X + Y")
+    exactly as well, and each side's own best guess is a coin flip. The two sides
+    are one problem — they must land on DIFFERENT arms — so they are assigned
+    jointly, exactly as the arms themselves are.
     """
     labels = [label for label in review_labels.values() if (label or "").strip()]
     if len(labels) < 2:
@@ -480,9 +481,9 @@ def _side_score(side: str, label: str, *, other: str) -> float:
     """How well one comparison side matches one review arm.
 
     With a penalty for contamination: if the arm's label carries the OTHER
-    side's drug while this side's own name does not, the assignment has quietly
-    turned "nivolumab versus ipilimumab" into a comparison involving the
-    combination arm. That is a different claim, so it must not win a tie.
+    side's agent while this side's own name does not, the assignment has quietly
+    turned "X versus Y" into a comparison involving the combination arm. That is
+    a different claim, so it must not win a tie.
     """
     score = label_affinity(side, label)
     if score <= 0.0:
@@ -503,8 +504,8 @@ def _pair_score(left: str, right: str, candidate: ComparisonEvidence) -> float:
     """How well a reported comparison IS the requested one, both sides summed.
 
     Summed rather than min-ed: two candidates can share their weaker side (both
-    are "…versus the ipilimumab group") and be told apart only by the stronger
-    one. A floor on each side separately stops a lopsided fit from winning.
+    are "…versus the Y group") and be told apart only by the stronger one. A
+    floor on each side separately stops a lopsided fit from winning.
     """
     scores = (label_affinity(left, candidate.left_label),
               label_affinity(right, candidate.right_label))
@@ -520,8 +521,8 @@ def _pair_name(candidate: ComparisonEvidence) -> str:
 def _masked_label_spans(flat: str, labels: list[str]) -> dict[str, list[tuple[int, int]]]:
     """Where each label occurs, longest label first so it claims its own text.
 
-    Without masking, "ipilimumab group" matches inside
-    "nivolumab-plus-ipilimumab group" and every locality measurement collapses.
+    Without masking, "Y group" matches inside "X-plus-Y group" and every locality
+    measurement collapses.
     """
     remaining = flat
     spans: dict[str, list[tuple[int, int]]] = {}
@@ -544,9 +545,9 @@ def _label_pattern(label: str) -> re.Pattern | None:
         return None
     body = r"[^a-z0-9]{0,3}".join(re.escape(t) for t in tokens)
     # The boundary excludes a neighbouring hyphen as well as letters: in
-    # "nivolumab-plus-ipilimumab group" the tail really does read "ipilimumab
-    # group", and treating that as an occurrence of the ipilimumab arm is the
-    # whole failure. A hyphenated compound is one name.
+    # "X-plus-Y group" the tail really does read "Y group", and treating that as
+    # an occurrence of the Y arm is the whole failure. A hyphenated compound is
+    # one name.
     return re.compile(rf"(?<![a-z0-9-]){body}(?![a-z0-9-])")
 
 

@@ -139,10 +139,11 @@ def apply_modality_disambiguation(
 ):
     """Relabel a field_type using the study's modality + the DKB disambiguation rule.
 
-    The parser can't tell eat_thickness (echo) from eat_volume (CT) at parse time
-    (it lacks the study's modality). Now that studies are resolved to
-    included_studies, use each study's modality against the concept's
-    ``disambiguation`` (e.g. CT → eat_volume) — the A2 fix, driven by KB DATA.
+    A header that names the quantity but not how it was measured is ambiguous at
+    parse time, because the parser does not yet know the study's modality. Now
+    that studies are resolved to included_studies, use each study's modality
+    against the concept's ``disambiguation`` rule — the A2 fix, driven by KB DATA
+    rather than by anything hardcoded here.
     """
     out = []
     resolutions = {r.resolution_key: r for r in (field_resolutions or [])}
