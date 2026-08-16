@@ -365,6 +365,7 @@ restored to its original bytes and the corrections published as v2.
 | D4 | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v7_profile.json` | `9213358AC894C959` | superseded; bytes frozen |
 | D4c | `configs/run_profiles/phase8_batch_v8.json` | `90951FD4B8E950B0` | current; evidence gate required before compare |
 | D4c | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v8_profile.json` | `F00D89C28BB24673` | current offline replay profile |
+| G1 | `configs/run_profiles/phase8_batch_v9.json` | `480E7277FBC0B177` | current; single-claim route on the domain-neutral prompt |
 
 ## Claim identity provenance: safe_aggregation 1.8.0 → 1.8.1
 
@@ -454,3 +455,41 @@ transitions, the baseline rows, the unset capability floor and the
 reported-never-gated list are byte-identical to v2 — checked when v3 was
 generated. v2 is not edited: it is published, and a published file that changes
 retroactively describes runs it did not govern.
+
+## G1 — phase8_batch v8 → v9: the single-claim prompt stops naming one disease
+
+`targeted_v4` teaches its two cohort rules with worked examples drawn from the
+EAT/T1DM review: a narrative sentence about diabetic children, and a table row
+reading `<diabetic value> | <control value>`. The rules are right and general;
+the examples are not. A review from another field is asked what it studies while
+being handed one domain as the shape of the answer.
+
+`targeted_v6` is that question with the examples written as `<cohort A>` and
+`<cohort B>`. It is a NEW profile rather than an edit, because the extraction
+replay cache is keyed on the prompt's own SHA-256: editing `targeted_v4` would
+make every Phase 6 and melanoma recording a miss, and the symptom would read as
+a missing recording rather than an edited prompt. Both profiles are pinned in
+`tests/tools/test_extraction_profile.py`, v6 before it has any recordings, and a
+further test asserts the two rendered prompts differ **in the examples and
+nowhere else** — two independent hashes would both stay green if a rule were
+tightened in one profile only, which would make any comparison between them
+measure two changes at once.
+
+Run profile `phase8_batch_v9` routes `arm_identity` to `targeted_v6` and leaves
+everything else at v8: same batch route for values, same evidence-adequacy gate,
+same aggregation policy and evaluator, same tolerance table. Values already ran
+on a prompt with no domain terms in it, so the single-claim route was the last
+place a single-target question named a disease.
+
+**TableCapture deliberately stays on v1.** Its domain-neutral candidate was
+measured against v1 under the B1 manifest and regressed — 35 hallucinated cells
+against 2, cell accuracy 0.6863 against 0.9085 — and that run also found that
+v1's frozen EAT/T1DM example terms did not appear in the melanoma review's
+output. So the argument for `targeted_v6` is not "neutral wording must be
+better"; it is that this is the prompt where neutral wording has not been shown
+to cost anything. Promoting `table_capture_v2` on the same reasoning would
+contradict B2.
+
+**No verdict moves because of this version.** No recording is reachable under
+`targeted_v6` yet, so nothing that has been measured was measured through it.
+The first result attributable to v9 will be the first review recorded under it.

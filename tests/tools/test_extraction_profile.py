@@ -1,10 +1,18 @@
-"""The legacy extraction contract is pinned, byte for byte.
+"""Every single-target extraction contract is pinned, byte for byte.
 
 Phase 6's recorded caches are keyed on ``prompt_version`` plus the SHA-256 of
 the prompt itself, so any drift in either — a renamed version string, an extra
 line in the output skeleton, one changed space — silently invalidates every
 recorded response and turns a frozen replay into a live run. These tests fail on
 that drift instead of discovering it during a paid recording.
+
+``targeted_v6`` is pinned here for the same reason and BEFORE it has recordings,
+so its first recording is made against agreed bytes rather than whatever the
+template happened to say that day. It is also the file that states what v6 is
+for: v4's question with its cohort examples written as placeholders. That is
+checked as an invariant — the two prompts must differ in the examples and
+NOWHERE else — because a hash alone would still pass if someone changed a rule
+in one profile and not the other.
 
 The prompt is captured from the REAL tool call rather than rebuilt here: a copy
 of the formatting logic in the test would drift with the code it is meant to
@@ -14,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 
 import pytest
 
@@ -28,8 +37,10 @@ from react_review.tools.extraction_cache import ExtractionCache
 from react_review.tools.extraction_profile import (
     LEGACY_V3,
     TARGETED_V4,
+    TARGETED_V6,
     prompt_profile,
     prompt_version,
+    uses_targeted_sections,
 )
 from react_review.llm.base import LLMBackend
 
@@ -37,6 +48,18 @@ from react_review.llm.base import LLMBackend
 # must NOT be updated to match new output: a legacy-profile change is the defect.
 LEGACY_PROMPT_SHA256 = "0c9c640c16953a21ee3519322b1f4b49532733bc2fb8e14aa3ac042ced0cb598"
 LEGACY_CACHE_KEY = "8b1d5b403d0342907084c5160207cf97cd1ba93becb4a37356f67b769e347c69"
+# targeted_v4 carries the melanoma benchmark's recordings; v6 is the neutral
+# candidate. Same rule: a changed hash is a new profile, not a new constant here.
+TARGETED_V4_PROMPT_SHA256 = "7c3ab12261b4a352e2e103d1edf61029400f7ce27468a8bfefe297351294e3f8"
+TARGETED_V6_PROMPT_SHA256 = "33cdd50fe6691e81f5a3de6cdddc61181fad906f79065937f7289beb3d970d05"
+TARGETED_V6_CACHE_KEY = "414c0bc9f8a6cb0540f2db6e4ef495c1acff164848c052503d32b76ad33a879f"
+
+# The block the two targeted profiles are allowed to differ in, located by the
+# text around it so the test does not restate the rules themselves.
+_RULES_START = "- PREFER the data table"
+_RULES_END = "- First list every cohort/column"
+# Present only when the enumerate-then-assign sections are rendered.
+_TARGETED_MARKER = "- Do NOT pick the target arm yourself."
 
 
 class _RecordingBackend(LLMBackend):
@@ -56,17 +79,24 @@ class _RecordingBackend(LLMBackend):
 
 
 def _pinned_payload(**overrides) -> ExtractSourceValueInput:
-    """One fixed request. Every field that reaches the prompt is spelled out."""
+    """One fixed request. Every field that reaches the prompt is spelled out.
+
+    Overrides are merged over the fixture rather than passed alongside it, so a
+    test can vary one field — the cohorts, say — without a duplicate-argument
+    error. With no overrides the request is byte-identical to the one the pinned
+    hashes were computed from.
+    """
     document = PaperDocument(
         paper_id="pin", reference=ReferenceEntry(title="pinned paper"),
         full_text="Table 1. Age (years) 12.90 +/- 1.30 12.96 +/- 1.12")
-    return ExtractSourceValueInput(
+    fixture = dict(
         document=document, field_type="age", group="control", concept="age",
         concept_variants=["age", "age (years)"], raw_field_name="Age (years)",
         unit_hint="years", research_context="pinned context",
         cohort_display="Controls",
         cohorts={"t1dm": ["T1DM"], "control": ["Controls"]},
-        attempt=0, **overrides)
+        attempt=0)
+    return ExtractSourceValueInput(**{**fixture, **overrides})
 
 
 @pytest.mark.asyncio
@@ -119,3 +149,98 @@ async def test_profile_does_not_leak_into_the_legacy_prompt(tmp_path):
         _pinned_payload(extraction_profile="legacy_v3"))
     assert hashlib.sha256(
         backend.prompts[0].encode("utf-8")).hexdigest() == LEGACY_PROMPT_SHA256
+
+
+# --- targeted_v6: v4's question, without one review's disease in the examples --
+
+async def _rendered(profile: str, **overrides) -> str:
+    """The prompt the tool really sends under a profile."""
+    backend = _RecordingBackend()
+    await ExtractSourceValueTool(backend).run(
+        _pinned_payload(extraction_profile=profile, **overrides))
+    assert len(backend.prompts) == 1
+    return backend.prompts[0]
+
+
+def _rules_block(prompt: str) -> str:
+    return prompt[prompt.index(_RULES_START):prompt.index(_RULES_END)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("profile, expected", [
+    ("targeted_v4", TARGETED_V4_PROMPT_SHA256),
+    ("targeted_v6", TARGETED_V6_PROMPT_SHA256),
+])
+async def test_targeted_prompt_bytes_are_unchanged(profile, expected):
+    digest = hashlib.sha256((await _rendered(profile)).encode("utf-8")).hexdigest()
+    assert digest == expected, (
+        f"the {profile} extraction prompt changed: recordings made under it are "
+        "now unreachable. A new contract belongs in a new profile")
+
+
+@pytest.mark.asyncio
+async def test_targeted_v6_cache_key_is_unchanged(tmp_path):
+    cache = ExtractionCache(tmp_path / "record.json")
+    tool = ExtractSourceValueTool(_RecordingBackend(), cache=cache,
+                                  cache_mode="record")
+    await tool.run(_pinned_payload(extraction_profile="targeted_v6"))
+    body = json.loads((tmp_path / "record.json").read_text(encoding="utf-8"))
+    assert list(body["entries"]) == [TARGETED_V6_CACHE_KEY]
+
+
+@pytest.mark.asyncio
+async def test_v6_is_v4_with_only_the_cohort_examples_replaced():
+    """The point of v6, stated as an invariant rather than as two hashes.
+
+    Two independent hashes would stay green if a rule were tightened in v6 and
+    not v4, which would make an A/B between them measure two changes at once.
+    """
+    v4, v6 = await _rendered("targeted_v4"), await _rendered("targeted_v6")
+    assert _rules_block(v4) != _rules_block(v6)
+    assert v4.replace(_rules_block(v4), _rules_block(v6)) == v6, (
+        "v4 and v6 differ somewhere other than the cohort examples, so an A/B "
+        "between them would not isolate the wording change")
+
+
+@pytest.mark.asyncio
+async def test_v6_names_no_disease_while_v4_still_does():
+    """v4 keeps its recorded wording; only v6 is neutral.
+
+    The cohorts come from the request, so a neutral request is used: what must
+    contain no disease is the TEMPLATE, not a review's own labels.
+    """
+    neutral = {"cohorts": {"arm_a": ["Arm A"], "control": ["Controls"]}}
+    v4 = (await _rendered("targeted_v4", **neutral)).lower()
+    v6 = (await _rendered("targeted_v6", **neutral)).lower()
+
+    def names(term: str, prompt: str) -> bool:
+        # Whole words only: "eft" occurs inside "left_label" and "eat" inside
+        # "repeated", and neither is this domain leaking into the prompt.
+        return re.search(rf"\b{term}\b", prompt) is not None
+
+    for term in ("diabetic", "diabetes", "t1dm", "eat", "eft"):
+        assert not names(term, v6), f"targeted_v6 still names {term!r}"
+    assert names("diabetic", v4), (
+        "v4 was edited to be neutral — that silently invalidates the melanoma "
+        "recordings; neutral wording is what v6 is for")
+
+
+@pytest.mark.asyncio
+async def test_v6_asks_the_model_to_enumerate_arms_like_v4():
+    """A neutral prompt that lost the enumerate-then-assign sections would be a
+    different contract wearing a wording change's name."""
+    assert uses_targeted_sections("targeted_v6")
+    assert uses_targeted_sections("targeted_v4")
+    assert not uses_targeted_sections("legacy_v3")
+    assert _TARGETED_MARKER in await _rendered("targeted_v6")
+
+
+def test_v6_version_string_is_registered_and_distinct():
+    assert prompt_version("targeted_v6") == TARGETED_V6
+    assert len({LEGACY_V3, TARGETED_V4, TARGETED_V6}) == 3
+
+
+def test_an_unknown_profile_cannot_be_read_as_not_targeted():
+    """Returning False would render the legacy body under an undefined name."""
+    with pytest.raises(ValueError, match="unknown extraction profile"):
+        uses_targeted_sections("targeted_v7")

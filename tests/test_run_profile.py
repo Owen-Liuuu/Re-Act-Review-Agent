@@ -65,6 +65,53 @@ def test_the_phase8_v8_contract_pins_the_evidence_gate_identity():
     assert contract.identity()["adequacy_evaluator_version"] == "1.0.0"
 
 
+def test_the_v9_contract_moves_the_single_claim_route_and_nothing_else():
+    """v9's whole claim is that only the arm-identity prompt changed.
+
+    Asserted as a diff against v8 rather than by restating v9's fields: a test
+    that listed them would pass while some other axis had silently moved too,
+    and a run whose result differed would then have two candidate causes.
+    """
+    v8 = json.loads((PROFILES / "phase8_batch_v8.json").read_text(
+        encoding="utf-8-sig"))
+    v9 = json.loads((PROFILES / "phase8_batch_v9.json").read_text(
+        encoding="utf-8-sig"))
+
+    # Prose and identity are expected to differ; behaviour is not.
+    narrative = {"profile_id", "written_on", "purpose", "why_routed",
+                 "supersedes", "why_v8", "why_v9", "extraction_routes"}
+    assert {k: v for k, v in v9.items() if k not in narrative} == \
+        {k: v for k, v in v8.items() if k not in narrative}
+
+    assert v9["extraction_routes"] == {"value": "targeted_v5_batch",
+                                       "arm_identity": "targeted_v6"}
+    assert v8["extraction_routes"]["value"] == v9["extraction_routes"]["value"]
+    assert v9["supersedes"] == "phase8_batch_v8.json"
+
+
+def test_v9_keeps_table_capture_on_the_baseline_the_ab_gate_chose():
+    """The neutral TableCapture candidate regressed, so v9 must not adopt it.
+
+    Neutral wording is not the principle being applied — "not shown to cost
+    anything" is. Promoting table_capture_v2 here would contradict the B2
+    diagnostic while looking like the same tidy-up.
+    """
+    contract = load_run_contract(PROFILES / "phase8_batch_v9.json")
+    assert contract.table_capture_prompt_profile == "table_capture_v1"
+
+
+def test_the_v9_contract_loads_and_routes_arm_identity_to_the_neutral_prompt():
+    from react_review.tools.extraction_profile import uses_targeted_sections
+
+    contract = load_run_contract(PROFILES / "phase8_batch_v9.json")
+    assert contract.schema_version == 4
+    assert contract.adequacy_enabled is True
+    assert contract.extraction_routes["arm_identity"] == "targeted_v6"
+    # A neutral prompt that lost the enumerate-then-assign sections would be a
+    # different contract wearing a wording change's name.
+    assert uses_targeted_sections(contract.extraction_routes["arm_identity"])
+
+
 def test_only_the_phase8_table_makes_counts_exact():
     """A head count is a count; everything else keeps the bands it had.
 

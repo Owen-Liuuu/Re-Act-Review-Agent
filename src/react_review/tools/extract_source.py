@@ -32,6 +32,7 @@ from react_review.tools.extraction_profile import (
     LEGACY_V3,
     prompt_profile,
     prompt_version,
+    uses_targeted_sections,
 )
 from react_review.tools.value_components import (
     PROTOCOL_ERROR,
@@ -93,13 +94,7 @@ The paper may name this field using: {concept_variants}
 Expected unit (hint, may differ in the paper): "{unit_hint}"
 {targeted_target}
 ## RULES
-- PREFER the data table (e.g. Table 1) over prose. A narrative sentence like
-  "Regarding diabetic children, the mean age was X" reports only ONE cohort —
-  NEVER reuse that number for another cohort, even if the paper says the groups
-  "did not differ significantly".
-- Tables list cohorts as COLUMNS in a fixed order — a row reads e.g.
-  "Age (years) | <diabetic value> | <control value> | <P value>". Identify which
-  column is the {group_desc} and read THAT column's cell in the target row.
+{cohort_rules}
 - First list every cohort/column the paper reports for this field in ``cohorts_seen``.
 - Set ``group_label_in_paper`` to the paper's own name for the cohort you took the
   value from; it MUST be the {group_desc}. Your quote MUST be the {group_desc}'s
@@ -136,6 +131,32 @@ Expected unit (hint, may differ in the paper): "{unit_hint}"
   "cohort_partition_reason": "why coverage/exclusivity is clear or unclear",
   "not_found_reason": "when found=false, why — otherwise empty"{targeted_outputs}}}
 """
+
+#: The two rules whose worked examples name cohorts. Held apart from the rest of
+#: the prompt because they are the only part that has to differ per profile, and
+#: because substituting a whole second copy of the template would let the shared
+#: rules drift between profiles without any test noticing.
+#:
+#: V3 is what Phase 6 and the melanoma benchmark were recorded under. Its bytes
+#: are frozen: the disease names below are not a style choice to be tidied, they
+#: are the recorded question, and editing them is what makes every replay a miss.
+_COHORT_RULES_V3 = """- PREFER the data table (e.g. Table 1) over prose. A narrative sentence like
+  "Regarding diabetic children, the mean age was X" reports only ONE cohort —
+  NEVER reuse that number for another cohort, even if the paper says the groups
+  "did not differ significantly".
+- Tables list cohorts as COLUMNS in a fixed order — a row reads e.g.
+  "Age (years) | <diabetic value> | <control value> | <P value>". Identify which
+  column is the {group_desc} and read THAT column's cell in the target row."""
+
+#: The same two rules with the examples written as placeholders, so a review from
+#: another field is not handed one disease as the shape of the answer.
+_COHORT_RULES_V6 = """- PREFER the data table (e.g. Table 1) over prose. A narrative sentence that
+  names ONE cohort ("In <cohort A>, the mean age was X") reports that cohort
+  only — NEVER reuse its number for another cohort, even if the paper says the
+  groups "did not differ significantly".
+- Tables list cohorts as COLUMNS in a fixed order — a row reads e.g.
+  "Age (years) | <cohort A value> | <cohort B value> | <P value>". Identify which
+  column is the {group_desc} and read THAT column's cell in the target row."""
 
 _TARGETED_ARM = """
 The requested target is ONE arm. Do not decide which of the paper's arms it is —
@@ -280,7 +301,7 @@ class ExtractSourceValueInput(BaseModel):
     cohort_display: str = ""
     cohorts: dict[str, list[str]] = {}
     # WHEN and WHICH EFFECT, carried from the review. Present from P8 D1-0 but
-    # not rendered by the legacy or targeted_v4 prompts, whose bytes are frozen;
+    # not rendered by any single-target prompt, whose bytes are frozen;
     # the v5 batch contract is where they are asked for and guarded. A timepoint
     # that only exists in a cache key cannot stop the model returning the wrong
     # one, which is why it has to travel with the request first.
@@ -392,8 +413,9 @@ class ExtractSourceValueTool(Tool):
         profile = prompt_profile(payload)
         if profile == "targeted_v5_batch":
             # The second gate. A v5 request reaching here would be built with the
-            # LEGACY prompt body — only targeted_v4 turns the targeted sections
-            # on — and cached under the v5 prompt version: neither contract, and
+            # LEGACY prompt body — v5 is not one of the profiles that turn the
+            # targeted sections on — and cached under the v5 prompt version:
+            # neither contract, and
             # written into the namespace of the one it is not. The startup gate
             # should make this unreachable; this is what makes a hole in the
             # startup gate a crash rather than a poisoned recording.
@@ -402,26 +424,29 @@ class ExtractSourceValueTool(Tool):
                 "That path builds the legacy prompt and would record it under the "
                 "v5 cache namespace, which is neither contract. Route it to the "
                 "batch tool or fail the run")
-        targeted = profile == "targeted_v4"
+        targeted = uses_targeted_sections(profile)
+        group_desc = (
+            # A comparison is not a cohort. Describing "a_vs_b" as a cohort
+            # asked the paper for an arm by that name, which no paper has.
+            f'comparison of "{payload.comparison.left}" versus '
+            f'"{payload.comparison.right}"'
+            if targeted and payload.comparison is not None else
+            cohort_description(
+                payload.group, display=payload.cohort_display,
+                variants=payload.cohorts.get(payload.group, [])))
         prompt = _PROMPT.format(
             targeted_target=(_targeted_target(payload) if targeted else ""),
             targeted_rules=(_TARGETED_RULES if targeted else ""),
             targeted_outputs=(_TARGETED_OUTPUTS if targeted else ""),
+            cohort_rules=(_COHORT_RULES_V6 if profile == "targeted_v6"
+                          else _COHORT_RULES_V3).format(group_desc=group_desc),
             context=payload.research_context or "a systematic review",
             concept=target,
             raw_label=payload.raw_field_name or target,
             field_type=payload.field_type or "(unresolved)",
             concept_variants=(", ".join(payload.concept_variants)
                               or raw_or_target(payload.raw_field_name, target)),
-            group_desc=(
-                # A comparison is not a cohort. Describing "a_vs_b" as a cohort
-                # asked the paper for an arm by that name, which no paper has.
-                f'comparison of "{payload.comparison.left}" versus '
-                f'"{payload.comparison.right}"'
-                if targeted and payload.comparison is not None else
-                cohort_description(
-                    payload.group, display=payload.cohort_display,
-                    variants=payload.cohorts.get(payload.group, []))),
+            group_desc=group_desc,
             unit_hint=payload.unit_hint,
             sample_size_rules=(
                 _SAMPLE_SIZE_RULES if payload.field_type == "sample_size" and
@@ -502,7 +527,7 @@ def _targeted_applies(payload: ExtractSourceValueInput) -> bool:
     A study-level row ("-") is about the whole paper: there is no arm to pick,
     and forcing an assignment would refuse rows that were never at risk.
     """
-    if prompt_profile(payload) != "targeted_v4":
+    if not uses_targeted_sections(prompt_profile(payload)):
         return False
     if payload.comparison is not None:
         return True

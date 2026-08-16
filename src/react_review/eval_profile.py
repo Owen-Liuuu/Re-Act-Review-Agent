@@ -45,6 +45,7 @@ from react_review.run_profile import (
     legacy_contract,
     load_run_contract,
 )
+from react_review.tools.extraction_profile import PROMPT_VERSIONS
 
 SCHEMA_VERSION = 1
 #: v3 routes by claim kind instead of naming one extraction profile, so a
@@ -52,7 +53,10 @@ SCHEMA_VERSION = 1
 #: v2 keep their meaning and their bytes.
 SCHEMA_VERSIONS = (1, 2, 3, 4)
 
-EXTRACTION_PROFILES = ("legacy_v3", "targeted_v4", "targeted_v5_batch")
+#: Derived rather than restated: a profile added to the prompt-contract module
+#: and forgotten here would be refused by benchmarks while production accepted
+#: it, and the error would name the benchmark file rather than the omission.
+EXTRACTION_PROFILES = tuple(sorted(PROMPT_VERSIONS))
 SEMANTIC_PROFILES = ("semantic_v1", "semantic_v2_specificity")
 
 # Exactly the columns each contract file may carry. An unexpected column is a

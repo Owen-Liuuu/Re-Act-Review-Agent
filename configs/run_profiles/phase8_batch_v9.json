@@ -1,0 +1,42 @@
+{
+  "schema_version": 4,
+  "profile_id": "phase8_batch_v9",
+  "written_on": "2026-08-16",
+  "purpose": "phase8_batch_v8 with the single-claim route moved to the domain-neutral extraction prompt. Nothing else moves: the same evidence gate, aggregation policy, evaluator, tolerance table and TableCapture prompt as v8, so a difference between the two runs is attributable to the prompt wording alone.",
+  "why_routed": "Values are read in batches and arm identities one at a time, unchanged from v8. What changes is WHICH single-claim prompt: targeted_v6 asks targeted_v4's question with its cohort examples written as placeholders instead of one review's disease and arm names, so a review from another field is not handed one domain as the shape of the answer.",
+  "extraction_routes": {
+    "value": "targeted_v5_batch",
+    "arm_identity": "targeted_v6"
+  },
+  "aggregation_policy_id": "safe_sum_v5",
+  "evaluator_version": "1.8.2",
+  "semantic_prompt_profile": "semantic_v2_specificity",
+  "table_capture_prompt_profile": "table_capture_v1",
+  "table_capture_prompt_id": "table_capture_v1",
+  "table_capture_prompt_hash": "3AAC303F18EC25CEEFEB7C3B8D2D0507DFA8A00A912BA5ECB5FB8242B9E9A6B6",
+  "adequacy_policy_id": "evidence_adequacy_v1",
+  "adequacy_policy_hash": "9DA56A30430B6B2B78C4A051DA9DB620A559A6802E3DDBA606551C5ECCD42FC4",
+  "adequacy_evaluator_id": "evidence_adequacy",
+  "adequacy_evaluator_version": "1.0.0",
+  "adequacy_evaluator_hash": "sha256:4c04abf8b32e959b74d9dd6e0100c5c49c10ba09a31f727a1f39c3c1266e1931",
+  "tolerances": "../tolerances.phase8.yaml",
+  "tolerances_sha256": "B2C217445C1AC7CF9F140ACC97459278B9A76D269FBF41D12E49115EB1269EDF",
+  "population_contract": null,
+  "context_policy": "cli_then_parsed",
+  "scope_policy": "on",
+  "required_scope_axes": {
+    "sample_size": [
+      "population_basis"
+    ],
+    "cohort_n": [
+      "population_basis"
+    ],
+    "event_count": [
+      "population_basis",
+      "analysis_set"
+    ]
+  },
+  "supersedes": "phase8_batch_v8.json",
+  "compare_version": "1.0.0",
+  "why_v9": "TableCapture stays on v1 deliberately. Its domain-neutral candidate was measured against v1 in docs/acceptance/table_capture_ab_v1.md and regressed (35 hallucinated cells against 2, cell accuracy 0.6863 against 0.9085), so the same reasoning that motivates targeted_v6 does not license promoting table_capture_v2. This profile changes the one prompt where the wording change has not yet been shown to cost anything, and leaves the one where it has."
+}
