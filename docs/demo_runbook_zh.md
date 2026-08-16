@@ -18,7 +18,7 @@
 python -m pytest -q
 ```
 
-预期 `1556 passed, 2 skipped`。两个跳过都是有意的:一个要 `RUN_LIVE_LLM=1` 才会去调真实模型,一个在 evaluator 已冻结时无事可做。
+预期 `1554 passed, 2 skipped`。两个跳过都是有意的:一个要 `RUN_LIVE_LLM=1` 才会去调真实模型,一个在 evaluator 已冻结时无事可做。
 
 ```bash
 python eval/run_full_accuracy.py --extraction replay --extraction-cache output/baselines/phase6_0d_final_extraction_replay.json

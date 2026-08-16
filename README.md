@@ -65,6 +65,8 @@ src/react_review/
   llm/           backend ABC + retry engine + provider adapters
 eval/            frozen EAT and melanoma benchmarks + accuracy runners
 docs/            architecture, limitations, sanitized baselines, deferred issues
+                 version_numbering_zh.md maps the six independent v-number
+                 namespaces and says which one production runs
 tests/           unit + integration (mock-mode) tests
 ```
 
