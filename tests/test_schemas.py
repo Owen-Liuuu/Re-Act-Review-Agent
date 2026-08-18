@@ -1,8 +1,6 @@
 """Tests for Pydantic data models."""
 from __future__ import annotations
 
-from react_review.core.enums import PipelineStep, ValidationSeverity, VerificationStatus
-from react_review.pipeline.schemas import StudentReviewInput, ValidationFlag
 from react_review.steps.data_extraction.schemas import ExtractedField, ExtractedTable
 from react_review.steps.paper_verification.schemas import ReferenceEntry
 from react_review.steps.search_validation.schemas import SearchStrategy
@@ -66,25 +64,6 @@ def test_extracted_table():
     )
     assert len(table.fields) == 2
     assert table.extractor_id == "test-extractor"
-
-
-def test_validation_flag():
-    """ValidationFlag should capture step and severity."""
-    flag = ValidationFlag(
-        step=PipelineStep.SEARCH_VALIDATION,
-        severity=ValidationSeverity.WARNING,
-        code="COUNT_MISMATCH",
-        message="Result count differs",
-    )
-    assert flag.step == PipelineStep.SEARCH_VALIDATION
-    assert flag.severity == ValidationSeverity.WARNING
-
-
-def test_student_review_input(sample_student_input: StudentReviewInput):
-    """StudentReviewInput should be constructable from fixtures."""
-    assert sample_student_input.student_id == "test-student-001"
-    assert len(sample_student_input.selected_papers) == 2
-    assert len(sample_student_input.submitted_tables) == 1
 
 
 def test_model_serialization():

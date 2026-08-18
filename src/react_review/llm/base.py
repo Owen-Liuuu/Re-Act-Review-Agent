@@ -82,6 +82,16 @@ class LLMBackend(ABC):
         ``self._compute_retry_delay`` to handle HTTP 429 responses.
         """
 
+    async def complete_vision(
+        self, prompt: str, images: list[bytes], *, seed: int = 42,
+    ) -> str:
+        """Send a prompt plus images. Optional — text-only backends keep this.
+
+        Not abstract: Mock / Claude / Gemini / Qwen stay instantiable until a
+        vision adapter is written for them. The default raises.
+        """
+        raise NotImplementedError(f"{self.model_id} has no vision path")
+
     # ------------------------------------------------------------------
     # Shared retry helper
     # ------------------------------------------------------------------
@@ -192,7 +202,7 @@ def parse_llm_response(raw: str, model_id: str) -> dict:
     # mis-encode ± etc. and the model echoes them) instead of hard-failing.
     # Try direct parse first
     try:
-        return json.loads(raw, strict=False)
+        return _parsed(json.loads(raw, strict=False), model_id)
     except json.JSONDecodeError:
         pass
 
@@ -200,7 +210,7 @@ def parse_llm_response(raw: str, model_id: str) -> dict:
     match = re.search(r"```(?:json)?\s*\n?(.*?)```", raw, re.DOTALL)
     if match:
         try:
-            return json.loads(match.group(1).strip(), strict=False)
+            return _parsed(json.loads(match.group(1).strip(), strict=False), model_id)
         except json.JSONDecodeError:
             pass
 
@@ -208,7 +218,7 @@ def parse_llm_response(raw: str, model_id: str) -> dict:
     match = re.search(r"\{.*\}", raw, re.DOTALL)
     if match:
         try:
-            return json.loads(match.group(0), strict=False)
+            return _parsed(json.loads(match.group(0), strict=False), model_id)
         except json.JSONDecodeError:
             pass
 
@@ -216,3 +226,9 @@ def parse_llm_response(raw: str, model_id: str) -> dict:
         f"Failed to parse JSON from {model_id} response. "
         f"Raw output (first 200 chars): {raw[:200]}"
     )
+
+
+def _parsed(data: dict, model_id: str) -> dict:
+    from react_review.llm.prompt_placeholders import warn_echoed_placeholders
+    warn_echoed_placeholders(data, model_id=model_id)
+    return data

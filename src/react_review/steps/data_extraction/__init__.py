@@ -1,6 +1,9 @@
-"""Step 3: Data extraction and table generation."""
+"""Paper documents and extracted-table models.
 
-from react_review.steps.data_extraction.interfaces import Extractor
+Shared by the audit pipeline, the retrieval chain and the evidence schemas: a
+``PaperDocument`` plus how much of the paper it represents (``DocumentScope``).
+"""
+
 from react_review.steps.data_extraction.schemas import (
     DocumentScope,
     ExtractedField,
@@ -10,7 +13,6 @@ from react_review.steps.data_extraction.schemas import (
 
 __all__ = [
     "DocumentScope",
-    "Extractor",
     "ExtractedField",
     "ExtractedTable",
     "PaperDocument",

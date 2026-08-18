@@ -14,7 +14,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_TRANSITION = ROOT / "eval" / "benchmark" / "evidence_adequacy_transition_v1.csv"
+DEFAULT_TRANSITION = ROOT / "eval" / "benchmark_1" / "evidence_adequacy_transition_v1.csv"
 
 COLUMNS = (
     "audit_id",

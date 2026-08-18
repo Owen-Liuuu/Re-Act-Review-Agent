@@ -13,6 +13,7 @@ from react_review.checklist.schema import (
     ChecklistItem,
 )
 from react_review.normalize.numeric import parse_numeric
+from react_review.normalize.study_key import best_identity_match
 from react_review.schemas.evidence import ReviewDataItem
 from react_review.schemas.table import CapturedTableSet
 
@@ -63,6 +64,23 @@ def _excerpt(text: str, needles: list[str], width: int = 120) -> str:
     return ""
 
 
+def _paired_study_id(claim_sid: str, study_ids: list[str] | None) -> str | None:
+    """Map a table join key onto an approved citation id when we have one.
+
+    Table rows keep the review's printed words (``Smith 2020``); the approved
+    reference list stores a compact alias (``smith_2020``). Coverage must pair
+    them the same way the rest of the run does, or a per-study question looks
+    unanswered after the human already approved the citation.
+    """
+    if not claim_sid:
+        return None
+    if study_ids is None:
+        return claim_sid
+    if claim_sid in study_ids:
+        return claim_sid
+    return best_identity_match(claim_sid, [(sid, "") for sid in study_ids])
+
+
 def _expected_targets(
     item: ChecklistItem, review_items: list[ReviewDataItem],
     study_ids: list[str] | None,
@@ -78,20 +96,24 @@ def _expected_targets(
         return [("", "-")]
     if item.scope == "per_study":
         return [(study_id, "-") for study_id in studies]
-    approved = set(studies)
     cohorts = list(dict.fromkeys(
-        (claim.study_id, claim.group) for claim in review_items
+        (_paired_study_id(claim.study_id, study_ids), claim.group)
+        for claim in review_items
         if claim.study_id and claim.group not in ("", "-")
-        and (study_ids is None or claim.study_id in approved)))
-    return cohorts
+        and _paired_study_id(claim.study_id, study_ids)))
+    return [(sid, group) for sid, group in cohorts if sid]
 
 
-def _target_for(item: ChecklistItem, claim: ReviewDataItem) -> tuple[str, str]:
+def _target_for(
+    item: ChecklistItem, claim: ReviewDataItem,
+    study_ids: list[str] | None = None,
+) -> tuple[str, str]:
     if item.scope == "review":
         return "", "-"
+    sid = _paired_study_id(claim.study_id, study_ids) or claim.study_id
     if item.scope == "per_study":
-        return claim.study_id, "-"
-    return claim.study_id, claim.group
+        return sid, "-"
+    return sid, claim.group
 
 
 def apply_checklist(
@@ -135,7 +157,7 @@ def apply_checklist(
             for claim in review_items:
                 if not _claim_matches(item, claim):
                     continue
-                evidence_by_target[_target_for(item, claim)].append(ChecklistEvidence(
+                evidence_by_target[_target_for(item, claim, study_ids)].append(ChecklistEvidence(
                     source="review_item", checklist_id=item.id,
                     study_id=claim.study_id, group=claim.group,
                     field_type=claim.field_type, table_id=claim.table_id,

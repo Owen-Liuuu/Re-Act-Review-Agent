@@ -334,7 +334,7 @@ def main(argv=None) -> int:
         prog="d1_7_preflight",
         description="Enumerate the recordings a D1-7 run needs, without making any.")
     ap.add_argument("--benchmark", type=Path,
-                    default=REPO / "eval/benchmarks/melanoma_checkpoint_2017")
+                    default=REPO / "eval/benchmark_2")
     ap.add_argument("--benchmark-profile", default="phase8_batch_v7_profile.json")
     ap.add_argument("--cache", type=Path, default=None,
                     help="the cache the RECORDING run would use")

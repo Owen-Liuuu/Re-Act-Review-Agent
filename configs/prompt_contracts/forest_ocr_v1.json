@@ -1,0 +1,17 @@
+{
+  "prompt_id": "forest_ocr_v1",
+  "prompt_version": "forest-ocr-v1",
+  "written_on": "2026-08-17",
+  "hash_algorithm": "sha256-rendered-utf8-v1",
+  "renderer_identity": "react_review.review_extraction.render.v1",
+  "purpose": "Parse a forest-plot text dump into per-study Events/Total. Empty grid when unreadable; never invent events.",
+  "boundary": "The rendered prompt bytes sent to the model, using the model-independent fixture input below. Python comments, helper names and source layout are outside the boundary.",
+  "governance": "Do not edit this prompt or replace this hash. A model-visible change is a new prompt profile and a new contract file.",
+  "fixture_inputs": {
+    "figure_id": "fig_3_3_1",
+    "caption": "Figure 3.3.1 Forest plot of overall complications",
+    "outcomes": "overall complications",
+    "figure_text": "Li J 2015 23 58 32 54 Total (Wald)"
+  },
+  "rendered_prompt_sha256": "B3FD113CB31607A4BA4B19983F6534708BDE7DE51E77B85AA9B00A2B63458440"
+}

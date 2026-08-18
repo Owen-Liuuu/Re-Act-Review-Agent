@@ -34,6 +34,17 @@ llm2:
   api_key: ""
   max_concurrency: 3
 
+# Optional vision backend for raster figures (forest plots, etc.).
+# Separate from llm2 — that slot is the cross-check judge.
+# Model name is config-only; the adapter is not pinned to a GLM SKU.
+vision:
+  provider: glm
+  model: glm-4.6v-flash      # free tier; may 429 (code 1305)
+  base_url: "https://open.bigmodel.cn/api/paas/v4"
+  api_key: ""
+  temperature: 0.1
+  max_retries: 8             # free-tier congestion is common; back off longer
+
 pubmed:
   api_key: ""                     # NCBI E-utilities key (optional; raises rate limit)
   base_url: "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"

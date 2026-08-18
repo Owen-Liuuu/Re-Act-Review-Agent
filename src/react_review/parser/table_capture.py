@@ -9,8 +9,13 @@ have meaning", and if it is wrong, stop and fix it rather than proceeding.
 So the prompt asks for a faithful transcription and for the model to say what it
 could not read, and the checkpoint offers RETRY (re-transcribe), a per-table drop,
 and STOP.
+
+v1/v2 transcribe every data table in the text. v3 transcribes only the displays
+Review Extraction already selected, and must not invent forest-plot cells.
 """
 from __future__ import annotations
+
+import json
 
 import structlog
 
@@ -30,7 +35,7 @@ logger = structlog.get_logger(__name__)
 
 
 # Backwards-compatible import for tests/tools that observed the old production
-# constant.  Production remains v1 until the A/B gate explicitly promotes v2.
+# constant.  Frozen A/B stays on v1; new runs default to v3.
 _CAPTURE = PROMPT_TEMPLATES[DEFAULT_TABLE_CAPTURE_PROFILE]
 
 
@@ -42,18 +47,19 @@ class TableCapturer:
         self._backend = backend
         self._alt = alt_backend
         # Validate at construction, before the first model call.
-        render_table_capture_prompt(prompt_profile, text="")
+        render_table_capture_prompt(prompt_profile, text="", selected="[]")
         self.prompt_profile = prompt_profile
 
     async def capture(
         self, text: str, *, reporter: StepReporter, pdf_path: str = "",
         keep: set[str] | None = None, drop: set[str] | None = None,
+        selected: list[dict] | None = None,
     ) -> tuple[CapturedTableSet, str]:
         """Return the approved tables and the extracted research context."""
         backend = self._backend
         seed = 42
         while True:
-            raw = await self._transcribe(backend, text, seed)
+            raw = await self._transcribe(backend, text, seed, selected=selected)
             tables = _parse_tables(raw)
             context = str(raw.get("research_context") or "").strip()
             table_set = CapturedTableSet(tables=tables, source_pdf=pdf_path)
@@ -82,9 +88,13 @@ class TableCapturer:
                 table_set = table_set.keep_only(kept, reason="dropped at checkpoint")
             return table_set, context
 
-    async def _transcribe(self, backend: LLMBackend, text: str, seed: int) -> dict:
+    async def _transcribe(self, backend: LLMBackend, text: str, seed: int,
+                          selected: list[dict] | None = None) -> dict:
         try:
-            prompt = render_table_capture_prompt(self.prompt_profile, text=text)
+            prompt = render_table_capture_prompt(
+                self.prompt_profile, text=text,
+                selected=json.dumps(selected or [], ensure_ascii=False),
+            )
             raw = await backend.complete(prompt, seed=seed)
             return parse_llm_response(raw, backend.model_id)
         except Exception as exc:                                   # noqa: BLE001

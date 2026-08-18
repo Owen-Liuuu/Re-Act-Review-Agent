@@ -20,8 +20,7 @@ from react_review.eval_profile import (
     sha256_file,
 )
 
-BENCHMARK = (Path(__file__).resolve().parents[1] / "eval" / "benchmarks"
-             / "melanoma_checkpoint_2017")
+BENCHMARK = Path(__file__).resolve().parents[1] / "eval" / "benchmark_2"
 ANSWER_KEY = BENCHMARK / "audit_template.csv"
 
 

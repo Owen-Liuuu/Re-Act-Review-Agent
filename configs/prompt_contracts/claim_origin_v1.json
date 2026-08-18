@@ -1,0 +1,20 @@
+{
+  "prompt_id": "claim_origin_v1",
+  "prompt_version": "claim-origin-v1",
+  "written_on": "2026-08-17",
+  "hash_algorithm": "sha256-rendered-utf8-v1",
+  "renderer_identity": "react_review.review_extraction.render.v1",
+  "purpose": "Per-column source_paper vs review_computed labels.",
+  "boundary": "The rendered prompt bytes sent to the model, using the model-independent fixture input below. Python comments, helper names and source layout are outside the boundary.",
+  "governance": "Do not edit this prompt or replace this hash. A model-visible change is a new prompt profile and a new contract file.",
+  "fixture_inputs": {
+    "lens": "one line: elderly ESCC, MIE vs OE, postoperative complications",
+    "table_id": "fig_3_3_1",
+    "caption": "Figure 3.3.1 Forest plot of overall complications",
+    "column_paths": "[\"Study or Subgroup\", \"Events\", \"Total\", \"Odds ratio\", \"Weight\"]",
+    "sample_rows": "[[\"Li J 2015\", \"23\", \"58\", \"0.40\", \"12%\"]]",
+    "pooled_rows": "[[\"2\", \"Total (Wald)\", \"58\", \"102\"]]",
+    "footnotes": "[]"
+  },
+  "rendered_prompt_sha256": "77D171E95D8E7C1656984CB63CBF1C8B7B33783B01E5200BDD401F5CE61843B1"
+}

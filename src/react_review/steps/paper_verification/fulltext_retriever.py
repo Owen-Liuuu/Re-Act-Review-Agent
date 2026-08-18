@@ -179,9 +179,9 @@ class FullTextRetriever(PaperRetriever):
         """Search for a PMC ID using the paper's DOI.
 
         IMPORTANT: Only searches by DOI, NOT by title. Title search in PMC
-        is highly unreliable and frequently returns unrelated papers with
-        similar keywords (e.g. other diabetes/EAT papers instead of the
-        target paper). DOI is the only reliable identifier.
+        is highly unreliable and frequently returns unrelated papers that
+        merely share the target's topic keywords. DOI is the only reliable
+        identifier.
         """
         if not reference.doi:
             return None
@@ -633,6 +633,9 @@ class FullTextRetriever(PaperRetriever):
         }
         if self._api_key:
             params["api_key"] = self._api_key
+
+        if (reference.pmid or "").strip():
+            return str(reference.pmid).strip()
 
         if reference.doi:
             params["term"] = f"{reference.doi}[doi]"

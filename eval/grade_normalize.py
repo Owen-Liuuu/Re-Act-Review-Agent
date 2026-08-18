@@ -20,7 +20,7 @@ from react_review.dkb import FieldResolver, load_runtime_knowledge
 
 ROOT = Path(__file__).resolve().parents[1]
 SEED = ROOT / "configs" / "knowledge.seed.json"
-BENCH = ROOT / "eval" / "benchmark" / "review_ground_truth.csv"
+BENCH = ROOT / "eval" / "benchmark_1" / "review_ground_truth.csv"
 CONTEXT = "EAT thickness/volume in type 1 diabetes vs healthy controls"
 
 

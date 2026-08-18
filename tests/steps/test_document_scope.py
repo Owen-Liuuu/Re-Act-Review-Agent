@@ -7,7 +7,6 @@ import pytest
 
 from react_review.agents.collector import _provenance
 from react_review.core.config import AppConfig, PubMedSettings
-from react_review.pipeline.factory import create_pipeline
 from react_review.orchestrator.audit_pipeline import AuditPipeline
 from react_review.retrieval.local_pdf import LocalPdfRetriever
 from react_review.schemas.agent import AgentRun, StepRecord
@@ -219,17 +218,6 @@ def test_real_catalogue_wires_unpaywall_enabled_flag():
     fetch = build_catalogue(config).get("fetch_fulltext")
 
     assert fetch._retriever._unpaywall_enabled is False
-
-
-def test_real_pipeline_wires_unpaywall_enabled_flag():
-    config = AppConfig(
-        mock_mode=False,
-        unpaywall={"enabled": False, "email": "configured@example.org"},
-    )
-
-    pipeline = create_pipeline(config)
-
-    assert pipeline._paper_retriever._unpaywall_enabled is False
 
 
 def test_collection_summary_reports_each_document_scope_separately():

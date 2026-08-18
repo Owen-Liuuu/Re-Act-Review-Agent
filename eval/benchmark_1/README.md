@@ -1,5 +1,7 @@
 # Ground-truth benchmark: Sooragonda 2025 EAT/T1DM SRMA
 
+On disk: `eval/benchmark_1`.
+
 Hand-labelled benchmark for evaluating ReAct-Review's Parser (review-side
 extraction) and Auditor (review-vs-source cross-validation).
 

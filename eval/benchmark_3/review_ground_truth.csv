@@ -1,0 +1,63 @@
+review_data_id,study_id,group,timepoint,field_type,raw_field_name,value,unit,source_location,outcome,capture
+R001,li j_2015,-,single,country,Country,China,,Table 1,characteristics,table_text
+R002,li j_2015,-,single,publication_year,Year,2015,,Table 1,characteristics,table_text
+R003,li j_2015,-,single,study_design,Design,Retrospective PSM cohort,,Table 1,characteristics,table_text
+R004,li j_2015,all,single,age,Age,>70 years,years,Table 1,characteristics,table_text
+R005,li j_2015,mie,single,subgroup_n,N MIE,58 (matched),count,Table 1,characteristics,table_text
+R006,li j_2015,oe,single,subgroup_n,N OE,58 (matched),count,Table 1,characteristics,table_text
+R007,capovilla_2023,-,single,country,Country,Italy + Germany,,Table 1,characteristics,table_text
+R008,capovilla_2023,-,single,publication_year,Year,2023,,Table 1,characteristics,table_text
+R009,capovilla_2023,-,single,study_design,Design,Multicenter retrospective matched,,Table 1,characteristics,table_text
+R010,capovilla_2023,all,single,age,Age,≥75 years,years,Table 1,characteristics,table_text
+R011,capovilla_2023,mie,single,subgroup_n,N MIE,58,count,Table 1,characteristics,table_text
+R012,capovilla_2023,oe,single,subgroup_n,N OE,102 / 58*,count,Table 1,characteristics,table_text
+R013,li k_2025,-,single,country,Country,China,,Table 1,characteristics,table_text
+R014,li k_2025,-,single,publication_year,Year,2025,,Table 1,characteristics,table_text
+R015,li k_2025,-,single,study_design,Design,Retrospective PSM cohort,,Table 1,characteristics,table_text
+R016,li k_2025,all,single,age,Age,>70 years,years,Table 1,characteristics,table_text
+R017,li k_2025,mie,single,subgroup_n,N MIE,92 (matched),count,Table 1,characteristics,table_text
+R018,li k_2025,oe,single,subgroup_n,N OE,55 (matched),count,Table 1,characteristics,table_text
+R019,capovilla_2023,mie,single,events,Minimally Invasive Esophagectomy (MIE) Events,23,count,forest_1,Overall Postoperative Complications,figure_ocr
+R020,capovilla_2023,mie,single,subgroup_n,Minimally Invasive Esophagectomy (MIE) Total,58,count,forest_1,Overall Postoperative Complications,figure_ocr
+R021,capovilla_2023,oe,single,events,Open Esophagectomy (OE) Events,64,count,forest_1,Overall Postoperative Complications,figure_ocr
+R022,capovilla_2023,oe,single,subgroup_n,Open Esophagectomy (OE) Total,102,count,forest_1,Overall Postoperative Complications,figure_ocr
+R023,li j_2015,mie,single,events,Minimally Invasive Esophagectomy (MIE) Events,22,count,forest_1,Overall Postoperative Complications,figure_ocr
+R024,li j_2015,mie,single,subgroup_n,Minimally Invasive Esophagectomy (MIE) Total,58,count,forest_1,Overall Postoperative Complications,figure_ocr
+R025,li j_2015,oe,single,events,Open Esophagectomy (OE) Events,35,count,forest_1,Overall Postoperative Complications,figure_ocr
+R026,li j_2015,oe,single,subgroup_n,Open Esophagectomy (OE) Total,58,count,forest_1,Overall Postoperative Complications,figure_ocr
+R027,li k_2025,mie,single,events,Minimally Invasive Esophagectomy (MIE) Events,42,count,forest_1,Overall Postoperative Complications,figure_ocr
+R028,li k_2025,mie,single,subgroup_n,Minimally Invasive Esophagectomy (MIE) Total,92,count,forest_1,Overall Postoperative Complications,figure_ocr
+R029,li k_2025,oe,single,events,Open Esophagectomy (OE) Events,37,count,forest_1,Overall Postoperative Complications,figure_ocr
+R030,li k_2025,oe,single,subgroup_n,Open Esophagectomy (OE) Total,55,count,forest_1,Overall Postoperative Complications,figure_ocr
+R031,capovilla_2023,mie,single,events,Minimally Invasive Esophagectomy (MIE) Events,19,count,forest_2,Pulmonary Complications,figure_ocr
+R032,capovilla_2023,mie,single,subgroup_n,Minimally Invasive Esophagectomy (MIE) Total,58,count,forest_2,Pulmonary Complications,figure_ocr
+R033,capovilla_2023,oe,single,events,Open Esophagectomy (OE) Events,58,count,forest_2,Pulmonary Complications,figure_ocr
+R034,capovilla_2023,oe,single,subgroup_n,Open Esophagectomy (OE) Total,102,count,forest_2,Pulmonary Complications,figure_ocr
+R035,li j_2015,mie,single,events,Minimally Invasive Esophagectomy (MIE) Events,12,count,forest_2,Pulmonary Complications,figure_ocr
+R036,li j_2015,mie,single,subgroup_n,Minimally Invasive Esophagectomy (MIE) Total,58,count,forest_2,Pulmonary Complications,figure_ocr
+R037,li j_2015,oe,single,events,Open Esophagectomy (OE) Events,23,count,forest_2,Pulmonary Complications,figure_ocr
+R038,li j_2015,oe,single,subgroup_n,Open Esophagectomy (OE) Total,58,count,forest_2,Pulmonary Complications,figure_ocr
+R039,li k_2025,mie,single,events,Minimally Invasive Esophagectomy (MIE) Events,22,count,forest_2,Pulmonary Complications,figure_ocr
+R040,li k_2025,mie,single,subgroup_n,Minimally Invasive Esophagectomy (MIE) Total,92,count,forest_2,Pulmonary Complications,figure_ocr
+R041,li k_2025,oe,single,events,Open Esophagectomy (OE) Events,21,count,forest_2,Pulmonary Complications,figure_ocr
+R042,li k_2025,oe,single,subgroup_n,Open Esophagectomy (OE) Total,55,count,forest_2,Pulmonary Complications,figure_ocr
+R043,li j_2015,mie,single,events,Minimally Invasive Esophagectomy (MIE) Events,2,count,forest_3,30-Day Mortality,figure_ocr
+R044,li j_2015,mie,single,subgroup_n,Minimally Invasive Esophagectomy (MIE) Total,58,count,forest_3,30-Day Mortality,figure_ocr
+R045,li j_2015,oe,single,events,Open Esophagectomy (OE) Events,5,count,forest_3,30-Day Mortality,figure_ocr
+R046,li j_2015,oe,single,subgroup_n,Open Esophagectomy (OE) Total,58,count,forest_3,30-Day Mortality,figure_ocr
+R047,li k_2025,mie,single,events,Minimally Invasive Esophagectomy (MIE) Events,0,count,forest_3,30-Day Mortality,figure_ocr
+R048,li k_2025,mie,single,subgroup_n,Minimally Invasive Esophagectomy (MIE) Total,92,count,forest_3,30-Day Mortality,figure_ocr
+R049,li k_2025,oe,single,events,Open Esophagectomy (OE) Events,0,count,forest_3,30-Day Mortality,figure_ocr
+R050,li k_2025,oe,single,subgroup_n,Open Esophagectomy (OE) Total,55,count,forest_3,30-Day Mortality,figure_ocr
+R051,capovilla_2023,mie,single,events,Minimally Invasive Esophagectomy (MIE) Events,7,count,forest_4,Anastomotic Leak,figure_ocr
+R052,capovilla_2023,mie,single,subgroup_n,Minimally Invasive Esophagectomy (MIE) Total,58,count,forest_4,Anastomotic Leak,figure_ocr
+R053,capovilla_2023,oe,single,events,Open Esophagectomy (OE) Events,5,count,forest_4,Anastomotic Leak,figure_ocr
+R054,capovilla_2023,oe,single,subgroup_n,Open Esophagectomy (OE) Total,58,count,forest_4,Anastomotic Leak,figure_ocr
+R055,li j_2015,mie,single,events,Minimally Invasive Esophagectomy (MIE) Events,10,count,forest_4,Anastomotic Leak,figure_ocr
+R056,li j_2015,mie,single,subgroup_n,Minimally Invasive Esophagectomy (MIE) Total,58,count,forest_4,Anastomotic Leak,figure_ocr
+R057,li j_2015,oe,single,events,Open Esophagectomy (OE) Events,6,count,forest_4,Anastomotic Leak,figure_ocr
+R058,li j_2015,oe,single,subgroup_n,Open Esophagectomy (OE) Total,58,count,forest_4,Anastomotic Leak,figure_ocr
+R059,li k_2025,mie,single,events,Minimally Invasive Esophagectomy (MIE) Events,13,count,forest_4,Anastomotic Leak,figure_ocr
+R060,li k_2025,mie,single,subgroup_n,Minimally Invasive Esophagectomy (MIE) Total,92,count,forest_4,Anastomotic Leak,figure_ocr
+R061,li k_2025,oe,single,events,Open Esophagectomy (OE) Events,4,count,forest_4,Anastomotic Leak,figure_ocr
+R062,li k_2025,oe,single,subgroup_n,Open Esophagectomy (OE) Total,55,count,forest_4,Anastomotic Leak,figure_ocr

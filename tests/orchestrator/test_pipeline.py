@@ -23,7 +23,7 @@ from react_review.tools import build_catalogue
 from react_review.tools.registry import ToolRegistry
 
 ROOT = Path(__file__).resolve().parents[2]
-BENCH = ROOT / "eval" / "benchmark"
+BENCH = ROOT / "eval" / "benchmark_1"
 
 
 def _orch() -> AuditOrchestrator:

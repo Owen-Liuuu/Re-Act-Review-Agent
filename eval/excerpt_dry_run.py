@@ -13,7 +13,7 @@ the real knowledge base and the real contract, groups the claims with the real
 grouping, and calls the real selector — then stops, before anything would be
 asked of a model.
 
-    python eval/excerpt_dry_run.py --benchmark eval/benchmarks/melanoma_checkpoint_2017 \
+    python eval/excerpt_dry_run.py --benchmark eval/benchmark_2 \
         --benchmark-profile phase8_batch_v7_profile.json
 """
 from __future__ import annotations
@@ -53,7 +53,7 @@ def main(argv=None) -> int:
         prog="excerpt_dry_run",
         description="Compute what a batched run would send, without sending it.")
     ap.add_argument("--benchmark", type=Path,
-                    default=REPO / "eval/benchmarks/melanoma_checkpoint_2017")
+                    default=REPO / "eval/benchmark_2")
     ap.add_argument("--benchmark-profile", default="phase8_batch_v7_profile.json")
     ap.add_argument("--json", type=Path, default=None)
     args = ap.parse_args(argv)

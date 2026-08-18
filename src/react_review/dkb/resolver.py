@@ -58,9 +58,10 @@ class ResolvedField(FieldResolutionRecord):
 def resolution_key(raw_name: str, unit: str, context: str, modality: str = "") -> str:
     """Every signal that can change the answer must be part of the key.
 
-    Modality included: an ambiguous header like "EFT/ EAT" resolves to a
-    thickness in an echo study and a volume in a CT one, so caching on the name
-    alone would give every later row the first row's answer — silently.
+    Modality included: one ambiguous header can resolve to a length in a study
+    that measured it one way and a volume in a study that measured it another, so
+    caching on the name alone would give every later row the first row's answer —
+    silently.
     """
     material = json.dumps({
         "raw_field_name": raw_name.strip().lower(),

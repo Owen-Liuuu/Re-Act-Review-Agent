@@ -1,17 +1,17 @@
-"""Match parser-produced study ids to the canonical included-studies registry.
+"""Match a table row's identity to a cited paper.
 
-The parser slugs a study name into e.g. ``yaz_2011`` / ``de_2018`` (imperfect for
-non-ASCII / particle names). To audit against the source papers we must relabel
-each review item to the canonical ``study_id`` from included_studies.csv
-(``yazici_2011`` / ``de_gonzalo_calvo_2018``) and resolve its reference. Matching
-is by publication year + surname prefix (year disambiguates same-surname-prefix).
+The table prints its own words (``Li J et al.`` plus a year). The reference
+list and ``included_studies.csv`` usually store a compact alias (``li_2015``,
+``ahmad_2022``). Pairing is year-aware matching against the alias AND the
+printed citation, so two papers that share a first word stay distinct and a
+review from another field does not need a special slugger. Zero or two hits
+is a refusal.
 """
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
-from react_review.normalize.study_key import key_parts
+from react_review.normalize.study_key import best_identity_match
 from react_review.schemas.evidence import IncludedStudy, ReviewDataItem
 from react_review.schemas.reason import ReasonRecord
 from react_review.schemas.resolution import FieldResolutionRecord
@@ -21,42 +21,16 @@ if TYPE_CHECKING:
     from react_review.parser.review_parser import ParsedStudy
 
 
-# Same derivation the parser uses — see normalize/study_key.py.
-_parts = key_parts
-
 # Marks a reference the review's list did not actually supply, so downstream can
 # tell "no citation for this study" from "a citation we have yet to resolve".
 _UNRESOLVED_PREFIX = "[no citation for] "
 
 
-def _best_match(query_sid: str, candidate_ids: list[str]) -> str | None:
-    """Best study_id among candidates for query_sid, or None if none/ambiguous.
-
-    Matches by publication year (when both carry one) + surname-prefix
-    compatibility; an ambiguous tie returns None so callers never guess a wrong
-    study. Shared by the CSV path (resolve_study) and the parser path.
-    """
-    p_sur, p_year = _parts(query_sid)
-    if not p_sur:
-        return None
-    matches = []
-    for cid in candidate_ids:
-        c_sur, c_year = _parts(cid)
-        if p_year and c_year and p_year != c_year:
-            continue
-        if c_sur == p_sur or c_sur.startswith(p_sur) or p_sur.startswith(c_sur):
-            matches.append(cid)
-    if len(matches) == 1:
-        return matches[0]
-    # Tie-break on an exact surname match if the year narrowed to several.
-    exact = [cid for cid in matches if _parts(cid)[0] == p_sur]
-    return exact[0] if len(exact) == 1 else None
-
-
 def resolve_study(parser_study_id: str, studies: list[IncludedStudy]) -> IncludedStudy | None:
     """Best canonical match for a parser study id, or None if ambiguous/none."""
     by_id = {s.study_id: s for s in studies}
-    best = _best_match(parser_study_id, list(by_id))
+    best = best_identity_match(
+        parser_study_id, [(s.study_id, s.review_citation) for s in studies])
     return by_id.get(best) if best else None
 
 
@@ -104,20 +78,24 @@ def build_reference_resolver_from_parsed(studies: "list[ParsedStudy]"):
     DOI is carried; a missing DOI is later reconciled online by the Collector.
     """
     by_id = {s.study_id: s for s in studies}
-    ids = list(by_id)
 
     def resolver(study_id: str) -> ReferenceEntry:
         # exact id first (fast path), then fuzzy year+surname.
         s = by_id.get(study_id)
         if s is None:
-            best = _best_match(study_id, ids)
+            best = best_identity_match(
+                study_id, [(p.study_id, p.citation) for p in studies])
             s = by_id.get(best) if best else None
         if s is None:
             # No citation for this study. Returning a bare ReferenceEntry whose
             # title is the study id looks like a real reference and sends the
             # resolver hunting for a paper called "ahmad_2022"; mark it instead.
             return ReferenceEntry(title=f"{_UNRESOLVED_PREFIX}{study_id}")
-        return ReferenceEntry(title=s.citation or study_id, doi=(s.doi or None))
+        return ReferenceEntry(
+            title=s.citation or study_id,
+            doi=(s.doi or None),
+            pmid=(s.pmid or None),
+        )
     return resolver
 
 

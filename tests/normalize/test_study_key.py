@@ -3,7 +3,14 @@ from __future__ import annotations
 
 import pytest
 
-from react_review.normalize.study_key import key_parts, study_key, surname_of
+from react_review.normalize.study_key import (
+    best_identity_match,
+    identities_match,
+    join_key,
+    key_parts,
+    study_key,
+    surname_of,
+)
 
 
 @pytest.mark.parametrize("citation, expected", [
@@ -57,3 +64,42 @@ def test_key_parts_round_trips_the_canonical_ids():
 def test_surname_stops_at_citation_boilerplate():
     assert surname_of("Ahmad et al.") == "ahmad"
     assert surname_of("Berg and Jones") == "berg"
+
+
+def test_join_key_keeps_the_table_words_and_appends_year_only_when_missing():
+    assert join_key("Li J et al.", "2015") == "Li J et al. 2015"
+    assert join_key("  Li   J  et al.  ", "2015") == "Li J et al. 2015"
+    # A year already in the cell is left where the review printed it.
+    assert join_key("Ahmad et al. [2022]", "2019") == "Ahmad et al. [2022]"
+    assert join_key("Ahmad 2022") == "Ahmad 2022"
+    assert join_key("Capovilla G et al.", "2023") == "Capovilla G et al. 2023"
+
+
+def test_identities_match_pairs_table_words_to_citation_slugs_by_year():
+    assert identities_match("Li J et al. 2015", "li_2015")
+    assert not identities_match("Li J et al. 2015", "li_2025")
+    assert identities_match("Ahmad et al. [2022]", "ahmad_2022")
+    assert identities_match("yaz_2011", "yazici_2011")
+    assert identities_match("van den Berg 2020", "vandenberg_2020")
+    assert not identities_match("van den Berg 2020", "vanrooij_2020")
+
+
+def test_best_identity_match_keeps_same_surname_papers_distinct():
+    li_papers = [
+        ("li_2015", "Li J, Shen Y, Tan L, et al. Surg Endosc. 2015;29(4):925-930."),
+        ("li_2025", "Li K, Lu S, Li C, et al. Langenbecks Arch Surg. 2025;410(1):311."),
+        ("capovilla_2023", "Capovilla G, Uzun E, Scarton A, et al. Front Oncol. 2023;13:1104109."),
+    ]
+    assert best_identity_match("Li J et al. 2015", li_papers) == "li_2015"
+    assert best_identity_match("Li K et al. 2025", li_papers) == "li_2025"
+    assert best_identity_match("Capovilla G et al. 2023", li_papers) == "capovilla_2023"
+    # No year, two Li papers → refuse rather than guess.
+    assert best_identity_match("Li et al.", li_papers) is None
+    # An outcome row is not a cited paper.
+    assert best_identity_match("Overall Complications", li_papers) is None
+
+
+def test_best_identity_match_prefers_smith_over_smithson():
+    papers = [("smith_2020", "Smith A. 2020."), ("smithson_2020", "Smithson B. 2020.")]
+    assert best_identity_match("Smith 2020", papers) == "smith_2020"
+    assert best_identity_match("smit_2020", papers) is None

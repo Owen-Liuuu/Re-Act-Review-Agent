@@ -20,7 +20,7 @@ from react_review.schemas.evidence import ReviewDataItem, SourceEvidenceItem
 from react_review.tools import build_catalogue
 
 ROOT = Path(__file__).resolve().parents[1]
-BENCH = ROOT / "eval" / "benchmark"
+BENCH = ROOT / "eval" / "benchmark_1"
 TOL_CFG = ROOT / "configs" / "tolerances.yaml"
 
 

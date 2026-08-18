@@ -99,7 +99,7 @@ python -m pytest tests/parser/test_table_capture_live.py::test_live_llm_uses_the
 $env:TABLE_CAPTURE_PROMPT_PROFILE='table_capture_v2'
 python -m pytest tests/parser/test_table_capture_live.py::test_live_llm_uses_the_explicit_table_capture_prompt -q -s -p no:cacheprovider --basetemp=.tmp/pytest-table-capture-live-eat-v2
 
-$env:TABLE_CAPTURE_PDF='eval/benchmarks/melanoma_checkpoint_2017/raw/review_karlsson_saleh_2017.pdf'
+$env:TABLE_CAPTURE_PDF='eval/benchmark_2/raw/review_karlsson_saleh_2017.pdf'
 $env:TABLE_CAPTURE_PROMPT_PROFILE='table_capture_v1'
 python -m pytest tests/parser/test_table_capture_live.py::test_live_llm_uses_the_explicit_table_capture_prompt -q -s -p no:cacheprovider --basetemp=.tmp/pytest-table-capture-live-melanoma-v1
 

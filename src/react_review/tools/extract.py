@@ -1,15 +1,11 @@
-"""Extract stage: full-text retrieval + LLM field extraction."""
+"""Extract stage: full-text retrieval."""
 from __future__ import annotations
 
-from react_review.steps.data_extraction.interfaces import Extractor
-from react_review.steps.data_extraction.schemas import (
-    DocumentScope,
-    ExtractedTable,
-)
+from react_review.steps.data_extraction.schemas import DocumentScope
 from react_review.steps.paper_verification.interfaces import PaperRetriever
 from react_review.steps.paper_verification.schemas import ReferenceEntry
 from react_review.tools.base import Tool, ToolStage
-from react_review.tools.models import ExtractInput, FetchResult
+from react_review.tools.models import FetchResult
 
 
 class FetchFullTextTool(Tool):
@@ -30,22 +26,3 @@ class FetchFullTextTool(Tool):
             and doc.document_scope is not DocumentScope.METADATA_ONLY
         )
         return FetchResult(reference=payload, retrieved=retrieved, document=doc)
-
-
-class ExtractFieldsTool(Tool):
-    """Extract the requested fields from a paper document with an LLM extractor."""
-
-    name = "extract_fields"
-    stage = ToolStage.EXTRACT
-    input_model = ExtractInput
-    output_model = ExtractedTable
-
-    def __init__(self, extractor: Extractor) -> None:
-        self._extractor = extractor
-
-    async def run(self, payload: ExtractInput) -> ExtractedTable:
-        return await self._extractor.extract(
-            payload.document,
-            payload.evidence_schema,
-            research_context=payload.research_context,
-        )

@@ -1,8 +1,8 @@
 """Score the deterministic audit core against the hand-labelled benchmark.
 
 Runs ``compare_values`` over:
-  - eval/benchmark/audit_template.csv   -> reproduce expected_label (axis 3)
-  - eval/benchmark/seeded_discrepancies.csv -> recall/precision (axis 5)
+  - eval/benchmark_1/audit_template.csv   -> reproduce expected_label (axis 3)
+  - eval/benchmark_1/seeded_discrepancies.csv -> recall/precision (axis 5)
 
 Exits non-zero if either axis is not perfectly reproduced, so it can gate CI.
 
@@ -18,7 +18,7 @@ from pathlib import Path
 from react_review.audit import ToleranceTable, compare_values
 
 ROOT = Path(__file__).resolve().parents[1]
-BENCH = ROOT / "eval" / "benchmark"
+BENCH = ROOT / "eval" / "benchmark_1"
 TOL_CFG = ROOT / "configs" / "tolerances.yaml"
 
 

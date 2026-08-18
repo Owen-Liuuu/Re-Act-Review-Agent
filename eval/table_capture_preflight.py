@@ -9,6 +9,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from eval.table_capture_score import load_gold
 from react_review.contracts import read_json_object, repo_root, sha256_file
+from react_review.eval_layout import resolve_eval_path
 from react_review.parser.table_capture_contract import TableCapturePromptContract
 
 
@@ -100,8 +101,8 @@ def preflight(manifest_path: Path | str = DEFAULT_MANIFEST, *,
     if require_private:
         for document in documents:
             document_id = str(document.get("document_id") or "")
-            pdf = root / str(document.get("pdf") or "")
-            gold_path = root / str(document.get("gold") or "")
+            pdf = resolve_eval_path(root, str(document.get("pdf") or ""))
+            gold_path = resolve_eval_path(root, str(document.get("gold") or ""))
             _require(pdf.is_file(), f"private/source PDF is missing for {document_id}: {pdf}")
             _require(gold_path.is_file(), f"private gold is missing for {document_id}: {gold_path}")
             _require(sha256_file(pdf) == str(document.get("pdf_sha256") or "").upper(),

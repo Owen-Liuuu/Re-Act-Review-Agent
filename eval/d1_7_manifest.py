@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from react_review.agents.collector import _document_sha256  # noqa: E402
 from react_review.contracts import sha256_file, repo_root  # noqa: E402
+from react_review.eval_layout import benchmark_dir, resolve_eval_relpath  # noqa: E402
 from react_review.retrieval.local_pdf import _pdf_text  # noqa: E402
 from react_review.tools.extraction_cache import ExtractionCache  # noqa: E402
 
@@ -31,10 +32,15 @@ REPO = repo_root()
 #: Line endings are normalised before hashing a blob out of git, so a
 #: recording contract keeps one hash whichever platform checked it out.
 CRLF, LF = b'\r\n', b'\n'
-BENCH = REPO / "eval/benchmarks/melanoma_checkpoint_2017"
+BENCH = benchmark_dir(REPO, "melanoma_checkpoint_2017")
 RUNS = REPO / "output/baselines/melanoma_checkpoint_2017"
 CACHE = RUNS / "phase8_batch_extraction_cache.json"
 PLAN = BENCH / "d1_7_expected_plan.json"
+
+
+def _current(rel: str) -> Path:
+    """Today's location of a path a historical contract still names."""
+    return REPO / resolve_eval_relpath(rel)
 
 #: The four artifacts the conclusions rest on. Hashed here because the cache and
 #: the results are gitignored: without them the manifest can say a recording
@@ -113,7 +119,7 @@ def _prompt_rows() -> tuple[list[dict], str]:
     # unchanged by that — the evaluator decides how an answer is judged, not what
     # question is asked — so the re-derivation uses the current profile and is
     # checked, as always, against the keys the run actually wrote.
-    observed = preflight.observe(BENCH, "phase8_batch_v5_profile.json", None, 3,
+    observed = preflight.observe(BENCH, "phase8_batch_v7_profile.json", None, 3,
                                  plan["model_id"])
     prompts = {question.identity(): prompt
                for question, prompt in observed["batch_tool"].asked}
@@ -380,9 +386,9 @@ def build() -> dict:
             "note": "no api key is read, recorded or hashed here",
         },
         "command": COMMAND,
-        "reanalysis_contracts": {name: sha256_file(REPO / path)
+        "reanalysis_contracts": {name: sha256_file(_current(path))
                                  for name, path in REANALYSIS_CONTRACTS.items()
-                                 if (REPO / path).is_file()},
+                                 if _current(path).is_file()},
         "documents": {
             "larkin_2015": _document_sha256(
                 _pdf_text(BENCH / "raw/sources/larkin_2015.pdf")),
@@ -599,7 +605,7 @@ def verify(path: Path) -> list[str]:
 
     for name, digest in (body.get("reanalysis_contracts") or {}).items():
         path = REANALYSIS_CONTRACTS.get(name, "")
-        if path and (REPO / path).is_file() and sha256_file(REPO / path) != digest:
+        if path and _current(path).is_file() and sha256_file(_current(path)) != digest:
             problems.append(f"reanalysis_contracts.{name} does not match "
                             f"{path} as it stands now")
 

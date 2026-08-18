@@ -1,0 +1,332 @@
+[
+  {
+    "source": "react_review.parser.review_extraction.prompts._LENS",
+    "key": "lens_one_line",
+    "value": "population + comparison + outcomes in \u226440 words"
+  },
+  {
+    "source": "react_review.parser.review_extraction.prompts._LENS",
+    "key": "domain",
+    "value": "short clinical domain"
+  },
+  {
+    "source": "react_review.parser.review_extraction.prompts._LENS",
+    "key": "population",
+    "value": "who was studied"
+  },
+  {
+    "source": "react_review.parser.review_extraction.prompts._LENS",
+    "key": "comparison",
+    "value": "intervention vs comparator"
+  },
+  {
+    "source": "react_review.parser.review_extraction.prompts._LOCALIZE",
+    "key": "caption",
+    "value": "verbatim caption"
+  },
+  {
+    "source": "react_review.parser.review_extraction.prompts._LOCALIZE",
+    "key": "page_hint",
+    "value": "printed page or empty"
+  },
+  {
+    "source": "react_review.parser.review_extraction.prompts._LOCALIZE",
+    "key": "reason",
+    "value": "why this is / is not on the evidence chain, naming the ruler"
+  },
+  {
+    "source": "react_review.parser.review_extraction.prompts._ORIGIN",
+    "key": "column_path",
+    "value": "exact header path"
+  },
+  {
+    "source": "react_review.parser.review_extraction.prompts._ORIGIN",
+    "key": "outcome",
+    "value": "which ruler outcome this display is about, or empty"
+  },
+  {
+    "source": "react_review.parser.table_capture_contract._CAPTURE_V1",
+    "key": "research_context",
+    "value": "one line: population + exposure/intervention + outcome"
+  },
+  {
+    "source": "react_review.parser.table_capture_contract._CAPTURE_V1",
+    "key": "caption",
+    "value": "the table's printed caption"
+  },
+  {
+    "source": "react_review.parser.table_capture_contract._CAPTURE_V1",
+    "key": "shape_notes",
+    "value": "one row per study; the cohort split is a column pair"
+  },
+  {
+    "source": "react_review.parser.table_capture_contract._CAPTURE_V3",
+    "key": "research_context",
+    "value": "one line: population + exposure/intervention + outcome"
+  },
+  {
+    "source": "react_review.parser.table_capture_contract._CAPTURE_V3",
+    "key": "caption",
+    "value": "the table's printed caption"
+  },
+  {
+    "source": "react_review.parser.table_capture_contract._CAPTURE_V3",
+    "key": "shape_notes",
+    "value": "one row per study; the cohort split is a column pair"
+  },
+  {
+    "source": "react_review.parser.review_parser._STAGE_REFS",
+    "key": "citation",
+    "value": "First-author Year, journal \u2026"
+  },
+  {
+    "source": "react_review.parser.review_parser._STAGE_REFS",
+    "key": "doi",
+    "value": "10.xxxx/\u2026 or empty string"
+  },
+  {
+    "source": "react_review.parser.review_parser._UNPIVOT",
+    "key": "column_header",
+    "value": "the column label from the list above, copied verbatim"
+  },
+  {
+    "source": "react_review.parser.review_parser._UNPIVOT",
+    "key": "cohort_label",
+    "value": "which arm/cohort this cell belongs to, IN THE TABLE'S OWN WORDS; empty if the table does not split by cohort"
+  },
+  {
+    "source": "react_review.parser.review_parser._UNPIVOT",
+    "key": "timepoint_label",
+    "value": "the timepoint in the table's own words; empty if none"
+  },
+  {
+    "source": "react_review.parser.review_parser._UNPIVOT",
+    "key": "value",
+    "value": "the cell EXACTLY as printed"
+  },
+  {
+    "source": "react_review.parser.review_parser._UNPIVOT",
+    "key": "unit",
+    "value": "the unit, taken from the column header, the cell text, or a footnote; empty if none is stated"
+  },
+  {
+    "source": "react_review.tools.extract_source._PROMPT",
+    "key": "group_label_in_paper",
+    "value": "the paper's name for the cohort this value is taken from"
+  },
+  {
+    "source": "react_review.tools.extract_source._PROMPT",
+    "key": "value",
+    "value": "verbatim value or null"
+  },
+  {
+    "source": "react_review.tools.extract_source._PROMPT",
+    "key": "unit",
+    "value": "verbatim unit or empty"
+  },
+  {
+    "source": "react_review.tools.extract_source._PROMPT",
+    "key": "quote",
+    "value": "verbatim supporting sentence/cell"
+  },
+  {
+    "source": "react_review.tools.extract_source._PROMPT",
+    "key": "source_field_name",
+    "value": "the paper's own label for this field"
+  },
+  {
+    "source": "react_review.tools.extract_source._PROMPT",
+    "key": "location",
+    "value": "where (e.g. Table 2, Results)"
+  },
+  {
+    "source": "react_review.tools.extract_source._PROMPT",
+    "key": "label",
+    "value": "paper's arm name"
+  },
+  {
+    "source": "react_review.tools.extract_source._PROMPT",
+    "key": "quote",
+    "value": "verbatim text containing this arm and count"
+  },
+  {
+    "source": "react_review.tools.extract_source._PROMPT",
+    "key": "cohort_partition_quote",
+    "value": "verbatim text establishing the partition, or empty"
+  },
+  {
+    "source": "react_review.tools.extract_source._PROMPT",
+    "key": "cohort_partition_reason",
+    "value": "why coverage/exclusivity is clear or unclear"
+  },
+  {
+    "source": "react_review.tools.extract_source._PROMPT",
+    "key": "not_found_reason",
+    "value": "when found=false, why \u2014 otherwise empty"
+  },
+  {
+    "source": "react_review.tools.extract_source._TARGETED_OUTPUTS",
+    "key": "label",
+    "value": "the paper's own name for this arm"
+  },
+  {
+    "source": "react_review.tools.extract_source._TARGETED_OUTPUTS",
+    "key": "value",
+    "value": "that arm's verbatim value"
+  },
+  {
+    "source": "react_review.tools.extract_source._TARGETED_OUTPUTS",
+    "key": "unit",
+    "value": "verbatim unit"
+  },
+  {
+    "source": "react_review.tools.extract_source._TARGETED_OUTPUTS",
+    "key": "quote",
+    "value": "verbatim text naming this arm and its value"
+  },
+  {
+    "source": "react_review.tools.extract_source._TARGETED_OUTPUTS",
+    "key": "left_label",
+    "value": "paper's name for the first side"
+  },
+  {
+    "source": "react_review.tools.extract_source._TARGETED_OUTPUTS",
+    "key": "right_label",
+    "value": "paper's name for the second side"
+  },
+  {
+    "source": "react_review.tools.extract_source._TARGETED_OUTPUTS",
+    "key": "value",
+    "value": "verbatim value"
+  },
+  {
+    "source": "react_review.tools.extract_source._TARGETED_OUTPUTS",
+    "key": "unit",
+    "value": "verbatim unit"
+  },
+  {
+    "source": "react_review.tools.extract_source._TARGETED_OUTPUTS",
+    "key": "quote",
+    "value": "verbatim text naming both sides and the value"
+  },
+  {
+    "source": "react_review.tools.batch_prompt._RULES",
+    "key": "value",
+    "value": "verbatim value"
+  },
+  {
+    "source": "react_review.tools.batch_prompt._RULES",
+    "key": "unit",
+    "value": "verbatim unit or empty"
+  },
+  {
+    "source": "react_review.tools.batch_prompt._RULES",
+    "key": "quote",
+    "value": "one contiguous verbatim passage containing this value"
+  },
+  {
+    "source": "react_review.tools.batch_prompt._RULES",
+    "key": "population_phrase",
+    "value": "the paper's words for which people, or empty"
+  },
+  {
+    "source": "react_review.tools.batch_prompt._RULES",
+    "key": "timepoint_phrase",
+    "value": "the paper's words for when, or empty"
+  },
+  {
+    "source": "react_review.tools.batch_prompt._RULES",
+    "key": "timepoint_quote",
+    "value": "passage carrying those words, if not in quote"
+  },
+  {
+    "source": "react_review.tools.batch_prompt._RULES",
+    "key": "effect_definition",
+    "value": "the paper's words for what this measures, or empty"
+  },
+  {
+    "source": "react_review.tools.batch_prompt._RULES",
+    "key": "nothing_reported_reason",
+    "value": "when readings is empty, what you looked at and why it is not there"
+  },
+  {
+    "source": "react_review.tools.batch_prompt._AGGREGATION_FIELDS",
+    "key": "population_phrase",
+    "value": "the paper's words for which people this set counts"
+  },
+  {
+    "source": "react_review.tools.batch_prompt._AGGREGATION_FIELDS",
+    "key": "population_quote",
+    "value": "one contiguous verbatim passage containing those words"
+  },
+  {
+    "source": "react_review.tools.batch_prompt._AGGREGATION_FIELDS",
+    "key": "timepoint_phrase",
+    "value": "the paper's words for when, or empty"
+  },
+  {
+    "source": "react_review.tools.batch_prompt._AGGREGATION_FIELDS",
+    "key": "timepoint_quote",
+    "value": "passage containing those words, or empty"
+  },
+  {
+    "source": "react_review.tools.batch_prompt._AGGREGATION_FIELDS",
+    "key": "arm_label",
+    "value": "the paper's own name for this arm"
+  },
+  {
+    "source": "react_review.tools.batch_prompt._AGGREGATION_FIELDS",
+    "key": "quote",
+    "value": "one contiguous verbatim passage naming the arm and printing the number"
+  },
+  {
+    "source": "react_review.tools.batch_prompt._AGGREGATION_FIELDS",
+    "key": "quote",
+    "value": "the contiguous verbatim passage that shows it, or empty"
+  },
+  {
+    "source": "react_review.tools.batch_prompt._AGGREGATION_FIELDS",
+    "key": "reason",
+    "value": "what in that passage establishes it"
+  },
+  {
+    "source": "react_review.tools.semantic_compare._PROMPT",
+    "key": "rationale",
+    "value": "one sentence, why"
+  },
+  {
+    "source": "react_review.tools.semantic_compare._PROMPT",
+    "key": "review_normalized",
+    "value": "the review value in plain words"
+  },
+  {
+    "source": "react_review.tools.semantic_compare._PROMPT",
+    "key": "source_normalized",
+    "value": "the source value in plain words"
+  },
+  {
+    "source": "react_review.tools.semantic_compare._PROMPT",
+    "key": "evidence_span",
+    "value": "the EXACT substring of the quote above that you relied on \u2014 copy it verbatim, or leave empty if the quote does not support it"
+  },
+  {
+    "source": "react_review.dkb.agent._PROMPT",
+    "key": "concept",
+    "value": "short description"
+  },
+  {
+    "source": "react_review.dkb.agent._PROMPT",
+    "key": "default_unit",
+    "value": "unit or empty"
+  },
+  {
+    "source": "react_review.agents.llm_policy._RESPONSE_SPEC",
+    "key": "thought",
+    "value": "why this step"
+  },
+  {
+    "source": "react_review.agents.llm_policy._RESPONSE_SPEC",
+    "key": "thought",
+    "value": "why you are done"
+  }
+]

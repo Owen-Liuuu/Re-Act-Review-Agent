@@ -27,10 +27,15 @@ from react_review.normalize.cohorts import (
     build_cohort_registry,
     load_aliases,
 )
-from react_review.normalize.doi import normalize_doi
-from react_review.normalize.study_key import study_key
+from react_review.normalize.doi import printed_doi, printed_pmid
+from react_review.normalize.study_key import best_identity_match, join_key, study_key
 from react_review.parser.table_capture import TableCapturer
-from react_review.parser.table_capture_contract import DEFAULT_TABLE_CAPTURE_PROFILE
+from react_review.parser.table_capture_contract import (
+    DEFAULT_TABLE_CAPTURE_PROFILE,
+    LEGACY_TABLE_CAPTURE_PROFILES,
+)
+from react_review.parser.review_extraction.origin import drop_non_source, fields_for_cell
+from react_review.parser.review_extraction.schemas import ReviewClaim
 from react_review.schemas.agent import AgentRun, StepRecord
 from react_review.schemas.evidence import ReviewDataItem
 from react_review.schemas.knowledge import KnowledgeImportRecord
@@ -98,9 +103,10 @@ Return JSON only."""
 class ParsedStudy(BaseModel):
     """An included-study reference extracted from the review's reference list."""
 
-    study_id: str                       # slug, e.g. "ahmad_2022"
+    study_id: str                       # citation slug, e.g. "ahmad_2022" / "li_2015"
     citation: str = ""                  # verbatim reference text
     doi: str = ""                       # normalized DOI, "" when the reference prints none
+    pmid: str = ""                      # digits only, "" when the reference prints none
 
 
 class ParsedReview(BaseModel):
@@ -133,8 +139,8 @@ def _pdf_text(pdf_path: Path | str) -> str:
         doc.close()
 
 
-# The parser and the matcher must derive the SAME id from the same citation —
-# it is the key the whole audit joins on. One implementation, in normalize/.
+# Reference-list aliases still come from the citation slug. Table rows use
+# join_key (the printed label plus a year) — see normalize/study_key.py.
 _study_slug = study_key
 
 
@@ -180,9 +186,14 @@ def _row_key_label(row_key: Any) -> str:
     return str(row_key or "").strip()
 
 
+def _row_join_key(row: dict[str, Any]) -> str:
+    """Table-row identity: printed label plus a year the cell itself omitted."""
+    return join_key(_row_key_label(row.get("row_key")), str(row.get("row_year") or ""))
+
+
 # A unit printed inside the cell itself ("80.2 ± 49.0 cm3"). Recovering it is
-# what lets an ambiguous header like "EFT/ EAT" — which holds thicknesses in one
-# study and volumes in another — resolve to the right concept per row.
+# what lets an ambiguous header — one that holds a length in one study and a
+# volume in another — resolve to the right concept per row rather than per column.
 _INLINE_UNIT = re.compile(
     r"(?<![A-Za-z])(cm\s*3|cm³|mm\s*3|mm³|ml|cc|kg/m\s*2|kg/m²|mm\s*hg|mmol/l|mg/dl|"
     r"cm|mm|kg|g|%|years?|yrs?|months?|days?)\s*$", re.I)
@@ -219,6 +230,7 @@ class ReviewParser:
         cohort_aliases: dict[str, list[str]] | None = None,
         checklist: Checklist | None = None,
         table_capture_prompt_profile: str = DEFAULT_TABLE_CAPTURE_PROFILE,
+        vision_backend: LLMBackend | None = None,
     ) -> None:
         self._backend = backend
         self._resolver = resolver          # the parser holds NO domain knowledge itself
@@ -236,6 +248,9 @@ class ReviewParser:
         # it never introduces one, so a new domain stays domain-neutral.
         self._cohort_aliases = (load_aliases(_ALIASES) if cohort_aliases is None
                                 else cohort_aliases)
+        self._alt_backend = alt_backend
+        self._table_capture_prompt_profile = table_capture_prompt_profile
+        self._vision = vision_backend
 
     async def parse(
         self, pdf_path: Path | str, *, research_context: str = ""
@@ -257,18 +272,47 @@ class ReviewParser:
                        "may sit past the cut"] if len(full_text) > self._max_chars else []),
         )
 
-        # 1. Capture the review's tables verbatim and hold the run until a human
-        #    has looked at them: nothing downstream means anything if this is wrong.
-        table_set, captured_ctx = await self._capturer.capture(
-            text, reporter=self._reporter, pdf_path=str(Path(pdf_path).resolve()),
-            keep=self._keep_tables, drop=self._drop_tables,
-        )
+        # 1. Capture the review's tables. Frozen v1/v2 transcribe every data
+        #    table; v3 (and later) runs Review Extraction first so capture only
+        #    sees selected evidence-chain displays.
+        if self._table_capture_prompt_profile in LEGACY_TABLE_CAPTURE_PROFILES:
+            table_set, captured_ctx = await self._capturer.capture(
+                text, reporter=self._reporter, pdf_path=str(Path(pdf_path).resolve()),
+                keep=self._keep_tables, drop=self._drop_tables,
+            )
+        else:
+            from react_review.parser.review_extraction import ReviewExtraction
+            extracted = await ReviewExtraction(
+                self._backend, reporter=self._reporter,
+                alt_backend=self._alt_backend,
+                prompt_profile=self._table_capture_prompt_profile,
+                keep_tables=self._keep_tables, drop_tables=self._drop_tables,
+                vision_backend=self._vision,
+            ).run(full_text, pdf_path=pdf_path, text_window=text)
+            table_set = extracted.tables
+            captured_ctx = extracted.research_context
         ctx = captured_ctx or research_context
 
         # 2. Unpivot each approved table, in row chunks.
         raw_rows: list[dict[str, Any]] = []
+        skipped_study_tables: list[str] = []
         for table in table_set.tables:
-            raw_rows.extend(await self._unpivot(table))
+            if table.display_kind == "forest_plot":
+                from react_review.parser.review_extraction.forest_unpivot import (
+                    unpivot_forest,
+                )
+                chunk = unpivot_forest(table)
+            elif table.rows_name_studies():
+                chunk = await self._unpivot(table)
+            else:
+                skipped_study_tables.append(
+                    f"{table.table_id} ({table.role or 'no role'}; "
+                    f"row axis {', '.join(table.row_axis_columns) or 'unset'})")
+                continue
+            for row in chunk:
+                row.update(fields_for_cell(
+                    list(table_set.origin_labels), table, row))
+            raw_rows.extend(chunk)
 
         # 3. Discover this review's cohorts from the labels it actually used —
         #    BEFORE any resolution, so nothing has been folded into a default.
@@ -359,7 +403,8 @@ class ReviewParser:
                      "items": [i.model_dump(mode="json") for i in items],
                      "claim_index": claim_index(items)},
             render_blocks=[self._render_items(items)],
-            warnings=self._unpivot_warnings(table_set, raw_rows, items),
+            warnings=self._unpivot_warnings(
+                table_set, raw_rows, items, skipped_study_tables),
         )
 
         # 6. included-study references, extracted from the reference window (doc tail).
@@ -465,11 +510,17 @@ class ReviewParser:
         # model: merged study cells make it a deterministic fill-down, and a
         # wrong answer here would silently attribute values to another paper.
         labels = table.row_labels()
+        years = table.row_years()
         out: list[dict[str, Any]] = []
-        for start in range(0, len(table.rows), self._chunk_rows):
-            chunk = table.rows[start: start + self._chunk_rows]
+        claimable = [
+            i for i in range(len(table.rows))
+            if not (len(table.row_kinds) == len(table.rows)
+                    and table.row_kinds[i] == "summary")
+        ]
+        for start in range(0, len(claimable), self._chunk_rows):
+            idxs = claimable[start: start + self._chunk_rows]
             payload = json.dumps(
-                [[start + i, row] for i, row in enumerate(chunk)], ensure_ascii=False)
+                [[i, table.rows[i]] for i in idxs], ensure_ascii=False)
             data = await self._call(_UNPIVOT.format(
                 table_id=table.table_id, caption=table.caption or "(no caption)",
                 columns=columns, row_axis=row_axis, rows=payload,
@@ -481,14 +532,16 @@ class ReviewParser:
                 try:
                     idx = int(r["row"])
                     r["row_key"] = {"study": labels[idx]}
+                    r["row_year"] = years[idx] if idx < len(years) else ""
                     # The rest of the row, verbatim, as context for the Resolver.
-                    # The parser does not interpret it — a column like "EFT/ EAT"
-                    # is ambiguous on its own, and the knowledge base's own rules
-                    # decide what a neighbouring "Echocardiography" or "CT" means.
+                    # The parser does not interpret it — a header can be ambiguous
+                    # on its own, and the knowledge base's own rules decide what a
+                    # neighbouring cell naming a measurement method implies.
                     r["row_context"] = " ".join(
                         c.strip() for c in table.rows[idx] if c and c.strip())
                 except (KeyError, TypeError, ValueError, IndexError):
                     r.setdefault("row_key", {})
+                    r.setdefault("row_year", "")
                 out.append(r)
         return out
 
@@ -518,7 +571,8 @@ class ReviewParser:
                 continue
             studies.append(ParsedStudy(
                 study_id=_study_slug(citation), citation=citation,
-                doi=normalize_doi(r.get("doi")),
+                doi=printed_doi(r.get("doi"), citation, refs_text),
+                pmid=printed_pmid(citation),
             ))
         return studies
 
@@ -532,8 +586,10 @@ class ReviewParser:
         studies. Fetching all of them would audit papers the review never claimed
         anything about, so the coverage is shown and the extras can be removed.
         """
-        claimed = {i.study_id for i in items}
-        missing = sorted(claimed - {s.study_id for s in studies})
+        claimed = list(dict.fromkeys(i.study_id for i in items if i.study_id))
+        candidates = [(s.study_id, s.citation) for s in studies]
+        paired = {sid: best_identity_match(sid, candidates) for sid in claimed}
+        missing = sorted(sid for sid, hit in paired.items() if hit is None)
 
         await self._reporter.step_or_stop(
             StepStage.REFERENCE_COVERAGE,
@@ -542,7 +598,7 @@ class ReviewParser:
                 {"id": s.study_id, "label": f"{s.study_id}  {s.citation[:70]}"
                                             f"{'  [doi]' if s.doi else '  [no doi]'}",
                  **s.model_dump(mode="json")} for s in studies]},
-            render_blocks=[self._render_coverage(studies, claimed, missing)],
+            render_blocks=[self._render_coverage(studies, paired, missing)],
             warnings=([f"{len(missing)} study/studies in the table have no citation: "
                        + ", ".join(missing[:8])] if missing else []),
             selectable="references",
@@ -556,10 +612,11 @@ class ReviewParser:
         return [s for s in studies if s.study_id in kept]
 
     @staticmethod
-    def _render_coverage(studies: list[ParsedStudy], claimed: set[str],
+    def _render_coverage(studies: list[ParsedStudy], paired: dict[str, str | None],
                          missing: list[str]) -> str:
-        used = [s for s in studies if s.study_id in claimed]
-        extra = [s for s in studies if s.study_id not in claimed]
+        matched_ref_ids = {hit for hit in paired.values() if hit}
+        used = [s for s in studies if s.study_id in matched_ref_ids]
+        extra = [s for s in studies if s.study_id not in matched_ref_ids]
         lines = [f"  {len(studies)} reference(s) extracted; "
                  f"{len(used)} match a study in the data table, "
                  f"{len(extra)} do not; {len(missing)} table study/studies have none."]
@@ -605,7 +662,7 @@ class ReviewParser:
         reason = "; ".join(r.message or r.code for r in resolved.reasons)
         cell = ResolutionCellRef(
             table_id=str(row.get("table_id") or ""), cell_ref=_cell_ref(row),
-            study_id=_study_slug(_row_key_label(row.get("row_key"))),
+            study_id=_row_join_key(row),
             column_header=str(row.get("column_header") or ""), unit=resolved.unit,
             status=resolved.status, field_type=resolved.field_type or "", reason=reason,
         )
@@ -666,23 +723,44 @@ class ReviewParser:
             if inputs is None:
                 continue
             raw_name, value, unit, modality = inputs
-            try:
-                resolved = await self._resolver.resolve(
-                    raw_name, unit=unit, modality=modality,
-                    research_context=research_context, value=value)
-            except Exception as exc:                         # noqa: BLE001
-                # Resolver errors are evidence too. Keep the row and make the
-                # exception visible at FIELD_RESOLUTION rather than dropping it.
-                logger.warning("resolve_failed", raw=raw_name, error=str(exc)[:120])
+            forest_ft = None
+            if str(row.get("display_kind") or "") == "forest_plot":
+                from react_review.parser.review_extraction.forest_unpivot import (
+                    forest_count_field,
+                )
+                forest_ft = forest_count_field(raw_name)
+            if forest_ft:
                 resolved = ResolvedField(
                     resolution_key=resolution_key(
                         raw_name, unit, research_context, modality),
                     raw_field_name=raw_name, unit=unit, modality=modality,
+                    field_type=forest_ft, status="authoritative", scope="cohort",
+                    source="deterministic",
+                    statuses_seen=["authoritative"],
+                    field_types_seen=[forest_ft],
                     reasons=[ReasonRecord(
-                        code="concept_resolution_exception", stage="field_resolution",
-                        source="exception", message=str(exc)[:200])],
-                    statuses_seen=["unresolved"],
+                        code="forest_count_column", stage="field_resolution",
+                        message=f"forest count column mapped to {forest_ft}",
+                    )],
                 )
+            else:
+                try:
+                    resolved = await self._resolver.resolve(
+                        raw_name, unit=unit, modality=modality,
+                        research_context=research_context, value=value)
+                except Exception as exc:                         # noqa: BLE001
+                    # Resolver errors are evidence too. Keep the row and make the
+                    # exception visible at FIELD_RESOLUTION rather than dropping it.
+                    logger.warning("resolve_failed", raw=raw_name, error=str(exc)[:120])
+                    resolved = ResolvedField(
+                        resolution_key=resolution_key(
+                            raw_name, unit, research_context, modality),
+                        raw_field_name=raw_name, unit=unit, modality=modality,
+                        reasons=[ReasonRecord(
+                            code="concept_resolution_exception", stage="field_resolution",
+                            source="exception", message=str(exc)[:200])],
+                        statuses_seen=["unresolved"],
+                    )
             by_row[index] = resolved
             self._merge_resolution(records, resolved, row)
         return by_row, list(records.values())
@@ -695,7 +773,7 @@ class ReviewParser:
         """Apply already-inspected resolution decisions to the raw long rows."""
         registry = registry or CohortRegistry()
         items: list[ReviewDataItem] = []
-        seen_study_level: set[tuple[str, str]] = set()
+        seen_study_level: dict[tuple[str, str], object] = {}
         for index, r in enumerate(raw_rows):
             if not isinstance(r, dict):
                 continue
@@ -703,6 +781,8 @@ class ReviewParser:
             value = r.get("value")
             if not raw_name or value is None:
                 continue
+            if drop_non_source(str(r.get("value_source") or "")):
+                continue  # review-computed / bibliographic — not an audit claim
             if _norm_col(raw_name) in _IDENTIFIER_COLUMNS:
                 continue  # identifier/dimension column, not a measurement
 
@@ -711,13 +791,27 @@ class ReviewParser:
             timepoint_label = str(r.get("timepoint_label") or "").strip()
             table_id = str(r.get("table_id") or "")
             cell_ref = _cell_ref(r)
-            study_id = _study_slug(_row_key_label(r.get("row_key")))
+            study_id = _row_join_key(r)
             cohort = registry.resolve(cohort_label)
+            # Unpivot often leaves cohort_label empty when the arm is only in
+            # the column header ("N MIE"). The registry already discovered
+            # those arms from cohort_labels_seen; resolve() second pass
+            # (cohorts.py) matches the header against them. Accept only
+            # resolved|alias — never combined. "Total"/"Overall" are in
+            # _COMBINED and would otherwise look successfully parsed while
+            # wiping the arm (forest Events/Total columns; that is a 2b trap).
+            if not cohort_label:
+                header = registry.resolve(raw_name)
+                if header.status in ("resolved", "alias"):
+                    cohort = header
             group, cohort_status = cohort.key, cohort.status
             common = dict(
                 study_id=study_id, raw_field_name=raw_name, unit=unit,
                 table_id=table_id, cell_ref=cell_ref, column_header=raw_name,
                 cohort_label=cohort_label, timepoint_label=timepoint_label,
+                value_source=str(r.get("value_source") or ""),
+                outcome=str(r.get("outcome") or ""),
+                display_kind=str(r.get("display_kind") or ""),
             )
             cohort_reasons = ([] if cohort.known else [ReasonRecord(
                 code="cohort_unknown", stage="parser", message=cohort.reason)])
@@ -731,7 +825,7 @@ class ReviewParser:
             if isinstance(text, str) and not text:
                 continue
             if isinstance(text, str) and text.lower() in _PLACEHOLDER:
-                items.append(ReviewDataItem(
+                items.append(ReviewClaim(
                     **common, group=group, cohort_status=cohort_status,
                     field_type="", value=None, resolution_status="unresolved",
                     reasons=[ReasonRecord(
@@ -752,7 +846,7 @@ class ReviewParser:
                 resolution_reasons = list(rf.reasons) or [ReasonRecord(
                     code="concept_unresolved", stage="parser",
                     message=f"column {raw_name!r} did not map to a known concept")]
-                items.append(ReviewDataItem(
+                items.append(ReviewClaim(
                     **common, group=group, cohort_status=cohort_status,
                     field_type="", value=value, resolution_status="unresolved",
                     resolution_key=rf.resolution_key,
@@ -767,10 +861,26 @@ class ReviewParser:
             if rf.scope == "study":
                 group, cohort_status = "-", "not_applicable"
                 cohort_reasons = []
-                if (study_id, ft) in seen_study_level:
-                    continue
-                seen_study_level.add((study_id, ft))
-            items.append(ReviewDataItem(
+                seen_key = (study_id, ft)
+                if seen_key in seen_study_level:
+                    prior = seen_study_level[seen_key]
+                    if str(prior) == str(value):
+                        continue
+                    conflict = ReasonRecord(
+                        code="study_scope_conflict", stage="parser",
+                        message=(
+                            f"study-scoped field {ft!r} for {study_id} has "
+                            f"disagreeing values {prior!r} and {value!r}; "
+                            "both were kept"))
+                    for prev in items:
+                        if prev.study_id == study_id and prev.field_type == ft:
+                            if not any(reason.code == "study_scope_conflict"
+                                       for reason in prev.reasons):
+                                prev.reasons.append(conflict)
+                    cohort_reasons = [conflict]
+                else:
+                    seen_study_level[seen_key] = value
+            items.append(ReviewClaim(
                 **common, group=group, cohort_status=cohort_status,
                 field_type=ft, value=value, reasons=cohort_reasons,
                 resolution_key=rf.resolution_key,
@@ -878,9 +988,15 @@ class ReviewParser:
         return "\n".join(lines)
 
     @staticmethod
-    def _unpivot_warnings(table_set, raw_rows: list[dict], items: list) -> list[str]:
+    def _unpivot_warnings(table_set, raw_rows: list[dict], items: list,
+                          skipped_study_tables: list[str] | None = None) -> list[str]:
         out: list[str] = []
-        if table_set.tables and not raw_rows:
+        if skipped_study_tables:
+            out.append(
+                "table(s) whose rows are not included papers were kept in the "
+                "capture and not turned into source-paper claims: "
+                + "; ".join(skipped_study_tables))
+        if table_set.tables and not raw_rows and not skipped_study_tables:
             out.append("the captured table produced no long rows")
         n_unresolved = sum(1 for i in items if i.resolution_status == "unresolved")
         if n_unresolved:

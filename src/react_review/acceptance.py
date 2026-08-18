@@ -8,11 +8,11 @@ code rather than a paragraph in a report:
 *The unit of analysis is the study, and the estimand is domain-weighted.*
 Fifteen rows from one paper are not fifteen independent observations — one bad
 extraction pass moves them together — so studies are resampled, not rows. And
-because nine EAT studies beside one melanoma study would otherwise mean "how
-well does this work on EAT", each DOMAIN contributes equally to the headline
-figure, with its own studies resampled inside it. A benchmark with one study
-supports no interval at all; that is why "60%" and "80%" from the melanoma
-checkpoint were never rankable against each other.
+because nine studies from one field beside one study from another would otherwise
+mean "how well does this work on the first field", each DOMAIN contributes
+equally to the headline figure, with its own studies resampled inside it. A
+benchmark with one study supports no interval at all; that is why "60%" and
+"80%" from the melanoma checkpoint were never rankable against each other.
 
 *A held-out domain is reported alone.* Averaging it into the domains the system
 was built on is how a held-out result stops being held out.

@@ -122,6 +122,22 @@ def test_approved_study_ids_are_authoritative_and_two_passes_merge():
     assert merged.gaps == []
 
 
+def test_table_join_key_covers_an_approved_citation_alias():
+    checklist = Checklist(name="join", items=[ChecklistItem(
+        id="sample", question="Sample size?", required=True, scope="per_study",
+        value_kind="numeric", field_types=["sample_size"])])
+    claims = [ReviewDataItem(
+        study_id="Smith 2020", field_type="sample_size", value="100")]
+
+    result = apply_checklist(
+        checklist, claims, CapturedTableSet(), study_ids=["smith_2020"],
+        scopes={"per_study"}, evaluation_pass="study_coverage")
+
+    assert result.assessments[0].status == "covered"
+    assert result.gaps == []
+    assert result.assessments[0].evidence[0].study_id == "Smith 2020"
+
+
 def test_empty_approved_study_list_does_not_fall_back_to_table_claims():
     checklist = Checklist(name="empty", items=[ChecklistItem(
         id="quality", question="Quality?", required=True, scope="per_study",

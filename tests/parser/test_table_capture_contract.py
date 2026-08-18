@@ -14,6 +14,7 @@ from react_review.parser.table_capture_contract import (
     DEFAULT_TABLE_CAPTURE_PROFILE,
     TABLE_CAPTURE_V1,
     TABLE_CAPTURE_V2,
+    TABLE_CAPTURE_V3,
     TableCapturePromptContract,
     render_table_capture_prompt,
     sha256_rendered_prompt,
@@ -22,7 +23,7 @@ from react_review.run_profile import ExecutionMode, RunManifest, load_run_contra
 
 
 ROOT = Path(__file__).resolve().parents[2]
-PROFILES = ("table_capture_v1", "table_capture_v2")
+PROFILES = ("table_capture_v1", "table_capture_v2", "table_capture_v3")
 
 
 class RecordingBackend(LLMBackend):
@@ -79,19 +80,29 @@ def test_unknown_table_capture_profile_is_refused():
 
 
 @pytest.mark.asyncio
-async def test_table_capturer_defaults_to_frozen_v1_and_allows_explicit_v2():
+async def test_table_capturer_defaults_to_v3_and_keeps_frozen_v1():
     payload = {"research_context": "", "tables": []}
+    v3_backend = RecordingBackend(payload)
     v1_backend = RecordingBackend(payload)
     v2_backend = RecordingBackend(payload)
+    selected = [{"display_id": "table_1", "caption": "Table 1"}]
 
-    await TableCapturer(v1_backend).capture("fixture", reporter=StepReporter())
+    await TableCapturer(v3_backend).capture(
+        "fixture", reporter=StepReporter(), selected=selected)
+    await TableCapturer(v1_backend, prompt_profile="table_capture_v1").capture(
+        "fixture", reporter=StepReporter())
     await TableCapturer(v2_backend, prompt_profile="table_capture_v2").capture(
         "fixture", reporter=StepReporter())
 
-    assert DEFAULT_TABLE_CAPTURE_PROFILE == "table_capture_v1"
+    assert DEFAULT_TABLE_CAPTURE_PROFILE == "table_capture_v3"
+    assert v3_backend.prompts == [render_table_capture_prompt(
+        "table_capture_v3", text="fixture",
+        selected='[{"display_id": "table_1", "caption": "Table 1"}]')]
     assert v1_backend.prompts == [render_table_capture_prompt("table_capture_v1", text="fixture")]
     assert v2_backend.prompts == [render_table_capture_prompt("table_capture_v2", text="fixture")]
     assert v1_backend.prompts != v2_backend.prompts
+    assert "SELECTED DISPLAYS" in v3_backend.prompts[0]
+    assert "SELECTED DISPLAYS" not in v1_backend.prompts[0]
 
 
 def test_new_run_profile_records_table_capture_contract_in_the_manifest():
@@ -110,6 +121,7 @@ def test_old_profiles_do_not_gain_empty_table_capture_identity_keys():
 
     assert TABLE_CAPTURE_V1.name == "table_capture_v1.json"
     assert TABLE_CAPTURE_V2.name == "table_capture_v2.json"
+    assert TABLE_CAPTURE_V3.name == "table_capture_v3.json"
     assert "table_capture_prompt_id" not in identity
     assert "table_capture_prompt_hash" not in identity
     assert "table_capture_prompt_profile" not in identity

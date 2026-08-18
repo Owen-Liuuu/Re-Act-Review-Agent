@@ -23,7 +23,7 @@ from react_review.eval_excerpt import (
     tally,
 )
 
-BENCH = repo_root() / "eval/benchmarks/melanoma_checkpoint_2017"
+BENCH = repo_root() / "eval/benchmark_2"
 GOLD = BENCH / "excerpt_gold_v1.json"
 SOURCE_PDF = BENCH / "raw/sources/larkin_2015.pdf"
 

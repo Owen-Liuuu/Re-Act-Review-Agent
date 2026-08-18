@@ -302,6 +302,8 @@ async def _collect_all(collector, reviews, reference_for, opened, opener,
     order: list[str] = []
     grouped: dict[str, list[tuple[int, Any]]] = {}
     for position, review in enumerate(reviews):
+        if not review.study_id:
+            continue
         if review.study_id not in grouped:
             grouped[review.study_id] = []
             order.append(review.study_id)

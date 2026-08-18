@@ -61,3 +61,22 @@ class MeteredBackend(LLMBackend):
             usage=getattr(self._backend, "last_usage", None),
             stage=self._stage)
         return output
+
+    async def complete_vision(
+        self, prompt: str, images: list[bytes], *, seed: int = 42,
+    ) -> str:
+        started = time.perf_counter()
+        try:
+            output = await self._backend.complete_vision(
+                prompt, images, seed=seed)
+        except Exception:
+            self._telemetry.record_call(
+                prompt=prompt, output="", failed=True,
+                seconds=time.perf_counter() - started, stage=self._stage)
+            raise
+        self._telemetry.record_call(
+            prompt=prompt, output=output or "",
+            seconds=time.perf_counter() - started,
+            usage=getattr(self._backend, "last_usage", None),
+            stage=self._stage)
+        return output

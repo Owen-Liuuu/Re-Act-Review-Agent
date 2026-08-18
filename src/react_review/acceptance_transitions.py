@@ -207,11 +207,12 @@ def _check_batches_match_plan(artifact: dict, gate: dict):
     from pathlib import Path
 
     from react_review.contracts import repo_root
+    from react_review.eval_layout import benchmark_dir
 
     applies = gate.get("applies_to") or {}
     name = applies.get("expected_plan") or ""
     benchmark = applies.get("benchmark") or ""
-    path = (repo_root() / "eval/benchmarks" / benchmark / name) if name else None
+    path = (benchmark_dir(repo_root(), benchmark) / name) if name else None
     batches = _batches_of(artifact)
     seen = {"batches": len(batches), "plan": name}
     if path is None or not path.is_file():

@@ -54,7 +54,7 @@ from react_review.schemas.telemetry import (
 )
 from react_review.tools.extract_batch import ExtractSourceBatchTool
 from react_review.schemas.telemetry import RunTelemetry, wall_clock
-from react_review.pipeline.factory import _create_llm_backend
+from react_review.llm.factory import create_llm_backend
 from react_review.production import evidence_adequacy_runtime
 from react_review.retrieval.local_pdf import LocalPdfRetriever
 from react_review.steps.paper_verification.schemas import ReferenceEntry
@@ -65,7 +65,7 @@ from react_review.tools.extraction_cache import ExtractionCache
 from react_review.tools.registry import ToolRegistry
 from react_review.tools.semantic_compare import SemanticCompareTool
 
-DEFAULT_BENCH = Path(__file__).resolve().parent / "benchmark"
+DEFAULT_BENCH = Path(__file__).resolve().parent / "benchmark_1"
 ROOT = DEFAULT_BENCH.parent.parent
 
 
@@ -218,7 +218,7 @@ def main(argv: list[str] | None = None) -> None:
     by_id = {s.study_id: s for s in studies}
 
     telemetry = RunTelemetry()
-    backend = (_create_llm_backend(load_config(args.config))
+    backend = (create_llm_backend(load_config(args.config))
                if args.config is not None else None)
     # Per-stage measurement is switched on for a run that HAS more than one
     # stage to compare. A single-route run has nothing to compare and its global

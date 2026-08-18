@@ -62,7 +62,7 @@ src/react_review/
   tools/         typed Search/Verify/Extract/Compare catalogue and replay hooks
   orchestrator/  matching, collection, judging, checkpoints, and pipeline
   agents/        bounded collector/auditor/judge workflows
-  llm/           backend ABC + retry engine + provider adapters
+  llm/           backend ABC + retry engine + provider adapters + factory
 eval/            frozen EAT and melanoma benchmarks + accuracy runners
 docs/            architecture, limitations, sanitized baselines, deferred issues
                  version_numbering_zh.md maps the six independent v-number
@@ -101,5 +101,5 @@ human-review flag carried by the saved Evidence Package.
 
 The following prototype modules carried over as high-value reusable assets:
 four-tier full-text retrieval, CrossRef verification + confidence scoring,
-field-level comparison primitives + per-concept tolerance table, the LLM retry
-engine, and the DOCX report renderer.
+field-level comparison primitives + per-concept tolerance table, and the LLM
+retry engine.

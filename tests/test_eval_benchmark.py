@@ -151,7 +151,7 @@ def test_the_eat_benchmark_is_now_pinned_like_the_melanoma_one():
     import csv
     from pathlib import Path
 
-    eat = Path(__file__).resolve().parents[1] / "eval" / "benchmark"
+    eat = Path(__file__).resolve().parents[1] / "eval" / "benchmark_1"
     with open(eat / "audit_template.csv", encoding="utf-8-sig", newline="") as f:
         rows = list(csv.DictReader(f))
     gate = validate_frozen_benchmark(eat, rows)
@@ -169,6 +169,6 @@ def test_the_eat_manifest_states_the_context_its_recordings_used():
     import json
     from pathlib import Path
 
-    eat = Path(__file__).resolve().parents[1] / "eval" / "benchmark"
+    eat = Path(__file__).resolve().parents[1] / "eval" / "benchmark_1"
     manifest = json.loads((eat / "manifest.json").read_text(encoding="utf-8-sig"))
     assert manifest["domain"] == "EAT thickness/volume in T1DM vs healthy controls"

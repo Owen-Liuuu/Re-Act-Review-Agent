@@ -1,0 +1,14 @@
+{
+  "prompt_id": "forest_ocr_vision_v1",
+  "prompt_version": "forest-ocr-vision-v1",
+  "written_on": "2026-08-18",
+  "hash_algorithm": "sha256-rendered-utf8-v1",
+  "renderer_identity": "react_review.review_extraction.render.v1",
+  "purpose": "Read a raster forest-plot image into per-study count columns, including the figure's own total/summary rows so a later checksum can run. Empty grid when unreadable; never invent events.",
+  "boundary": "The rendered prompt bytes sent to the vision model, using the model-independent fixture input below. Python comments, helper names and source layout are outside the boundary.",
+  "governance": "Do not edit this prompt or replace this hash. A model-visible change is a new prompt profile and a new contract file. The text-layer forest_ocr_v1 contract is frozen separately.",
+  "fixture_inputs": {
+    "figure_id": "forest_1"
+  },
+  "rendered_prompt_sha256": "82DC696A5CD072A3D7ADD4B9663FAB2CE4F368A6DA84B967AECA49B11D880DDE"
+}

@@ -29,7 +29,7 @@ from react_review.parser.table_capture_contract import (
     render_table_capture_prompt,
 )
 from react_review.parser.table_render import render_table_set
-from react_review.pipeline.factory import _create_llm_backend
+from react_review.llm.factory import create_llm_backend
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -49,8 +49,8 @@ def _redact_url_query(value: str) -> str:
 def _explicit_live_profile() -> str:
     profile = os.getenv("TABLE_CAPTURE_PROMPT_PROFILE", "").strip()
     assert profile in PROMPT_TEMPLATES, (
-        "set TABLE_CAPTURE_PROMPT_PROFILE explicitly to table_capture_v1 or "
-        "table_capture_v2"
+        "set TABLE_CAPTURE_PROMPT_PROFILE explicitly to table_capture_v1, "
+        "table_capture_v2, or table_capture_v3"
     )
     return profile
 
@@ -211,7 +211,7 @@ async def test_live_llm_uses_the_explicit_table_capture_prompt() -> None:
 
     # Match ReviewParser exactly: PyMuPDF text, first 50,000 characters.
     review_text = _pdf_text(pdf)[:50000]
-    inner = _create_llm_backend(load_config(config_path))
+    inner = create_llm_backend(load_config(config_path))
     backend = RecordingLiveBackend(inner)
 
     table_set, context = await TableCapturer(

@@ -1,0 +1,15 @@
+{
+  "prompt_id": "evidence_localize_v1",
+  "prompt_version": "evidence-localize-v1",
+  "written_on": "2026-08-17",
+  "hash_algorithm": "sha256-rendered-utf8-v1",
+  "renderer_identity": "react_review.review_extraction.render.v1",
+  "purpose": "Evidence-chain localization from lens plus results window.",
+  "boundary": "The rendered prompt bytes sent to the model, using the model-independent fixture input below. Python comments, helper names and source layout are outside the boundary.",
+  "governance": "Do not edit this prompt or replace this hash. A model-visible change is a new prompt profile and a new contract file.",
+  "fixture_inputs": {
+    "lens": "one line: elderly ESCC, MIE vs OE, postoperative complications\ndomain: esophageal cancer surgery",
+    "results_window": "Results\nTable 1 Characteristics of included studies.\nFigure 3.3.1 Forest plot of overall complications.\nTable 2 GRADE summary of findings.\nDiscussion"
+  },
+  "rendered_prompt_sha256": "C1DA3CF2383884A4201544F7639894E2E4DB4499BE263747811614ED3220D19A"
+}

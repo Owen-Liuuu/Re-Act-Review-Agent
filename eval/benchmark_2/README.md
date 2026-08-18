@@ -1,5 +1,7 @@
 # Frozen cross-domain benchmark: melanoma checkpoint inhibitors
 
+On disk: `eval/benchmark_2`. Logical id remains `melanoma_checkpoint_2017`.
+
 This Phase 6A benchmark moves the audit from the EAT/T1DM domain to oncology.
 It is frozen around Karlsson and Saleh's 2017 systematic review and the
 three-arm CheckMate 067 trial reported by Larkin et al. (2015).

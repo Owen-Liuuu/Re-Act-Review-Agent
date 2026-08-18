@@ -4,7 +4,7 @@
   "generated_on": "2026-08-10",
   "benchmark_id": "melanoma_checkpoint_2017",
   "contract": {
-    "benchmark_profile": "eval/benchmarks/melanoma_checkpoint_2017/phase8_profile.json",
+    "benchmark_profile": "eval/benchmark_2/phase8_profile.json",
     "run_profile": "configs/run_profiles/phase8.json",
     "tolerances": "configs/tolerances.phase8.yaml (counts exact)",
     "scope_policy": "on",

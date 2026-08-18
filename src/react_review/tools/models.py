@@ -1,10 +1,10 @@
 """Small input/output models for tools that don't reuse an existing schema."""
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, model_validator
 
-from react_review.pipeline.schemas import EvidenceFieldSchema
 from react_review.schemas.adequacy import AdequacyStatus, EvidenceAdequacy
+from react_review.schemas.table import CapturedTable
 from react_review.steps.data_extraction.schemas import PaperDocument
 from react_review.steps.paper_verification.schemas import ReferenceEntry
 
@@ -76,10 +76,25 @@ class FetchResult(BaseModel):
     document: PaperDocument | None = None
 
 
-class ExtractInput(BaseModel):
-    """Input to the extract_fields tool."""
+class ForestOcrInput(BaseModel):
+    """One forest-plot figure. Tests may inject a grid instead of reading a PDF."""
 
-    document: PaperDocument
-    evidence_schema: list[EvidenceFieldSchema] = Field(default_factory=list)
-    research_context: str = ""
+    pdf_path: str = ""
+    figure_id: str = ""
+    caption: str = ""
+    page_hint: str = ""
+    outcomes: list[str] = []
+    # 0-based forest-plot hit among the review's forest displays.
+    figure_ordinal: int = 0
+    # Deprecated page-local index; used only if caption pairing cannot run.
+    image_index: int = 0
+    # When set, the tool returns this table and does not invent cells.
+    injected_table: dict | None = None
+
+
+class ForestOcrResult(BaseModel):
+    """A forest plot as a CapturedTable, or an empty grid plus difficulties."""
+
+    table: CapturedTable
+    difficulties: list[str] = []
 

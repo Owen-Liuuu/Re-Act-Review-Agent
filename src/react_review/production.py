@@ -194,9 +194,9 @@ class ProductionDependencies:
     def llm(self, config):
         if self.backend is not None:
             return self.backend
-        from react_review.pipeline.factory import _create_llm_backend
+        from react_review.llm.factory import create_llm_backend
 
-        return _create_llm_backend(config)
+        return create_llm_backend(config)
 
     def papers(self, build):
         return self.retriever if self.retriever is not None else build()

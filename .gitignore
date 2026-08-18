@@ -39,8 +39,9 @@ Thumbs.db
 *.docx
 !docs/**/*.docx
 
-# Large benchmark PDFs are tracked deliberately under eval/benchmark/raw/
+# Large benchmark PDFs are tracked deliberately under eval/benchmark_*/raw/
 # (whitelisted below); ignore stray PDFs elsewhere.
 *.pdf
-!eval/benchmark/raw/*.pdf
-!eval/benchmarks/melanoma_checkpoint_2017/raw/review_karlsson_saleh_2017.pdf
+!eval/benchmark_1/raw/*.pdf
+!eval/benchmark_2/raw/review_karlsson_saleh_2017.pdf
+!eval/benchmark_3/raw/*.pdf

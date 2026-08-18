@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
+from string import Formatter
 from typing import Any
 
 from react_review.contracts import ContractError, read_json_object, repo_root
@@ -16,11 +17,15 @@ from react_review.contracts import ContractError, read_json_object, repo_root
 
 TABLE_CAPTURE_V1 = Path("configs/prompt_contracts/table_capture_v1.json")
 TABLE_CAPTURE_V2 = Path("configs/prompt_contracts/table_capture_v2.json")
-DEFAULT_TABLE_CAPTURE_PROFILE = "table_capture_v1"
+TABLE_CAPTURE_V3 = Path("configs/prompt_contracts/table_capture_v3.json")
+# Frozen v1/v2 stay callable. New production runs use v3 (selected displays only).
+DEFAULT_TABLE_CAPTURE_PROFILE = "table_capture_v3"
+LEGACY_TABLE_CAPTURE_PROFILES = frozenset({"table_capture_v1", "table_capture_v2"})
 RENDERER_IDENTITY = "react_review.table_capture.render.v1"
 PROMPT_VERSIONS = {
     "table_capture_v1": "table-capture-v1",
     "table_capture_v2": "table-capture-v2",
+    "table_capture_v3": "table-capture-v3",
 }
 
 
@@ -130,13 +135,60 @@ Use empty strings or empty arrays when the corresponding information is absent.
 Return JSON only."""
 
 
+_CAPTURE_V3 = """You are a systematic-review methodologist transcribing SELECTED tables of a review
+so a colleague can check them against the original PDF.
+
+Transcribe ONLY the tables listed under SELECTED DISPLAYS. Match them by caption
+or table_id. Do NOT transcribe any other table. Do NOT invent cells for forest
+plots, figures, or unlisted tables. If a listed table is not in REVIEW TEXT,
+omit it and record that in difficulties — never fill a gap with a guessed cell.
+
+TRANSCRIBE — do not interpret:
+- Copy every cell EXACTLY as printed, including "NR", "NA", "—", "not reported",
+  "not reached", and blanks. An empty cell stays an empty string.
+- Do NOT rename headers, do NOT standardise units, do NOT convert numbers, do NOT
+  reorder or drop columns — including columns whose meaning is unclear to you.
+- Keep multi-level headers as SEPARATE header rows. If a header spans several
+  columns, put it once and leave the columns it spans empty on that row.
+- Every data row must have the same number of cells as the widest header row.
+- If part of a table is unreadable, still transcribe what you can and say what
+  went wrong in "difficulties". Never invent a value to fill a gap.
+
+Also state the review's research question in one line.
+
+{{"research_context": "one line: population + exposure/intervention + outcome",
+  "tables": [
+    {{"table_id": "table_1",
+      "caption": "the table's printed caption",
+      "role": "characteristics | outcomes | quality | other",
+      "header_rows": [["Study","Country","EAT",""],["","","T1DM","Control"]],
+      "rows": [["Ahmad 2022","Egypt","6.60 ± 0.71","3.83 ± 0.35"]],
+      "footnotes": ["values are mean ± SD unless stated"],
+      "row_axis_columns": ["Study"],
+      "shape_notes": "one row per study; the cohort split is a column pair",
+      "cohort_labels_seen": ["T1DM","Control"],
+      "extraction_confidence": 0.0,
+      "difficulties": ["the last column was cut off in the text layer"]}}
+  ]}}
+
+## SELECTED DISPLAYS
+{selected}
+
+## REVIEW TEXT
+{text}
+
+Return JSON only."""
+
+
 PROMPT_TEMPLATES = {
     "table_capture_v1": _CAPTURE_V1,
     "table_capture_v2": _CAPTURE_V2,
+    "table_capture_v3": _CAPTURE_V3,
 }
 _CONTRACT_PATHS = {
     "table_capture_v1": TABLE_CAPTURE_V1,
     "table_capture_v2": TABLE_CAPTURE_V2,
+    "table_capture_v3": TABLE_CAPTURE_V3,
 }
 
 
@@ -144,15 +196,25 @@ def sha256_rendered_prompt(prompt: str) -> str:
     return hashlib.sha256(prompt.encode("utf-8")).hexdigest().upper()
 
 
+def _placeholders(template: str) -> set[str]:
+    return {name for _, name, _, _ in Formatter().parse(template) if name}
+
+
 def render_table_capture_prompt(profile: str = DEFAULT_TABLE_CAPTURE_PROFILE,
-                                *, text: str) -> str:
+                                **values: str) -> str:
     try:
         template = PROMPT_TEMPLATES[profile or DEFAULT_TABLE_CAPTURE_PROFILE]
     except KeyError:
         raise ContractError(
             f"unknown table capture prompt profile {profile!r} "
             f"(known: {', '.join(sorted(PROMPT_TEMPLATES))})") from None
-    return template.format(text=text)
+    needed = _placeholders(template)
+    missing = needed - values.keys()
+    if missing:
+        raise ContractError(
+            f"{profile or DEFAULT_TABLE_CAPTURE_PROFILE} is missing prompt "
+            f"values: {', '.join(sorted(missing))}")
+    return template.format(**{key: values[key] for key in needed})
 
 
 @dataclass(frozen=True)
@@ -184,9 +246,11 @@ class TableCapturePromptContract:
             raise ContractError(
                 f"unknown table capture prompt profile {prompt_id!r} in {path}")
         fixture_inputs = body.get("fixture_inputs")
-        if not isinstance(fixture_inputs, dict) or set(fixture_inputs) != {"text"}:
+        needed = _placeholders(PROMPT_TEMPLATES[prompt_id])
+        if not isinstance(fixture_inputs, dict) or set(fixture_inputs) != needed:
             raise ContractError(
-                f"table capture prompt contract {path} must pin fixture_inputs.text")
+                f"table capture prompt contract {path} must pin fixture_inputs "
+                f"{sorted(needed)}")
         return cls(
             prompt_id=prompt_id,
             prompt_version=str(body.get("prompt_version") or ""),

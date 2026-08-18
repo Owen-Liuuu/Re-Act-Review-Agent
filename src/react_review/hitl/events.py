@@ -23,7 +23,11 @@ class StepStage(str, Enum):
     """The inspectable stages of an audit run, in execution order."""
 
     REVIEW_PDF_LOADED = "review_pdf_loaded"
+    REVIEW_LENS = "review_lens"
+    EVIDENCE_LOCALIZE = "evidence_localize"
     TABLE_CAPTURE = "review_table_capture"
+    FOREST_OCR = "forest_ocr"
+    CLAIM_ORIGIN = "claim_origin"
     COHORT_REGISTRY = "cohort_registry"
     FIELD_RESOLUTION = "field_resolution"
     CHECKLIST_REVIEW = "checklist_review"

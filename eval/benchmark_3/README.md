@@ -1,55 +1,55 @@
-# benchmarks_1 — 人工对答案键（未冻结）
+# benchmark_3 — ESCC（doc05）源论文核对金标（未冻结）
 
-种子运行：`output/runs/d00e2cedbc79`（2026-08-16，`doc05.pdf`，18 条 Table 1 声明，3 篇源论文）。
-系统抄表结果只作**草稿**。答案键以你对照 PDF 后的填写为准，填完前不要当回归基线。
+本项目只核：**综述写到某一篇源论文头上的数，源论文里是不是这个数。**
 
-先填这两个表（UTF-8，不要用 Excel 另存成 GBK）：
+不核正文叙述、不核 Table 2 合并 OR、不核 GRADE、不核森林图菱形。那些是综述自己的统计结论，源论文里没有。
 
-1. `studies_worksheet.csv` — 三篇源论文能不能拿到、DOI/PMID、本地 PDF 路径
-2. `gold_worksheet.csv` — 每一格：综述抄得对不对、源论文真值、期望判决
+## 要对源论文的格子
 
-列含义和填法见各 CSV 表头下一行的注释列（`#` 开头的说明行已去掉，说明在下面）。
-
-## 你要填的列
-
-### studies_worksheet.csv
-
-| 列 | 谁填 | 含义 |
+| 来源 | 内容 | 抽取 |
 |---|---|---|
-| study_id | 已填 | 文献别名，不要改 |
-| review_citation | 已填 | 综述参考文献原文 |
-| printed_doi | 你填 | 参考文献里**印出来的** DOI，没有就空。不要猜 Frontiers |
-| printed_pmid | 你填 | 参考文献里印出来的 PMID，没有就空 |
-| source_pdf | 你填 | 本地全文 PDF 相对路径，如 `raw/sources/li_2015.pdf`；拿不到就空 |
-| access | 你填 | `full_text` / `abstract_only` / `unavailable` |
-| notes | 你填 | 任意 |
+| Table 1 | 三篇的特征与匹配后 N | 现在就能测 |
+| forest_1–forest_4 | 分研究 Events / Total | 等 OCR 出网格 |
 
-### gold_worksheet.csv
+图/表 **有印刷编号就用印刷编号**（本 PDF 的 Table 1）；**没有编号**时，按 evidence_chain 森林图出现顺序记 `forest_1`…`forest_4`。本文四张森林图 caption 没有 "Figure 3.3.1" 这类印刷号（3.3.1 是章节，不是图号），所以金标 `source_location` 用序数 id，不用章节号。
 
-灰色列（`seed_*`）来自那次运行，**不要当标准答案**。只在抄表确实错了时改 `review_value_corrected`。
+金标：`review_ground_truth.csv`（62 行，R001–R062）。Table 1 是 `capture=table_text`（18 行）；森林图 Events/Total 是 `capture=figure_ocr`（44 行）。没有分研究 OR、没有 Weight。
 
-| 列 | 谁填 | 允许值 |
-|---|---|---|
-| review_ok | 你填 | `Y` = 和综述表格一致；`N` = 抄错了，同时改 `review_value_corrected` |
-| review_value_corrected | 抄错才填 | 综述格子的正确原文 |
-| source_value | 你填 | 源论文里对应的值，原文抄；源论文没有就空 |
-| source_quote | 你填 | 能支撑该值的连续原文 |
-| source_location | 你填 | 如 `Table 1; Methods; Abstract` |
-| expected_label | 你填 | `match` / `mismatch` / `unit_mismatch` / `not_comparable` / `source_unavailable` |
-| expected_match_mode | 你填 | `numeric` / `semantic` / `structured` / `skip` |
-| notes | 你填 | 例如「综述是 PSM 后 N，摘要是匹配前 N」 |
+- `studies_worksheet.csv` — 三篇的引用串，用来把解析器的 `Li J et al. 2015` 对上金标 `li j_2015`
+- `raw/doc05.pdf` — 综述
+- `output/` — 本机评测报告（gitignore，勿提交）
 
-判决怎么选：
+`internal_consistency.csv` 记录综述自己打架（匹配/未匹配分母），**不是本项目主任务**。
 
-- `match`：综述与源论文说的是同一件事（数字在容差内，或语义等价）
-- `mismatch`：两边都有值，但不是同一件事（最常见：匹配前 vs 匹配后人数）
-- `not_comparable`：源论文根本不报这个量（发表年、国家写在单位地址里等）
-- `source_unavailable`：这篇论文这次拿不到全文/摘要，无法对
+## 怎么测 Review Extraction
 
-## 这次运行里已经能看出、但必须由你拍板的点
+需要本机 `configs/config.local.yaml`（LLM）。默认读这份金标，报告写到 `output/`：
 
-- Li J / Li K 的 `N MIE` / `N OE`：综述写的是 **(matched)**，系统从摘要抽到的是匹配前人数（89/318、358/111）。若源论文正文另有 PSM 后人数，以正文为准。
-- Capovilla：这次没拿到 Frontiers 全文；报告里出现的 `10.1093/dote/doad052.248` 不是参考文献里的 `13:1104109`，不要写进 printed_doi。
-- Table 2（汇总 OR / I² / GRADE）没有进这 18 条。若要一并做基准，在 `gold_worksheet.csv` 末尾按同样列加行。
+```powershell
+python eval/run_review_extraction.py --config configs/config.local.yaml
+```
 
-填完告诉我，再拆成 `review_ground_truth.csv` + `audit_template.csv` 并冻结。
+产出：
+
+- `eval/benchmark_3/output/review_extraction.html`
+- `eval/benchmark_3/output/review_extraction.json`
+- `eval/benchmark_3/output/parser_items.json`
+- `eval/benchmark_3/output/journal/<run_id>/` — lens / localize / origin 逐步件
+
+看 **Table 1 recall** 才是当前诚实分数。Forest recall 在 OCR 还不能读图时会接近 0，这不是 localize 单独的失败。不要用 `eval/run_parser_accuracy.py`：它按 `(study, group, field_type)` 连接，会把四张森林图的 Events 压成一行。
+
+已有一次运行时可以只复评、不打模型：
+
+```powershell
+python eval/run_review_extraction.py --items eval/benchmark_3/output/parser_items.json
+```
+
+这不是冻结的 TableCapture A/B 门（`eval/table_capture_ab_v1.json`，v1 vs v2 抄格子）。不要把 `table_capture_v3` 加进那份清单来冒充泛化。
+
+## 2b 注意（森林图列头）
+
+列头兜底只接受 `resolved` / `alias`，不要放宽到 `combined`。`Total` / `Overall` 在 cohort `_COMBINED` 里，`resolve("Total")` 得到 `key=all` `status=combined`。森林图列头正是 Events, Total, Events, Total；若 2b 复用 Table 1 这条路径，Total 会被当成明确的合并队列并吃掉臂身份——看起来解析成功、实际把 group 写成 all。
+
+## 源论文填写
+
+`gold_claims.csv` 与 `review_ground_truth.csv` 一行对一行（R001–R062）。`source_value` / `source_quote` / `source_location_in_paper` / `expected_label` 空着的格子由人对照源论文填。上一轮抽取读到的数留在 `seed_source_value`（未匹配 N 等），不要直接当金标。优先填 Events 和匹配后 N。分研究 OR 已去掉。

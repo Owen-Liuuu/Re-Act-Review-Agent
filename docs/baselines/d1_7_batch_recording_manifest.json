@@ -18,8 +18,8 @@
   },
   "manifest_generation": {
     "generator": "eval/d1_7_manifest.py",
-    "generator_sha256": "ECB88532FD5972D9996F42F78084F2ED00A4492581109BB2139AD902FE5B9684",
-    "generator_last_changed_commit": "85a732affb153bff34d04659067a73f5014af605",
+    "generator_sha256": "3161B669B63109630B4CCC58A6233886437EBA340EFABFB5649F09E13578E4E2",
+    "generator_last_changed_commit": "4c487264e7c285156b5f19cfff36d439f5ff1bba",
     "note": "the generator is committed BEFORE the manifest it produces, so these two values describe a state that already exists in history"
   },
   "model": {

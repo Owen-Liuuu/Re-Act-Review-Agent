@@ -10,12 +10,11 @@ from react_review.tools.catalogue import build_catalogue
 from react_review.tools.compare import CompareValuesTool
 from react_review.tools.search import CountResultsTool, SearchPubMedTool
 from react_review.tools.verify import VerifyReferenceTool
-from react_review.tools.extract import ExtractFieldsTool, FetchFullTextTool
+from react_review.tools.extract import FetchFullTextTool
 from react_review.tools.models import (
     CompareInput,
     CountInput,
     CountResult,
-    ExtractInput,
     FetchResult,
 )
 
@@ -29,10 +28,8 @@ __all__ = [
     "CountResultsTool",
     "VerifyReferenceTool",
     "FetchFullTextTool",
-    "ExtractFieldsTool",
     "CompareInput",
     "CountInput",
     "CountResult",
-    "ExtractInput",
     "FetchResult",
 ]

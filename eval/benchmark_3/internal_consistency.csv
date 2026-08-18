@@ -1,0 +1,6 @@
+ic_id,quantity,location_a,value_a,location_b,value_b,discrepancy_type,likely_cause,error_owner,severity,needs_human_review,notes
+IC01,Capovilla OE N,Table 1 N OE,102 / 58*,Figure 2 and Figure 3 OE Total,102,matched_vs_unmatched,Methods say only PSM-matched data were pooled; Fig 2/3 use unmatched OE 102,review_author,high,yes,"Fig 5 leak uses OE Total 58 (matched). Same study, two denominators."
+IC02,pooled OE N,Figure 2 / Figure 3 total OE,215,Figure 5 total OE,171,inconsistent_denominator,215 = 102+58+55 (Fig 2/3 Capovilla unmatched); 171 = 58+58+55 (Fig 5 matched),review_author,high,yes,
+IC03,overall complications pooled OR,Table 2 / §3.3.1 prose,0.40 (0.27-0.60),Figure 2 diamond,"0.40 [0.27, 0.60]",none,"same estimate, different bracket style",none,low,no,"negative control: Table 2, prose, and figure diamond agree"
+IC04,30-day mortality studies,Table 2 Studies (n),2,Figure 4,Li J 2015 + Li K 2025 (Capovilla absent),none,Capovilla did not report this outcome in the matched forest,none,low,no,Li K 0/92 vs 0/55 is in both Figure 4 and §3.3.3 prose
+IC05,methods vs forest denominators,§2.7,only data from propensity score-matched populations were used,Figure 2 Capovilla OE Total,102 unmatched,protocol_vs_analysis,analysis did not follow the matched-only rule for every outcome,review_author,high,yes,

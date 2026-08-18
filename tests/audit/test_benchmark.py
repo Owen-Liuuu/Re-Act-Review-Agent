@@ -12,7 +12,7 @@ from pathlib import Path
 from react_review.audit import ToleranceTable, compare_values
 
 ROOT = Path(__file__).resolve().parents[2]
-BENCH = ROOT / "eval" / "benchmark"
+BENCH = ROOT / "eval" / "benchmark_1"
 TOL = ToleranceTable.from_yaml(ROOT / "configs" / "tolerances.yaml")
 
 

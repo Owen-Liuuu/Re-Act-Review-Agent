@@ -20,7 +20,7 @@ from tests.conftest import requires_frozen_evaluator
 
 from react_review.contracts import repo_root
 
-BENCH = repo_root() / "eval/benchmarks/melanoma_checkpoint_2017"
+BENCH = repo_root() / "eval/benchmark_2"
 PLAN = BENCH / "d1_7_expected_plan.json"
 PROFILE = "phase8_batch_v7_profile.json"
 SOURCE_PDF = BENCH / "raw/sources/larkin_2015.pdf"

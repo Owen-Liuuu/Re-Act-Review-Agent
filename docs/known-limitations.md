@@ -49,7 +49,7 @@
 
 | 编号 | 现象 | 影响 | 位置 | 改进方向 |
 |---|---|---|---|---|
-| **L10** | **仍没有跨领域准确率证明** —— Phase 7 修完归档的多臂/CI/confidence-level 问题后,melanoma 为 80.0%(n=15),但 15 行的 Wilson 区间过宽,**门槛既未通过、也不以通过为目标** | 可以证明路径可达、缺陷可修、失败可见;不能宣称系统在肿瘤领域准确 | `eval/benchmarks/melanoma_checkpoint_2017/`、`docs/baselines/melanoma_phase7_metrics.json` | 增加第 3 个独立领域基准,行数足以支撑区间;必须由专家确认答案键 |
+| **L10** | **仍没有跨领域准确率证明** —— Phase 7 修完归档的多臂/CI/confidence-level 问题后,melanoma 为 80.0%(n=15),但 15 行的 Wilson 区间过宽,**门槛既未通过、也不以通过为目标** | 可以证明路径可达、缺陷可修、失败可见;不能宣称系统在肿瘤领域准确 | `eval/benchmark_2/`、`docs/baselines/melanoma_phase7_metrics.json` | 增加第 3 个独立领域基准,行数足以支撑区间;必须由专家确认答案键 |
 | **L13** | **实时 LLM 抽取不能充当确定性代码的回归基线** —— 同一评估代码与输入在两次 live 运行中曾把 Iacobellis 总人数分别抽成 30 和 15；Phase 6-0e 的独立 live 又比冻结 replay 多漏 2 行 | 把 live 波动混入代码回归会误判修复或回归，也会诱导“重跑到绿色” | `tools/extraction_cache.py`、`eval/run_full_accuracy.py` | 确定性回归使用版本化 raw-response replay；live 运行独立报告方差，禁止覆盖旧缓存或用重复运行挑选最好结果 |
 
 ### F. 语义等价(Phase 4B 新增)
@@ -58,7 +58,7 @@
 |---|---|---|---|---|
 | **L14** | **模型自报的 confidence 无信息量** —— 2026-08-03 实测 glm-4.5-flash 在 5 个案例(含判断方向相反的对抗例)上**一律返回 1.0** | DKB 字段解析已在 Phase 5A-3 停止用 confidence 放行，改为跨 seed 稳定性 + 确定性自我契约；语义比较仍保留 `min_confidence=0.70`，承重的仍是数值不漂移 / 极性 / 引文锚定 | `dkb/resolver.py`、`dkb/verify.py`、`audit/semantic_control.py` | DKB 路径已缓解；语义路径仍需继续打印阈值敏感度并评估是否彻底移除 confidence 闸门 |
 | **L15** | **关系方向:自相矛盾已能拦,自洽却错的拦不住** —— Phase 7 让 verdict 同时给出 `more_specific_side`,与 relation 互斥即判 `NOT_COMPARABLE + relation_direction`(melanoma 少了最后一个假阳性);但 MA003 给出的是**自洽而与事实相反**的方向,确定性检查无从反驳,4 条 semantic 行仍有 3 条与 overlay 的 relation 不一致 | 已证明矛盾可见,仍未证明 semantic 判定准确 | `audit/semantic_control.py`、`schemas/semantic.py` | 跨 seed 结构一致性(Phase 5A 方法)是下一个可用手段,需多次采样,属框架级选择 |
-| **L17** | **Phase 6B 的 relation 期望与 prompt 定义相反** —— 答案键把"review 更具体"记成 `review_broader`,而 prompt 定义 `review_broader` 为 review 更不具体;同形的 MA003 又记成 `same` | 只影响诊断字段,不影响标签(两个 broader 方向同出口) | `eval/benchmarks/melanoma_checkpoint_2017/phase7_semantic_overlay.csv` | 已用 Phase 7 overlay 在**不改冻结答案键**的前提下重述四条 semantic 期望 |
+| **L17** | **Phase 6B 的 relation 期望与 prompt 定义相反** —— 答案键把"review 更具体"记成 `review_broader`,而 prompt 定义 `review_broader` 为 review 更不具体;同形的 MA003 又记成 `same` | 只影响诊断字段,不影响标签(两个 broader 方向同出口) | `eval/benchmark_2/phase7_semantic_overlay.csv` | 已用 Phase 7 overlay 在**不改冻结答案键**的前提下重述四条 semantic 期望 |
 
 ---
 

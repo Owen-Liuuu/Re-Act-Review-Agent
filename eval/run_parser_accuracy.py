@@ -26,10 +26,10 @@ from react_review.core.enums import AuditLabel
 from react_review.csv_io import load_included_studies
 from react_review.dkb import FieldResolver, load_runtime_knowledge
 from react_review.parser.review_parser import ReviewParser
-from react_review.pipeline.factory import _create_llm_backend
+from react_review.llm.factory import create_llm_backend
 from react_review.study_match import apply_modality_disambiguation, resolve_studies
 
-BENCH = Path(__file__).resolve().parent / "benchmark"
+BENCH = Path(__file__).resolve().parent / "benchmark_1"
 ROOT = BENCH.parent.parent
 
 
@@ -54,7 +54,7 @@ def _load_gt() -> list[dict[str, str]]:
 
 
 async def _run(args) -> None:
-    backend = _create_llm_backend(load_config(args.config))
+    backend = create_llm_backend(load_config(args.config))
     kb = load_runtime_knowledge(
         ROOT / "configs" / "knowledge.seed.json", ROOT / "configs" / "ontology")
     parser = ReviewParser(backend, FieldResolver(kb, backend=backend))

@@ -50,6 +50,8 @@ def _group_by_study(items: list[ReviewDataItem]) -> list[tuple[str, list[ReviewD
     order: list[str] = []
     groups: dict[str, list[ReviewDataItem]] = {}
     for item in items:
+        if not item.study_id:
+            continue
         if item.study_id not in groups:
             groups[item.study_id] = []
             order.append(item.study_id)

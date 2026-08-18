@@ -18,7 +18,7 @@
 python -m pytest -q
 ```
 
-预期 `1554 passed, 2 skipped`。两个跳过都是有意的:一个要 `RUN_LIVE_LLM=1` 才会去调真实模型,一个在 evaluator 已冻结时无事可做。
+预期 `1533 passed, 2 skipped`。两个跳过都是有意的:一个要 `RUN_LIVE_LLM=1` 才会去调真实模型,一个在 evaluator 已冻结时无事可做。
 
 ```bash
 python eval/run_full_accuracy.py --extraction replay --extraction-cache output/baselines/phase6_0d_final_extraction_replay.json
@@ -32,7 +32,7 @@ python eval/run_full_accuracy.py --extraction replay --extraction-cache output/b
 ## 1 · 停在表格捕获门(约 2 分钟等待,先启动再讲话)
 
 ```bash
-python -m react_review run --pdf "eval/benchmark/raw/EAT_T1DM_SRMA.pdf" --studies eval/benchmark/included_studies.csv --limit 3 --checkpoints key --allow-skip --out output/demo
+python -m react_review run --pdf "eval/benchmark_1/raw/EAT_T1DM_SRMA.pdf" --studies eval/benchmark_1/included_studies.csv --limit 3 --checkpoints key --allow-skip --out output/demo
 ```
 
 启动后它会依次经过 `review_pdf_loaded` → **`review_table_capture`**。
@@ -83,7 +83,7 @@ ls output/demo/*/package.partial.json
 同一条命令重跑,这次在每个门按 `C`(或第一个门按 `A` 一路放行):
 
 ```bash
-python -m react_review run --pdf "eval/benchmark/raw/EAT_T1DM_SRMA.pdf" --studies eval/benchmark/included_studies.csv --limit 3 --checkpoints key --allow-skip --out output/demo
+python -m react_review run --pdf "eval/benchmark_1/raw/EAT_T1DM_SRMA.pdf" --studies eval/benchmark_1/included_studies.csv --limit 3 --checkpoints key --allow-skip --out output/demo
 ```
 
 结束后:
@@ -105,7 +105,7 @@ HTML 里要指的三处:每一行的 **source quote**、**为什么是这个标�
 **3.1 Phase 6 的结果(去年那次失败)**
 
 ```bash
-python eval/run_full_accuracy.py --benchmark eval/benchmarks/melanoma_checkpoint_2017 --extraction replay --extraction-cache output/releases/phase6e_2026-08-04/melanoma_extraction_cache.json --semantic cache-only --semantic-cache output/releases/phase6e_2026-08-04/melanoma_semantic_cache.json
+python eval/run_full_accuracy.py --benchmark eval/benchmark_2 --extraction replay --extraction-cache output/releases/phase6e_2026-08-04/melanoma_extraction_cache.json --semantic cache-only --semantic-cache output/releases/phase6e_2026-08-04/melanoma_semantic_cache.json
 ```
 
 预期:`label accuracy 66.7%`、`silent releases 0`。
@@ -113,7 +113,7 @@ python eval/run_full_accuracy.py --benchmark eval/benchmarks/melanoma_checkpoint
 **3.2 Phase 7 的结果(修完四项归档缺陷之后)**
 
 ```bash
-python eval/run_full_accuracy.py --benchmark eval/benchmarks/melanoma_checkpoint_2017 --benchmark-profile phase7_profile.json --extraction replay --extraction-cache output/baselines/melanoma_checkpoint_2017/phase7_extraction_cache.json --semantic cache-only --semantic-cache output/baselines/melanoma_checkpoint_2017/phase7_semantic_cache.json --html output/demo/melanoma_phase7.html
+python eval/run_full_accuracy.py --benchmark eval/benchmark_2 --benchmark-profile phase7_profile.json --extraction replay --extraction-cache output/baselines/melanoma_checkpoint_2017/phase7_extraction_cache.json --semantic cache-only --semantic-cache output/baselines/melanoma_checkpoint_2017/phase7_semantic_cache.json --html output/demo/melanoma_phase7.html
 ```
 
 预期输出里要念出来的几行:

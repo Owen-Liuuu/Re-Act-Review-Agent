@@ -107,6 +107,7 @@ class AppConfig(BaseModel):
     )
     llm: LLMSettings = Field(default_factory=LLMSettings)
     llm2: LLMSettings | None = None  # optional second LLM for cross-validation
+    vision: LLMSettings | None = None  # optional vision model; not a second judge
     pubmed: PubMedSettings = Field(default_factory=PubMedSettings)
     unpaywall: UnpaywallSettings = Field(default_factory=UnpaywallSettings)
     crossref: CrossRefSettings = Field(default_factory=CrossRefSettings)

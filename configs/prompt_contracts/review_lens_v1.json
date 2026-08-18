@@ -1,0 +1,14 @@
+{
+  "prompt_id": "review_lens_v1",
+  "prompt_version": "review-lens-v1",
+  "written_on": "2026-08-17",
+  "hash_algorithm": "sha256-rendered-utf8-v1",
+  "renderer_identity": "react_review.review_extraction.render.v1",
+  "purpose": "Compressed review lens from front matter only.",
+  "boundary": "The rendered prompt bytes sent to the model, using the model-independent fixture input below. Python comments, helper names and source layout are outside the boundary.",
+  "governance": "Do not edit this prompt or replace this hash. A model-visible change is a new prompt profile and a new contract file.",
+  "fixture_inputs": {
+    "front_matter": "Abstract Background Elderly patients with resectable ESCC. We compared MIE versus open esophagectomy for postoperative complications."
+  },
+  "rendered_prompt_sha256": "2CCAA3D4C8B904F3F5FFB1720DB0BC0D99869022E1A5965E3366A74474737784"
+}

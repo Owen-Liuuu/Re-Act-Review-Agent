@@ -3,9 +3,13 @@
 A KnowledgeEntry generalises the old Tier-2 FieldTypeEntry: it keeps the same
 core (field_type / synonyms / default_unit) and adds domain knowledge as DATA
 instead of hardcoded rules — `scope` (study vs cohort, replaces the parser's
-hardcoded _STUDY_LEVEL_FIELDS), `disambiguation` (e.g. modality → eat_volume vs
-eat_thickness, the A2 rule), unit equivalences, plausible ranges — plus the
-`provenance` + `status` that DKB-2/3 need for provisional→authoritative promotion.
+hardcoded _STUDY_LEVEL_FIELDS), `disambiguation` (one measurement method implying
+one of several concepts, the A2 rule), unit equivalences, plausible ranges — plus
+the `provenance` + `status` that DKB-2/3 need for provisional→authoritative
+promotion.
+
+Every domain-specific fact lives in the KB data files, not in this module. That
+is the point: a new field of study ships a new knowledge base, not a code change.
 """
 from __future__ import annotations
 
@@ -33,7 +37,7 @@ class KnowledgeEntry(BaseModel):
     scope: str = "cohort"                               # study | cohort
     unit_equivalences: list[str] = Field(default_factory=list)
     # discriminator -> {signal value -> field_type}, e.g.
-    # {"modality": {"ct": "eat_volume", "echo": "eat_thickness"}}
+    # {"modality": {"<method a>": "<concept measured that way>", ...}}
     disambiguation: dict[str, dict[str, str]] = Field(default_factory=dict)
     plausible_range: list[float] | None = None          # [lo, hi] sanity band
     # --- trust ---

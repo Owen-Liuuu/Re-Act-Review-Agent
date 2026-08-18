@@ -86,7 +86,14 @@ class ScriptedBackend:
         return "scripted"
 
     def _kind(self, prompt: str) -> str:
+        if "compress the FRONT MATTER" in prompt:
+            return "review_lens"
+        if "RESULTS WINDOW" in prompt:
+            return "evidence_localize"
+        if "already-captured display" in prompt:
+            return "claim_origin"
         if (("transcribing the tables of a review" in prompt
+             or "transcribing SELECTED tables" in prompt
              or "STRICT TRANSCRIPTION RULES" in prompt)
                 and "REVIEW TEXT" in prompt):
             return "table_capture"
@@ -105,6 +112,28 @@ class ScriptedBackend:
     async def complete(self, prompt: str, *, seed: int = 42) -> str:
         kind = self._kind(prompt)
         self.asked.append(kind)
+        if kind == "review_lens":
+            return json.dumps({
+                "lens_one_line": "EAT thickness in T1DM vs healthy controls",
+                "domain": "cardiometabolic imaging",
+                "population": "T1DM",
+                "comparison": "T1DM vs healthy controls",
+                "outcomes": ["EAT thickness"],
+            })
+        if kind == "evidence_localize":
+            return json.dumps({"displays": [{
+                "display_id": "table_1",
+                "kind": "pdf_table",
+                "caption": "Characteristics of included studies",
+                "evidence_chain": True,
+                "reason": "per-study EAT for included papers",
+            }]})
+        if kind == "claim_origin":
+            return json.dumps({"labels": [{
+                "table_id": "table_1",
+                "column_path": "EAT thickness (mm)",
+                "value_source": "source_paper",
+            }]})
         if kind == "table_capture":
             return json.dumps(CAPTURED)
         if kind == "unpivot":

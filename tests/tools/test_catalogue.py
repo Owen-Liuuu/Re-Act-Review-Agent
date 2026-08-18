@@ -16,13 +16,7 @@ from react_review.steps.paper_verification.schemas import ReferenceEntry
 from react_review.tools import build_catalogue
 from react_review.tools.base import ToolStage
 from react_review.tools.compare import CompareValuesTool
-from react_review.tools.models import (
-    CompareInput,
-    CountInput,
-    ExtractInput,
-)
-from react_review.pipeline.schemas import EvidenceFieldSchema
-from react_review.steps.data_extraction.schemas import PaperDocument
+from react_review.tools.models import CompareInput, CountInput
 
 
 def test_compare_input_refuses_an_explicitly_insufficient_adequacy_decision():
@@ -56,12 +50,12 @@ def test_catalogue_registers_expected_tools(catalogue):
         "count_openalex",
         "verify_reference",
         "fetch_fulltext",
-        "extract_fields",
         "extract_source_value",
         # A contract that routes a claim kind to the batch must FIND the
         # batch. Its absence is a startup failure, never a quiet fall
         # back to reading one claim at a time under another profile.
         "extract_source_batch",
+        "ocr_forest_plot",
         "resolve_reference",
         "compare_values",
     }
@@ -101,19 +95,11 @@ async def test_verify_tool_runs(catalogue):
 
 
 @pytest.mark.asyncio
-async def test_fetch_then_extract(catalogue):
+async def test_fetch_returns_a_document(catalogue):
     ref = ReferenceEntry(title="A paper", doi="10.1/x")
     fetched = await catalogue.get("fetch_fulltext").run(ref)
     assert fetched.retrieved is True
     assert fetched.document is not None
-
-    schema = [EvidenceFieldSchema(student_field_name="sample_size",
-                                  canonical_concept="sample_size", type="numeric")]
-    table = await catalogue.get("extract_fields").run(
-        ExtractInput(document=fetched.document, evidence_schema=schema,
-                     research_context="test")
-    )
-    assert table.fields[0].field_name == "sample_size"
 
 
 def test_real_mode_catalogue_builds():
@@ -123,6 +109,7 @@ def test_real_mode_catalogue_builds():
     assert "fetch_fulltext" in reg
     assert "extract_source_value" in reg
     assert "resolve_reference" in reg
+    assert "ocr_forest_plot" in reg
 
 
 @pytest.mark.asyncio

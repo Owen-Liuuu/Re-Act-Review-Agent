@@ -735,3 +735,4 @@ async def test_an_unresolvable_citation_is_decided_once_for_the_study():
     assert source.outcome is CollectionOutcome.UNRESOLVED_SOURCE
     result = await collector.collect(_REVIEW, ReferenceEntry(title=""), source=source)
     assert result.source_item.collection_outcome is CollectionOutcome.UNRESOLVED_SOURCE
+

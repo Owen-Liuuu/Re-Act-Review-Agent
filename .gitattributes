@@ -16,7 +16,7 @@ eval/aggregation_behavior.py text eol=lf
 
 # Named one file at a time, deliberately. `configs/run_profiles/*.json` would
 # renormalise phase8.json, whose bytes a frozen benchmark pins, and
-# `eval/benchmarks/**` would do the same to phase8_profile.json — which is
+# `eval/benchmark_2/**` would do the same to phase8_profile.json — which is
 # exactly how a benchmark was made unrunnable once already.
 configs/run_profiles/phase8_batch.json text eol=lf
 configs/run_profiles/phase8_batch_v2.json text eol=lf
@@ -26,17 +26,17 @@ configs/run_profiles/phase8_batch_v5.json text eol=lf
 configs/run_profiles/phase8_batch_v6.json text eol=lf
 configs/run_profiles/phase8_batch_v7.json text eol=lf
 configs/run_profiles/phase8_batch_v8.json text eol=lf
-eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_profile.json text eol=lf
-eval/benchmarks/melanoma_checkpoint_2017/excerpt_gold_v1.json text eol=lf
-eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v2_profile.json text eol=lf
-eval/benchmarks/melanoma_checkpoint_2017/excerpt_gold_v2.json text eol=lf
-eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v3_profile.json text eol=lf
-eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v4_profile.json text eol=lf
-eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v5_profile.json text eol=lf
-eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v6_profile.json text eol=lf
-eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v7_profile.json text eol=lf
-eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v8_profile.json text eol=lf
-eval/benchmarks/melanoma_checkpoint_2017/d1_7_expected_plan.json text eol=lf
+eval/benchmark_2/phase8_batch_profile.json text eol=lf
+eval/benchmark_2/excerpt_gold_v1.json text eol=lf
+eval/benchmark_2/phase8_batch_v2_profile.json text eol=lf
+eval/benchmark_2/excerpt_gold_v2.json text eol=lf
+eval/benchmark_2/phase8_batch_v3_profile.json text eol=lf
+eval/benchmark_2/phase8_batch_v4_profile.json text eol=lf
+eval/benchmark_2/phase8_batch_v5_profile.json text eol=lf
+eval/benchmark_2/phase8_batch_v6_profile.json text eol=lf
+eval/benchmark_2/phase8_batch_v7_profile.json text eol=lf
+eval/benchmark_2/phase8_batch_v8_profile.json text eol=lf
+eval/benchmark_2/d1_7_expected_plan.json text eol=lf
 configs/prompt_contracts/*.json text eol=lf
 eval/table_capture_gold_schema.json text eol=lf
 eval/table_capture_ab_v1.json text eol=lf

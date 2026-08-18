@@ -8,7 +8,7 @@
   "code_base": "Phase 7 working tree on top of 1e50d88",
   "model": "glm-4.5-flash",
   "contract": {
-    "benchmark_profile": "eval/benchmarks/melanoma_checkpoint_2017/phase7_profile.json",
+    "benchmark_profile": "eval/benchmark_2/phase7_profile.json",
     "extraction_profile": "targeted_v4",
     "semantic_prompt_profile": "semantic_v2_specificity",
     "target_contract": "phase7_target_contract.csv",

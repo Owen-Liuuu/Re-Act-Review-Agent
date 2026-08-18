@@ -1139,10 +1139,10 @@ def _label_anchors(label: str, quote: str) -> bool:
     quote_tokens = set(re.findall(r"[a-z0-9]+", quote.lower()))
     if label_tokens and label_tokens & quote_tokens:
         return True
-    # Short paper labels are often acronyms (DM) while the quoted sentence
-    # spells the arm out (type 1 diabetic patients). The exact quote and count
-    # are already anchored above; accept the acronym only when the quote also
-    # contains substantive arm descriptors, not merely "N participants".
+    # Short paper labels are often acronyms while the quoted sentence spells the
+    # same arm out in words. The exact quote and count are already anchored
+    # above; accept the acronym only when the quote also contains substantive arm
+    # descriptors, not merely "N participants".
     if len(_normalise(label).replace(" ", "")) <= 4:
         generic = {
             "a", "an", "and", "arm", "cohort", "consisted", "enrolled",

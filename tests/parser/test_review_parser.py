@@ -12,6 +12,7 @@ from react_review.core.exceptions import RunStopped
 from react_review.hitl import Decision, ScriptedCheckpoint, StepReporter, StepStage
 from react_review.llm.base import LLMBackend
 from react_review.parser.review_parser import ReviewParser, _study_slug
+from react_review.schemas.table import CapturedTable
 
 SEED = Path(__file__).resolve().parents[2] / "configs" / "knowledge.seed.json"
 ONTOLOGY = Path(__file__).resolve().parents[2] / "configs" / "ontology"
@@ -33,6 +34,12 @@ class QueueBackend(LLMBackend):
 def _resolver() -> FieldResolver:
     # backend=None → deterministic KB resolution only; unknown names → unresolved.
     return FieldResolver(KnowledgeBase.from_json(SEED))
+
+
+def _parser(backend, resolver=None, **kwargs):
+    """Existing unpivot tests pin frozen v1 so DEFAULT=v3 does not change their queue."""
+    kwargs.setdefault("table_capture_prompt_profile", "table_capture_v1")
+    return ReviewParser(backend, resolver or _resolver(), **kwargs)
 
 
 def test_study_slug():
@@ -77,17 +84,17 @@ async def test_parse_produces_normalized_long_items(monkeypatch):
         {"studies": []},
     ])
     gate = ScriptedCheckpoint()
-    parser = ReviewParser(
+    parser = _parser(
         backend, _resolver(), reporter=StepReporter("parser-test", gate=gate))
     parsed = await parser.parse("dummy.pdf", research_context="EAT in T1DM")
 
     got = {(i.study_id, i.group, i.field_type, i.value, i.unit) for i in parsed.items}
     assert got == {
-        ("ahmad_2022", "t1dm", "eat_thickness", "6.60 ± 0.71", "mm"),
-        ("ahmad_2022", "control", "eat_thickness", "3.83 ± 0.35", "mm"),
-        ("ahmad_2022", "-", "sample_size", "100", ""),          # study-level → group "-"
-        ("ahmad_2022", "t1dm", "", "5", ""),                    # unknown → KEPT, field_type null
-        ("ahmad_2022", "t1dm", "", None, "years"),              # placeholder → KEPT, value null
+        ("Ahmad et al. [2022]", "t1dm", "eat_thickness", "6.60 ± 0.71", "mm"),
+        ("Ahmad et al. [2022]", "control", "eat_thickness", "3.83 ± 0.35", "mm"),
+        ("Ahmad et al. [2022]", "-", "sample_size", "100", ""),  # study-level → group "-"
+        ("Ahmad et al. [2022]", "t1dm", "", "5", ""),            # unknown → KEPT, field_type null
+        ("Ahmad et al. [2022]", "t1dm", "", None, "years"),      # placeholder → KEPT, value null
     }
     assert len(parsed.items) == 5
     assert [item.review_data_id for item in parsed.items] == [
@@ -132,7 +139,7 @@ async def test_runtime_ontology_is_visible_in_field_gate_and_parsed_contract(mon
     ])
     gate = ScriptedCheckpoint()
     kb = load_runtime_knowledge(SEED, ONTOLOGY)
-    parsed = await ReviewParser(
+    parsed = await _parser(
         backend, FieldResolver(kb),
         reporter=StepReporter("ontology-test", gate=gate),
     ).parse("d.pdf")
@@ -168,7 +175,7 @@ async def test_checklist_gates_routed_long_rows_and_is_preserved(monkeypatch):
             scope="per_study", value_kind="numeric", field_types=["sample_size"]),
     ])
     gate = ScriptedCheckpoint()
-    parsed = await ReviewParser(
+    parsed = await _parser(
         backend, _resolver(), checklist=checklist,
         reporter=StepReporter("checklist-test", gate=gate)).parse("d.pdf")
 
@@ -214,7 +221,7 @@ async def test_stopping_at_checklist_never_emits_routed_long_rows(monkeypatch):
     gate = ScriptedCheckpoint([
         Decision.CONTINUE, Decision.CONTINUE, Decision.CONTINUE,
         Decision.CONTINUE, Decision.STOP])
-    parser = ReviewParser(
+    parser = _parser(
         backend, _resolver(), checklist=checklist,
         reporter=StepReporter("checklist-stop", gate=gate))
 
@@ -239,7 +246,7 @@ async def test_study_level_field_collapses_to_one_row(monkeypatch):
         ]},
         {"studies": []},
     ])
-    parsed = await ReviewParser(backend, _resolver()).parse("d.pdf")
+    parsed = await _parser(backend, _resolver()).parse("d.pdf")
     ss = [i for i in parsed.items if i.field_type == "sample_size"]
     assert len(ss) == 1 and ss[0].group == "-"                      # collapsed
     eat_groups = {i.group for i in parsed.items if i.field_type == "eat_thickness"}
@@ -255,7 +262,7 @@ async def test_stopping_at_field_resolution_never_emits_derived_long_rows(monkey
     ])
     gate = ScriptedCheckpoint([
         Decision.CONTINUE, Decision.CONTINUE, Decision.CONTINUE, Decision.STOP])
-    parser = ReviewParser(
+    parser = _parser(
         backend, _resolver(), reporter=StepReporter("stop-test", gate=gate))
 
     with pytest.raises(RunStopped):
@@ -278,7 +285,7 @@ async def test_unknown_column_has_one_resolution_record_for_all_numeric_rows(mon
         ]},
         {"studies": []},
     ])
-    parsed = await ReviewParser(backend, _resolver()).parse("d.pdf")
+    parsed = await _parser(backend, _resolver()).parse("d.pdf")
 
     assert len(parsed.items) == 2
     assert len(parsed.field_resolutions) == 1
@@ -303,7 +310,7 @@ async def test_parse_extracts_research_context_and_dois(monkeypatch):
             {"citation": "Ahmad A et al. 2022. J Cardiol.", "doi": "https://doi.org/10.1/X"},
             {"citation": "Aslan B et al. 2015. Echocardiography.", "doi": ""}]},
     ])
-    parsed = await ReviewParser(backend, _resolver()).parse("d.pdf", research_context="fallback")
+    parsed = await _parser(backend, _resolver()).parse("d.pdf", research_context="fallback")
 
     # LLM-extracted research context wins over the passed-in fallback
     assert parsed.research_context == "epicardial adipose tissue in T1DM vs healthy controls"
@@ -314,13 +321,88 @@ async def test_parse_extracts_research_context_and_dois(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_parser_keeps_only_printed_doi_and_pmid(monkeypatch):
+    monkeypatch.setattr(
+        "react_review.parser.review_parser._pdf_text",
+        lambda p: "References\n1. Capovilla G. Front Oncol. 2023;13:1104109. PMID: 36726501\n",
+    )
+    backend = QueueBackend([
+        {"tables": []},
+        {"studies": [{
+            "citation": "Capovilla G. Front Oncol. 2023;13:1104109. PMID: 36726501",
+            "doi": "10.3389/fonc.2023.1104109",
+        }]},
+    ])
+    parsed = await _parser(backend, _resolver()).parse("d.pdf")
+    assert parsed.studies[0].doi == ""
+    assert parsed.studies[0].pmid == "36726501"
+
+
+@pytest.mark.asyncio
+async def test_table_join_key_keeps_printed_words_and_pairs_citations(monkeypatch):
+    # Offline doc05 shape: Study cell without a year, Year in the next column,
+    # two papers whose first word is Li. The table identity stays the printed
+    # words; coverage pairs them to citation slugs (and the 2025 DOI).
+    monkeypatch.setattr("react_review.parser.review_parser._pdf_text", lambda p: "t")
+    backend = QueueBackend([
+        {"research_context": "",
+         "tables": [
+             {"table_id": "table_1", "caption": "Table 1",
+              "role": "characteristics",
+              "header_rows": [["Study", "Year", "N"]],
+              "rows": [["Li J et al.", "2015", "80"],
+                       ["Li K et al.", "2025", "90"],
+                       ["Capovilla G et al.", "2023", "70"]],
+              "row_axis_columns": ["Study"]},
+             {"table_id": "table_2", "caption": "Table 2",
+              "role": "outcomes",
+              "header_rows": [["Outcome", "Studies (n)", "OR (95% CI)"]],
+              "rows": [["Overall Complications", "3", "0.40 (0.27-0.60)"],
+                       ["Pulmonary Complications", "3", "0.42 (0.28-0.64)"]],
+              "row_axis_columns": ["Outcome"]},
+         ]},
+        {"rows": [
+            _cell(0, 2, "Li J et al.", "N", "80"),
+            _cell(1, 2, "Li K et al.", "N", "90"),
+            _cell(2, 2, "Capovilla G et al.", "N", "70"),
+        ]},
+        {"studies": [
+            {"citation": "Li J, Shen Y, Tan L, et al. Surg Endosc. 2015;29(4):925-930.",
+             "doi": ""},
+            {"citation": "Capovilla G, Uzun E, Scarton A, et al. Front Oncol. 2023;13:1104109.",
+             "doi": ""},
+            {"citation": "Li K, Lu S, Li C, et al. Langenbecks Arch Surg. 2025;410(1):311. doi:10.1007/s00423-025-03877-4",
+             "doi": "10.1007/s00423-025-03877-4"},
+        ]},
+    ])
+    gate = ScriptedCheckpoint()
+    parsed = await _parser(
+        backend, _resolver(),
+        reporter=StepReporter("doc05-join", gate=gate)).parse("d.pdf")
+
+    assert {i.study_id for i in parsed.items} == {
+        "Li J et al. 2015", "Li K et al. 2025", "Capovilla G et al. 2023"}
+    assert [t.table_id for t in parsed.tables.tables] == ["table_1", "table_2"]
+    long_event = next(e for e in gate.seen if e.stage is StepStage.LONG_FORMAT_ROWS)
+    assert any("not included papers" in w for w in long_event.warnings)
+    assert "table_2" in long_event.warnings[0]
+    by_id = {s.study_id: s for s in parsed.studies}
+    assert set(by_id) == {"li_2015", "li_2025", "capovilla_2023"}
+    assert by_id["li_2025"].doi == "10.1007/s00423-025-03877-4"
+    event = next(e for e in gate.seen if e.stage is StepStage.REFERENCE_COVERAGE)
+    assert not event.warnings
+    assert "3 match a study in the data table" in event.render_blocks[0]
+    assert "0 table study/studies have none" in event.render_blocks[0]
+
+
+@pytest.mark.asyncio
 async def test_research_context_falls_back_to_arg_when_not_extracted(monkeypatch):
     monkeypatch.setattr("react_review.parser.review_parser._pdf_text", lambda p: "t")
     backend = QueueBackend([
         {"tables": []},                      # nothing captured, no research_context
         {"studies": []},
     ])
-    parsed = await ReviewParser(backend, _resolver()).parse("d.pdf", research_context="my ctx")
+    parsed = await _parser(backend, _resolver()).parse("d.pdf", research_context="my ctx")
     assert parsed.research_context == "my ctx"
     assert parsed.studies == []
 
@@ -331,7 +413,184 @@ async def test_parse_survives_stage_failure(monkeypatch):
         "react_review.parser.review_parser._pdf_text", lambda p: "text"
     )
     # both stages return non-JSON → empty structure/rows → no items, no crash
-    parser = ReviewParser(QueueBackend(["oops", "also oops"]), _resolver())
+    parser = _parser(QueueBackend(["oops", "also oops"]), _resolver())
     parsed = await parser.parse("dummy.pdf")
     assert parsed.items == []
     assert parsed.record.status == "finished"
+
+
+def test_empty_cohort_label_takes_arm_from_column_header():
+    """Unpivot left cohort_label empty; the arm is only in 'N MIE'.
+
+    Matching is CohortRegistry.resolve second pass (alias). Combined labels
+    such as Total must not count as a header hit — that is the 2b trap when
+    forest columns are Events, Total, Events, Total.
+    """
+    from react_review.normalize.cohorts import build_cohort_registry
+
+    parser = _parser(QueueBackend([]))
+    registry = build_cohort_registry(["MIE", "OE"])
+    rows = [
+        {"column_header": "N MIE", "value": "58", "cohort_label": "",
+         "row_key": {"Study": "Li J 2015"}, "table_id": "table_1",
+         "row": 0, "col": 1},
+        {"column_header": "Country", "value": "China", "cohort_label": "",
+         "row_key": {"Study": "Li J 2015"}, "table_id": "table_1",
+         "row": 0, "col": 2},
+        {"column_header": "Total", "value": "116", "cohort_label": "",
+         "row_key": {"Study": "Li J 2015"}, "table_id": "table_1",
+         "row": 0, "col": 3},
+    ]
+    items = parser._postprocess(rows, {}, registry)
+    by_header = {i.raw_field_name: i for i in items}
+    n_mie = by_header["N MIE"]
+    assert n_mie.group == "mie"
+    assert n_mie.cohort_status == "alias"
+    assert n_mie.cohort_label == ""
+    country = by_header["Country"]
+    assert country.group == "all"
+    assert country.cohort_status == "combined"
+    total = by_header["Total"]
+    assert total.group == "all"
+    assert total.cohort_status == "combined"
+
+
+@pytest.mark.asyncio
+async def test_unpivot_does_not_send_summary_row_kinds_to_the_model():
+    class PromptQueue(QueueBackend):
+        def __init__(self, responses: list) -> None:
+            super().__init__(responses)
+            self.prompts: list[str] = []
+
+        async def complete(self, prompt: str, *, seed: int = 42) -> str:
+            self.prompts.append(prompt)
+            return await super().complete(prompt, seed=seed)
+
+    table = CapturedTable(
+        table_id="table_1",
+        header_rows=[["Study", "N"]],
+        rows=[["Li J 2015", "58"], ["Total", "100"]],
+        row_axis_columns=["Study"],
+        row_kinds=["study", "summary"],
+    )
+    backend = PromptQueue([{
+        "rows": [{"row": 0, "column_header": "N", "value": "58"}],
+    }])
+    out = await _parser(backend)._unpivot(table)
+    assert backend.prompts
+    assert '"Total"' not in backend.prompts[0]
+    assert "[0, [\"Li J 2015\", \"58\"]]" in backend.prompts[0]
+    assert out[0]["row_key"]["study"] == "Li J 2015"
+
+
+MIE_EVENTS = "Minimally Invasive Esophagectomy (MIE) Events"
+OE_EVENTS = "Open Esophagectomy (OE) Events"
+
+
+@pytest.mark.asyncio
+async def test_forest_count_columns_skip_dkb_and_do_not_mint_arm_concepts():
+    parser = _parser(QueueBackend([]))
+    called: list[str] = []
+    original = parser._resolver.resolve
+
+    async def spy(raw_name, **kwargs):
+        called.append(raw_name)
+        return await original(raw_name, **kwargs)
+
+    parser._resolver.resolve = spy  # type: ignore[method-assign]
+    rows = [
+        {"column_header": MIE_EVENTS, "value": "19",
+         "display_kind": "forest_plot", "row_key": {"study": "Capovilla 2023"},
+         "table_id": "forest_2", "row": 0},
+        {"column_header": "Odds ratio", "value": "0.40",
+         "display_kind": "forest_plot", "row_key": {"study": "Capovilla 2023"},
+         "table_id": "forest_2", "row": 0},
+    ]
+    by_row, records = await parser._resolve_fields(rows, "esophagectomy")
+    assert MIE_EVENTS not in called
+    assert "Odds ratio" in called
+    assert by_row[0].field_type == "events"
+    assert by_row[0].scope == "cohort"
+    assert by_row[0].source == "deterministic"
+    assert by_row[0].status == "authoritative"
+    forest_records = [r for r in records if r.raw_field_name == MIE_EVENTS]
+    assert forest_records
+    assert forest_records[0].field_type == "events"
+    assert not any(a.is_new for rec in forest_records for a in rec.attempts)
+
+
+def test_cohort_scoped_forest_events_are_kept_across_displays():
+    from react_review.dkb import ResolvedField
+    from react_review.normalize.cohorts import build_cohort_registry
+
+    parser = _parser(QueueBackend([]))
+    registry = build_cohort_registry(["MIE", "OE"])
+    rows = [
+        {"column_header": MIE_EVENTS, "value": "23", "cohort_label": "",
+         "row_key": {"study": "Capovilla 2023"}, "table_id": "forest_1",
+         "display_kind": "forest_plot", "row": 0, "col": 1},
+        {"column_header": MIE_EVENTS, "value": "19", "cohort_label": "",
+         "row_key": {"study": "Capovilla 2023"}, "table_id": "forest_2",
+         "display_kind": "forest_plot", "row": 0, "col": 1},
+        {"column_header": OE_EVENTS, "value": "64", "cohort_label": "",
+         "row_key": {"study": "Capovilla 2023"}, "table_id": "forest_1",
+         "display_kind": "forest_plot", "row": 0, "col": 3},
+    ]
+    resolved = ResolvedField(
+        raw_field_name=MIE_EVENTS, field_type="events",
+        status="authoritative", scope="cohort", source="deterministic",
+    )
+    items = parser._postprocess(rows, {0: resolved, 1: resolved, 2: resolved}, registry)
+    events = [i for i in items if i.field_type == "events"]
+    assert len(events) == 3
+    assert {i.table_id for i in events} == {"forest_1", "forest_2"}
+    assert {i.group for i in events} <= {"mie", "oe"}
+    assert "-" not in {i.group for i in events}
+    assert "all" not in {i.group for i in events}
+
+
+def test_study_scope_conflict_keeps_both_disagreeing_values():
+    from react_review.dkb import ResolvedField
+
+    parser = _parser(QueueBackend([]))
+    rows = [
+        {"column_header": "Year", "value": "2015", "cohort_label": "",
+         "row_key": {"Study": "Li J 2015"}, "table_id": "table_1",
+         "row": 0, "col": 1},
+        {"column_header": "Year", "value": "2016", "cohort_label": "",
+         "row_key": {"Study": "Li J 2015"}, "table_id": "forest_1",
+         "row": 0, "col": 1},
+    ]
+    resolved = ResolvedField(
+        raw_field_name="Year", field_type="publication_year",
+        status="authoritative", scope="study", source="deterministic",
+    )
+    items = parser._postprocess(rows, {0: resolved, 1: resolved})
+    years = [i for i in items if i.field_type == "publication_year"]
+    assert [i.value for i in years] == ["2015", "2016"]
+    for item in years:
+        assert any(r.code == "study_scope_conflict" for r in item.reasons)
+
+
+def test_study_scope_identical_values_are_still_deduped():
+    from react_review.dkb import ResolvedField
+
+    parser = _parser(QueueBackend([]))
+    rows = [
+        {"column_header": "Year", "value": "2015", "cohort_label": "",
+         "row_key": {"Study": "Li J 2015"}, "table_id": "table_1",
+         "row": 0, "col": 1},
+        {"column_header": "Year", "value": "2015", "cohort_label": "",
+         "row_key": {"Study": "Li J 2015"}, "table_id": "forest_1",
+         "row": 0, "col": 1},
+    ]
+    resolved = ResolvedField(
+        raw_field_name="Year", field_type="publication_year",
+        status="authoritative", scope="study", source="deterministic",
+    )
+    items = parser._postprocess(rows, {0: resolved, 1: resolved})
+    years = [i for i in items if i.field_type == "publication_year"]
+    assert [i.value for i in years] == ["2015"]
+    assert not any(
+        r.code == "study_scope_conflict" for i in years for r in i.reasons)
+

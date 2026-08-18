@@ -18,7 +18,7 @@ from react_review.study_match import (
     resolve_study,
 )
 
-BENCH = Path(__file__).resolve().parents[1] / "eval" / "benchmark"
+BENCH = Path(__file__).resolve().parents[1] / "eval" / "benchmark_1"
 STUDIES = load_included_studies(BENCH / "included_studies.csv")
 
 
@@ -26,6 +26,7 @@ STUDIES = load_included_studies(BENCH / "included_studies.csv")
     "parser_sid, canonical",
     [
         ("ahmad_2022", "ahmad_2022"),
+        ("Ahmad et al. [2022]", "ahmad_2022"),       # table words, not a slug
         ("yaz_2011", "yazici_2011"),                 # non-ASCII slug prefix
         ("de_2018", "de_gonzalo_calvo_2018"),        # particle name, year disambiguates
         ("colom_2018", "colom_2018"),                # same year as de_… but surname differs
@@ -117,6 +118,15 @@ def test_build_reference_resolver_from_parsed():
     assert "not_a_study_2000" in missing.title
 
 
+def test_resolver_copies_a_printed_pmid():
+    studies = [ParsedStudy(
+        study_id="capovilla_2023",
+        citation="Capovilla G. Front Oncol. 2023;13:1104109. PMID: 36726501",
+        doi="", pmid="36726501")]
+    ref = build_reference_resolver_from_parsed(studies)("capovilla_2023")
+    assert ref.pmid == "36726501" and ref.doi is None
+
+
 def test_reference_resolver_from_parsed_fuzzy_matches_slug_variants():
     # The data-table slug and the reference-list slug rarely align byte-for-byte;
     # a year + surname-prefix match still pairs them.
@@ -138,6 +148,39 @@ def test_reference_resolver_from_parsed_ambiguous_does_not_guess():
     resolve = build_reference_resolver_from_parsed(studies)
     ref = resolve("smit_2020")                          # prefix of BOTH → ambiguous
     assert ref.doi is None and not is_resolvable(ref)   # marked, never a wrong guess
+
+
+def test_resolver_pairs_verbatim_table_labels_and_attaches_the_printed_doi():
+    # doc05: two Li papers share a first word; the table's year + initials
+    # pick one citation, and that citation's DOI rides along.
+    studies = [
+        ParsedStudy(
+            study_id="li_2015",
+            citation=("Li J, Shen Y, Tan L, et al. Is minimally invasive "
+                      "esophagectomy beneficial to elderly patients with "
+                      "esophageal cancer? Surg Endosc. 2015;29(4):925-930."),
+            doi=""),
+        ParsedStudy(
+            study_id="capovilla_2023",
+            citation=("Capovilla G, Uzun E, Scarton A, et al. Minimally invasive "
+                      "Ivor Lewis esophagectomy in the elderly patient. "
+                      "Front Oncol. 2023;13:1104109."),
+            doi=""),
+        ParsedStudy(
+            study_id="li_2025",
+            citation=("Li K, Lu S, Li C, et al. Long-term outcomes of minimally "
+                      "invasive esophagectomy vs. open esophagectomy. "
+                      "Langenbecks Arch Surg. 2025;410(1):311."),
+            doi="10.1007/s00423-025-03877-4"),
+    ]
+    resolve = build_reference_resolver_from_parsed(studies)
+    assert resolve("Li J et al. 2015").title.startswith("Li J")
+    assert resolve("Li J et al. 2015").doi is None
+    li_k = resolve("Li K et al. 2025")
+    assert li_k.doi == "10.1007/s00423-025-03877-4"
+    assert resolve("Capovilla G et al. 2023").title.startswith("Capovilla")
+    missing = resolve("Li et al.")
+    assert not is_resolvable(missing)
 
 
 def test_a_citation_without_a_doi_is_still_worth_resolving():

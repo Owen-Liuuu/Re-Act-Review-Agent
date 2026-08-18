@@ -12,6 +12,7 @@ import pytest
 
 from tests.conftest import requires_frozen_evaluator
 
+from react_review.contracts import repo_root
 from react_review.eval_excerpt import GoldError, assess, index_gold
 from react_review.schemas.batch import BatchReadingRecord, ExcerptProvenance
 
@@ -282,8 +283,7 @@ def test_the_prompt_text_is_unchanged_by_reporting_what_was_sent():
 
 # --- the key describes the batches the run actually makes -------------------
 
-BENCH = __import__("react_review.contracts", fromlist=["repo_root"]).repo_root() / \
-    "eval/benchmarks/melanoma_checkpoint_2017"
+BENCH = repo_root() / "eval/benchmark_2"
 
 
 def _gold_v2():
@@ -311,7 +311,7 @@ def test_the_key_names_every_batch_the_real_grouping_produces():
     )
     from react_review.eval_profile import load_profile
 
-    root = BENCH.parents[2]
+    root = repo_root()
     rows = list(csv.DictReader(
         (BENCH / "audit_template.csv").open(encoding="utf-8-sig")))
     profile = load_profile(BENCH, "phase8_batch_v7_profile.json",
@@ -370,7 +370,7 @@ def test_the_harness_judges_a_whole_planned_run_against_the_key():
     if not paper.is_file():
         pytest.skip("the source paper is copyrighted and not in the repo")
 
-    root = BENCH.parents[2]
+    root = repo_root()
     rows = list(csv.DictReader(
         (BENCH / "audit_template.csv").open(encoding="utf-8-sig")))
     profile = load_profile(BENCH, "phase8_batch_v7_profile.json",

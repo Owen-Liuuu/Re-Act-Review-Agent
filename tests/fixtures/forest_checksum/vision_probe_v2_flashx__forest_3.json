@@ -1,0 +1,104 @@
+{
+  "id": "forest_3",
+  "source": "vision_probe_v2_flashx/forest_3.json",
+  "parsed": {
+    "figure_id": "forest_3",
+    "column_headers": [
+      "Minimally Invasive Esophagectomy (MIE) Events",
+      "Minimally Invasive Esophagectomy (MIE) Total",
+      "Open Esophagectomy (OE) Events",
+      "Open Esophagectomy (OE) Total"
+    ],
+    "rows": [
+      {
+        "label": "Li J 2015",
+        "kind": "study",
+        "values": [
+          {
+            "column": "Minimally Invasive Esophagectomy (MIE) Events",
+            "value": "2"
+          },
+          {
+            "column": "Minimally Invasive Esophagectomy (MIE) Total",
+            "value": "58"
+          },
+          {
+            "column": "Open Esophagectomy (OE) Events",
+            "value": "5"
+          },
+          {
+            "column": "Open Esophagectomy (OE) Total",
+            "value": "58"
+          }
+        ]
+      },
+      {
+        "label": "Li K 2025",
+        "kind": "study",
+        "values": [
+          {
+            "column": "Minimally Invasive Esophagectomy (MIE) Events",
+            "value": "0"
+          },
+          {
+            "column": "Minimally Invasive Esophagectomy (MIE) Total",
+            "value": "92"
+          },
+          {
+            "column": "Open Esophagectomy (OE) Events",
+            "value": "0"
+          },
+          {
+            "column": "Open Esophagectomy (OE) Total",
+            "value": "55"
+          }
+        ]
+      },
+      {
+        "label": "Total",
+        "kind": "summary",
+        "values": [
+          {
+            "column": "Minimally Invasive Esophagectomy (MIE) Events",
+            "value": "2"
+          },
+          {
+            "column": "Minimally Invasive Esophagectomy (MIE) Total",
+            "value": "150"
+          },
+          {
+            "column": "Open Esophagectomy (OE) Events",
+            "value": "5"
+          },
+          {
+            "column": "Open Esophagectomy (OE) Total",
+            "value": "113"
+          }
+        ]
+      },
+      {
+        "label": "Total events:",
+        "kind": "summary",
+        "values": [
+          {
+            "column": "Minimally Invasive Esophagectomy (MIE) Events",
+            "value": "2"
+          },
+          {
+            "column": "Minimally Invasive Esophagectomy (MIE) Total",
+            "value": ""
+          },
+          {
+            "column": "Open Esophagectomy (OE) Events",
+            "value": "5"
+          },
+          {
+            "column": "Open Esophagectomy (OE) Total",
+            "value": ""
+          }
+        ]
+      }
+    ],
+    "difficulties": []
+  }
+}

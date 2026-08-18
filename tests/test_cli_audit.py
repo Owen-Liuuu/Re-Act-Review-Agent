@@ -8,7 +8,7 @@ from react_review.core.enums import ReportVerdict
 from react_review.csv_io import load_review_items, load_source_items
 from react_review.store import EvidencePackageStore
 
-BENCH = Path(__file__).resolve().parents[1] / "eval" / "benchmark" / "audit_template.csv"
+BENCH = Path(__file__).resolve().parents[1] / "eval" / "benchmark_1" / "audit_template.csv"
 
 
 def test_csv_loaders_read_benchmark():

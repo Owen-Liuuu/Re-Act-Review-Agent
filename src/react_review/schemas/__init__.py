@@ -1,6 +1,6 @@
 """Typed data contract for ReAct-Review's 4-table audit model.
 
-Tables (see docs/normalization_pipeline.md and eval/benchmark/):
+Tables (see docs/normalization_pipeline.md and eval/benchmark_1/):
   - ReviewDataItem     — one value the review reports (review_ground_truth.csv)
   - SourceEvidenceItem — one value found in a source paper (audit source side)
   - IncludedStudy      — a cited source paper (included_studies.csv)

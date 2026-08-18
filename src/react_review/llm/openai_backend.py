@@ -12,6 +12,7 @@ Uses ``httpx`` directly so no extra SDK dependency is required.
 from __future__ import annotations
 
 import asyncio
+import base64
 
 import httpx
 import structlog
@@ -23,6 +24,20 @@ from react_review.llm.base import LLMBackend
 logger = structlog.get_logger(__name__)
 
 _DEFAULT_BASE = "https://api.openai.com/v1"
+
+
+def _image_data_url(blob: bytes) -> str:
+    if blob.startswith(b"\x89PNG"):
+        mime = "image/png"
+    elif blob.startswith(b"\xff\xd8"):
+        mime = "image/jpeg"
+    elif blob[:6] in (b"GIF87a", b"GIF89a"):
+        mime = "image/gif"
+    elif blob.startswith(b"RIFF") and blob[8:12] == b"WEBP":
+        mime = "image/webp"
+    else:
+        mime = "image/png"
+    return f"data:{mime};base64,{base64.standard_b64encode(blob).decode('ascii')}"
 
 
 class OpenAIBackend(LLMBackend):
@@ -77,6 +92,19 @@ class OpenAIBackend(LLMBackend):
             raise LLMError(f"embeddings network error: {exc!r}") from exc
         return [d["embedding"] for d in data.get("data", [])]
 
+    def _chat_payload(self, messages: list[dict], *, seed: int) -> dict:
+        payload = {
+            "model": self._model,
+            "messages": messages,
+            "temperature": self._settings.temperature,
+            "max_tokens": self._settings.max_tokens,
+            "seed": seed,
+        }
+        # Provider-specific extras (e.g. GLM {"thinking": {"type": "disabled"}}).
+        if self._settings.extra_body:
+            payload.update(self._settings.extra_body)
+        return payload
+
     async def complete(self, prompt: str, *, seed: int = 42) -> str:
         """Send a prompt and return the response text.
 
@@ -89,31 +117,45 @@ class OpenAIBackend(LLMBackend):
         is released **between** attempts so other in-flight tasks can
         proceed during the back-off sleep.
         """
-        url = f"{self._base_url}/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self._settings.api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": self._model,
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": self._settings.temperature,
-            "max_tokens": self._settings.max_tokens,
-            "seed": seed,
-        }
-        # Provider-specific extras (e.g. GLM {"thinking": {"type": "disabled"}}).
-        if self._settings.extra_body:
-            payload.update(self._settings.extra_body)
-
         logger.info(
             "openai_request",
             model=self._model,
             base_url=self._base_url,
             prompt_len=len(prompt),
         )
+        return await self._post_chat(
+            self._chat_payload([{"role": "user", "content": prompt}], seed=seed)
+        )
 
+    async def complete_vision(
+        self, prompt: str, images: list[bytes], *, seed: int = 42,
+    ) -> str:
+        """Same endpoint and retry loop as :meth:`complete`, with image blocks."""
+        content = [
+            {"type": "image_url", "image_url": {"url": _image_data_url(blob)}}
+            for blob in images
+        ]
+        content.append({"type": "text", "text": prompt})
+        logger.info(
+            "openai_request",
+            model=self._model,
+            base_url=self._base_url,
+            prompt_len=len(prompt),
+            image_count=len(images),
+            image_bytes=sum(len(blob) for blob in images),
+        )
+        return await self._post_chat(
+            self._chat_payload(
+                [{"role": "user", "content": content}], seed=seed)
+        )
+
+    async def _post_chat(self, payload: dict) -> str:
+        """POST chat/completions with the shared 429 / network retry loop."""
+        url = f"{self._base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self._settings.api_key}",
+            "Content-Type": "application/json",
+        }
         # Unified retry loop. Both HTTP 429 (rate limited) AND
         # ``httpx.RequestError`` (connection reset / read timeout /
         # remote protocol error) are treated as transient and retried

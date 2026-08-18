@@ -54,24 +54,24 @@ version reported a registered, release-eligible run.
 | 1.6.1 | `configs/aggregation/evaluators/safe_aggregation_1.6.1.json` | `A49941F1458D43B4` | current evaluator |
 
 | — | `configs/run_profiles/phase8_batch.json` | `17C65B8C07A45898` | the contract that selects the batch route |
-| — | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_profile.json` | `8F13C10443B8BEDE` | the benchmark that runs it |
+| — | `eval/benchmark_2/phase8_batch_profile.json` | `8F13C10443B8BEDE` | the benchmark that runs it |
 
 | v5 | `configs/prompt_contracts/batch_v5.json` | `1A02A44DDE55A797` | what `targeted_v5_batch` ASKS |
-| v1 | `eval/benchmarks/melanoma_checkpoint_2017/excerpt_gold_v1.json` | `030A04D6332A5E2E` | WHERE the evidence is, for excerpt coverage |
+| v1 | `eval/benchmark_2/excerpt_gold_v1.json` | `030A04D6332A5E2E` | WHERE the evidence is, for excerpt coverage |
 
 | v5 | `configs/aggregation/registry_v5.json` | `B4BFFCB393E581F2` | current |
 | 1.6.2 | `configs/aggregation/evaluators/safe_aggregation_1.6.2.json` | `F01DF1DD72077BA7` | current evaluator |
 | — | `configs/run_profiles/phase8_batch_v2.json` | `AD9F2F180F718BEB` | the contract that selects the batch route under 1.6.2 |
-| — | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v2_profile.json` | `9275079632081DB6` | the benchmark that runs it |
-| v2 | `eval/benchmarks/melanoma_checkpoint_2017/excerpt_gold_v2.json` | `9F67F418E245E656` | WHERE the evidence is, keyed on the batches the run makes |
-| — | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v3_profile.json` | `779E9F1C97D5B9A9` | the benchmark that judges against gold v2 |
-| v1 | `eval/benchmarks/melanoma_checkpoint_2017/d1_7_expected_plan.json` | `72AD64CBE18447AD` | what a D1-7 recording is expected to ask for |
+| — | `eval/benchmark_2/phase8_batch_v2_profile.json` | `9275079632081DB6` | the benchmark that runs it |
+| v2 | `eval/benchmark_2/excerpt_gold_v2.json` | `9F67F418E245E656` | WHERE the evidence is, keyed on the batches the run makes |
+| — | `eval/benchmark_2/phase8_batch_v3_profile.json` | `779E9F1C97D5B9A9` | the benchmark that judges against gold v2 |
+| v1 | `eval/benchmark_2/d1_7_expected_plan.json` | `72AD64CBE18447AD` | what a D1-7 recording is expected to ask for |
 | v1 | `configs/gates/d1_batch_v1.json` | `B624742F31536742` | superseded; **could not judge the run it was written for** |
 | v2 | `configs/gates/d1_batch_v2.json` | `1221EC40F789F04C` | current; **provisional**, capability floor deliberately UNSET |
 | v6 | `configs/aggregation/registry_v6.json` | `93D50BFC3F0B48CC` | current |
 | 1.7.0 | `configs/aggregation/evaluators/safe_aggregation_1.7.0.json` | `43703B7DADE72943` | current evaluator |
 | — | `configs/run_profiles/phase8_batch_v3.json` | `936985979F2A7726` | the contract that selects the batch route under 1.7.0 |
-| — | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v4_profile.json` | `4F58FDB3672A1F46` | the benchmark that runs it |
+| — | `eval/benchmark_2/phase8_batch_v4_profile.json` | `4F58FDB3672A1F46` | the benchmark that runs it |
 
 ## 1.7.0: a MINOR the corpus could not decide
 
@@ -346,12 +346,12 @@ restored to its original bytes and the corrections published as v2.
 | — | `configs/aggregation/evaluators/safe_aggregation_1.8.0.json` | `D566BA50B65FCF7A` | superseded; bytes frozen |
 | — | `configs/compare/evaluators/deterministic_compare_1.0.0.json` | `44B1F8045D405BD7` | current |
 | — | `configs/run_profiles/phase8_batch_v4.json` | `19A412345ECAD1EA` | superseded; bytes frozen |
-| — | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v5_profile.json` | `B7F5EE9E1FC95D4F` | superseded; bytes frozen |
+| — | `eval/benchmark_2/phase8_batch_v5_profile.json` | `B7F5EE9E1FC95D4F` | superseded; bytes frozen |
 | — | `configs/aggregation/registry_v8.json` | `27F66638AE845DAD` | superseded; bytes frozen |
 | — | `configs/aggregation/evaluators/safe_aggregation_1.8.1.json` | `7DCEB9C565CECF68` | superseded; bytes frozen |
 | — | `configs/run_profiles/phase8_batch_v5.json` | `C7F38629DA4EADBB` | current |
-| — | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v6_profile.json` | `5FB8CE66A4C05194` | current |
-| B0 | `configs/prompt_contracts/table_capture_v1.json` | `654F6B9ABBEDFFE3` | frozen production baseline |
+| — | `eval/benchmark_2/phase8_batch_v6_profile.json` | `5FB8CE66A4C05194` | current |
+| B0 | `configs/prompt_contracts/table_capture_v1.json` | `654F6B9ABBEDFFE3` | frozen v1 bytes; phase8 / A/B still pin this |
 | B0 | `configs/prompt_contracts/table_capture_v2.json` | `285D676ED59098F0` | frozen A/B candidate |
 | B0 | `configs/run_profiles/phase8_batch_v6.json` | `46888B89138AAFFC` | current; pins TableCapture v1 |
 | B1 | `eval/table_capture_ab_v1.json` | `68E35AE880AC87DD` | frozen pre-live A/B manifest |
@@ -362,10 +362,15 @@ restored to its original bytes and the corrections published as v2.
 | D4 | `configs/evidence_adequacy/registry_v1.json` | `E2C75161EF9642DC` | current |
 | D4 | `configs/evidence_adequacy/evaluators/evidence_adequacy_1.0.0.json` | `03FC06FDA682DA83` | current |
 | D4 | `configs/run_profiles/phase8_batch_v7.json` | `E00D058C259AA4A9` | superseded; bytes frozen |
-| D4 | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v7_profile.json` | `9213358AC894C959` | superseded; bytes frozen |
+| D4 | `eval/benchmark_2/phase8_batch_v7_profile.json` | `9213358AC894C959` | superseded; bytes frozen |
 | D4c | `configs/run_profiles/phase8_batch_v8.json` | `90951FD4B8E950B0` | current; evidence gate required before compare |
-| D4c | `eval/benchmarks/melanoma_checkpoint_2017/phase8_batch_v8_profile.json` | `F00D89C28BB24673` | current offline replay profile |
+| D4c | `eval/benchmark_2/phase8_batch_v8_profile.json` | `F00D89C28BB24673` | current offline replay profile |
 | G1 | `configs/run_profiles/phase8_batch_v9.json` | `480E7277FBC0B177` | current; single-claim route on the domain-neutral prompt |
+| RE1 | `configs/prompt_contracts/table_capture_v3.json` | `0DAB06AF2160066C` | current production TableCapture (selected displays only) |
+| RE1 | `configs/prompt_contracts/review_lens_v1.json` | `86505A34934569D9` | compressed review lens |
+| RE1 | `configs/prompt_contracts/evidence_localize_v1.json` | `2528D2FA3F018307` | evidence-chain localization |
+| RE1 | `configs/prompt_contracts/claim_origin_v1.json` | `614C066BA6C4432B` | source_paper vs review_computed labels |
+| RE1 | `configs/prompt_contracts/forest_ocr_v1.json` | `15E238EF83B380E1` | forest-plot Events/Total parse |
 
 ## Claim identity provenance: safe_aggregation 1.8.0 → 1.8.1
 

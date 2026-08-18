@@ -91,6 +91,50 @@ def test_row_labels_fall_back_to_the_first_column():
     assert t.row_labels() == ["Ahmad 2022"]
 
 
+def test_row_years_read_a_year_column_and_fill_down_merged_cells():
+    t = CapturedTable(
+        table_id="t", header_rows=[["Study", "Year", "N"]],
+        rows=[["Li J et al.", "2015", "80"],
+              ["", "", "40"],
+              ["Li K et al.", "2025", "90"]],
+        row_axis_columns=["Study"])
+    assert t.row_labels() == ["Li J et al.", "Li J et al.", "Li K et al."]
+    assert t.row_years() == ["2015", "2015", "2025"]
+
+
+def test_row_years_are_empty_when_the_table_has_no_year_column():
+    t = CapturedTable(table_id="t", header_rows=[["Study", "N"]],
+                      rows=[["Ahmad et al. [2022]", "100"]],
+                      row_axis_columns=["Study"])
+    assert t.row_years() == [""]
+
+
+def test_rows_name_studies_uses_axis_before_role():
+    studies = CapturedTable(
+        table_id="t1", role="outcomes",
+        header_rows=[["Study", "EAT"]],
+        rows=[["Ahmad 2022", "6.6"]],
+        row_axis_columns=["Study"])
+    pooled = CapturedTable(
+        table_id="t2", role="outcomes",
+        header_rows=[["Outcome", "OR (95% CI)"]],
+        rows=[["Overall Complications", "0.40 (0.27-0.60)"]],
+        row_axis_columns=["Outcome"])
+    tagged_only = CapturedTable(
+        table_id="t3", role="outcomes",
+        header_rows=[["A", "B"]],
+        rows=[["x", "1"]])
+    assert studies.rows_name_studies() is True
+    assert pooled.rows_name_studies() is False
+    assert tagged_only.rows_name_studies() is False
+    revman = CapturedTable(
+        table_id="fig", role="outcomes",
+        header_rows=[["Study or Subgroup", "Events", "Total"]],
+        rows=[["Li J 2015", "23", "58"]],
+        row_axis_columns=["Study or Subgroup"])
+    assert revman.rows_name_studies() is True
+
+
 def test_csv_round_trip_preserves_cells_verbatim():
     csv_text = to_csv(TABLE)
     assert "EAT (mm) / T1DM" in csv_text

@@ -81,7 +81,7 @@ EXPECTED = {
 
 REPLAY = (
     "python eval/run_full_accuracy.py --config <your config> "
-    "--benchmark eval/benchmarks/melanoma_checkpoint_2017 "
+    "--benchmark eval/benchmark_2 "
     "--benchmark-profile phase8_batch_v5_profile.json --extraction replay "
     "--extraction-cache <bundle>/phase8_batch_extraction_cache.json "
     "--semantic cache-only --semantic-cache <bundle>/phase7_semantic_cache.json "
