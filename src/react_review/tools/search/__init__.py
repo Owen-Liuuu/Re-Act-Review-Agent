@@ -10,8 +10,11 @@ from react_review.tools.search.clients import CitationResolver, StaticResolver
 from react_review.tools.search.gate import (
     DEFAULT_THRESHOLD,
     ReferenceMatch,
+    candidate_fits_citation,
     evaluate,
+    journals_match,
     score_match,
+    years_match,
 )
 from react_review.tools.search.live_clients import (
     CrossRefResolver,
@@ -26,7 +29,10 @@ from react_review.tools.search.models import (
     ResolveReferenceResult,
 )
 from react_review.tools.search.reconciler import ReferenceReconciler
-from react_review.tools.search.resolve_reference import ResolveReferenceTool
+from react_review.tools.search.resolve_reference import (
+    ResolveReferenceTool,
+    bind_identifier_resolve,
+)
 from react_review.tools.search.validation import CountResultsTool, SearchPubMedTool
 
 __all__ = [
@@ -36,7 +42,8 @@ __all__ = [
     "CitationResolver", "StaticResolver",
     "CrossRefResolver", "OpenAlexResolver", "EuropePMCResolver",
     "score_match", "evaluate", "ReferenceMatch", "DEFAULT_THRESHOLD",
+    "candidate_fits_citation", "journals_match", "years_match",
     "CandidateWork", "ReferenceQuery", "ResolvedReference",
     "ResolveReferenceInput", "ResolveReferenceResult",
-    "ReferenceReconciler", "ResolveReferenceTool",
+    "ReferenceReconciler", "ResolveReferenceTool", "bind_identifier_resolve",
 ]

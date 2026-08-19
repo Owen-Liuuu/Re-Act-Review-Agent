@@ -34,14 +34,15 @@ def _clip_lens(raw: dict) -> ReviewLens:
     )
 
 
-async def read_lens(backend: LLMBackend, text: str) -> ReviewLens:
+async def read_lens(backend: LLMBackend, text: str, *, seed: int = 42) -> ReviewLens:
     """LLM-compress FRONT MATTER. The raw abstract is not returned."""
     window = front_matter(text)
     if not window.strip():
         return ReviewLens(difficulties=["no front matter was available"])
     prompt = render_extraction_prompt("review_lens_v1", front_matter=window)
     try:
-        raw = parse_llm_response(await backend.complete(prompt), backend.model_id)
+        raw = parse_llm_response(
+            await backend.complete(prompt, seed=seed), backend.model_id)
     except Exception:  # noqa: BLE001
         return ReviewLens(difficulties=["lens model call failed"])
     if not isinstance(raw, dict):

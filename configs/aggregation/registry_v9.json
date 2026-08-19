@@ -60,3 +60,4 @@
   "note_on_growth": "Adding a policy or an evaluator pair means a new registry version, because this file is pinned. Changing which pairs may publish requires a new version.",
   "why_v9_registry": "D4 adds conditionally omitted document-scope and evidence-adequacy provenance to SourceEvidenceItem. The safe-sum policy and evaluator decisions do not read those fields. The frozen 26-case aggregation comparison remains the authority for classifying this provenance-only boundary change as PATCH 1.8.2; older registry and evaluator files remain byte-identical."
 }
+

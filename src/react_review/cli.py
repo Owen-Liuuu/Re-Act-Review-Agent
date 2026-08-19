@@ -54,6 +54,17 @@ def _vision_backend(config, telemetry, stage: str):
     return MeteredBackend(raw, telemetry, stage)
 
 
+def _alt_backend(config, telemetry, stage: str):
+    """Optional llm2 for [M] retry. None if unset — the key must not appear."""
+    from react_review.llm.factory import create_backend_from_settings
+    from react_review.llm.metered import MeteredBackend
+
+    if config.llm2 is None:
+        return None
+    return MeteredBackend(
+        create_backend_from_settings(config.llm2), telemetry, stage)
+
+
 def _audit_main(argv: list[str] | None = None) -> None:
     """New deterministic audit: match review↔source, compare, report, persist.
 
@@ -337,6 +348,7 @@ def _run_main(argv: list[str] | None = None, *, dependencies=None) -> None:
         checklist=checklist,
         table_capture_prompt_profile=(
             contract.table_capture_prompt_profile or "table_capture_v3"),
+        alt_backend=_alt_backend(config, telemetry, stages.parsing),
         vision_backend=_vision_backend(config, telemetry, stages.parsing),
     )
 

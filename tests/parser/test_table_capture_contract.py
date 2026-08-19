@@ -15,6 +15,7 @@ from react_review.parser.table_capture_contract import (
     TABLE_CAPTURE_V1,
     TABLE_CAPTURE_V2,
     TABLE_CAPTURE_V3,
+    TABLE_CAPTURE_V4,
     TableCapturePromptContract,
     render_table_capture_prompt,
     sha256_rendered_prompt,
@@ -23,7 +24,7 @@ from react_review.run_profile import ExecutionMode, RunManifest, load_run_contra
 
 
 ROOT = Path(__file__).resolve().parents[2]
-PROFILES = ("table_capture_v1", "table_capture_v2", "table_capture_v3")
+PROFILES = ("table_capture_v1", "table_capture_v2", "table_capture_v3", "table_capture_v4")
 
 
 class RecordingBackend(LLMBackend):
@@ -122,6 +123,26 @@ def test_old_profiles_do_not_gain_empty_table_capture_identity_keys():
     assert TABLE_CAPTURE_V1.name == "table_capture_v1.json"
     assert TABLE_CAPTURE_V2.name == "table_capture_v2.json"
     assert TABLE_CAPTURE_V3.name == "table_capture_v3.json"
+    assert TABLE_CAPTURE_V4.name == "table_capture_v4.json"
     assert "table_capture_prompt_id" not in identity
     assert "table_capture_prompt_hash" not in identity
     assert "table_capture_prompt_profile" not in identity
+
+
+def test_v4_differs_from_v3_only_in_the_example_cells():
+    v3 = render_table_capture_prompt(
+        "table_capture_v3", text="X", selected="[]").splitlines()
+    v4 = render_table_capture_prompt(
+        "table_capture_v4", text="X", selected="[]").splitlines()
+    changed = [(a, b) for a, b in zip(v3, v4) if a != b]
+    assert len(v3) == len(v4)
+    assert len(changed) == 3
+    joined_old = "\n".join(old for old, _new in changed)
+    joined_new = "\n".join(new for _old, new in changed)
+    assert "Ahmad 2022" in joined_old and "T1DM" in joined_old
+    assert "Ahmad 2022" not in joined_new and "T1DM" not in joined_new
+    assert "<exact header cell>" in joined_new
+    assert "<exact cell text>" in joined_new
+    assert "<exact printed cohort label>" in joined_new
+    assert TableCapturePromptContract.load("table_capture_v4").drifts() == []
+

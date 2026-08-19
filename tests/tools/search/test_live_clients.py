@@ -103,3 +103,21 @@ async def test_network_error_degrades_to_empty(monkeypatch):
     monkeypatch.setattr("react_review.tools.search.live_clients.httpx.AsyncClient",
                         lambda **kw: _Boom())
     assert await CrossRefResolver().resolve(ReferenceQuery(title="x")) == []
+
+
+@pytest.mark.asyncio
+async def test_europepmc_identifier_query_uses_pmid(monkeypatch):
+    _patch(monkeypatch, EUROPEPMC)
+    cands = await EuropePMCResolver().resolve_identifier(
+        ReferenceQuery(title="ignored title search", pmid="25249141"))
+    assert cands and cands[0].doi == "10.1/x"
+
+
+@pytest.mark.asyncio
+async def test_crossref_identifier_query_uses_doi_path(monkeypatch):
+    item = CROSSREF["message"]["items"][0]
+    _patch(monkeypatch, {"message": item})
+    cands = await CrossRefResolver().resolve_identifier(
+        ReferenceQuery(title="ignored", doi="10.1/X"))
+    assert cands and cands[0].doi == "10.1/x"
+

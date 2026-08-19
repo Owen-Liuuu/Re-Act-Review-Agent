@@ -35,6 +35,21 @@
     "value": "why this is / is not on the evidence chain, naming the ruler"
   },
   {
+    "source": "react_review.parser.review_extraction.prompts._LOCALIZE_V2",
+    "key": "caption",
+    "value": "verbatim caption"
+  },
+  {
+    "source": "react_review.parser.review_extraction.prompts._LOCALIZE_V2",
+    "key": "page_hint",
+    "value": "printed page or empty"
+  },
+  {
+    "source": "react_review.parser.review_extraction.prompts._LOCALIZE_V2",
+    "key": "reason",
+    "value": "why this is / is not on the evidence chain, naming the ruler"
+  },
+  {
     "source": "react_review.parser.review_extraction.prompts._ORIGIN",
     "key": "column_path",
     "value": "exact header path"
@@ -71,6 +86,21 @@
   },
   {
     "source": "react_review.parser.table_capture_contract._CAPTURE_V3",
+    "key": "shape_notes",
+    "value": "one row per study; the cohort split is a column pair"
+  },
+  {
+    "source": "react_review.parser.table_capture_contract._CAPTURE_V4",
+    "key": "research_context",
+    "value": "one line: population + exposure/intervention + outcome"
+  },
+  {
+    "source": "react_review.parser.table_capture_contract._CAPTURE_V4",
+    "key": "caption",
+    "value": "the table's printed caption"
+  },
+  {
+    "source": "react_review.parser.table_capture_contract._CAPTURE_V4",
     "key": "shape_notes",
     "value": "one row per study; the cohort split is a column pair"
   },

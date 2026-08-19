@@ -93,6 +93,9 @@ class QwenBackend(LLMBackend):
                     except httpx.RequestError as exc:
                         last_failure = f"network error: {exc!r}"
                         if attempt >= self._max_retries:
+                            self._log_transient_retry(
+                                attempt=attempt, delay=0, detail=repr(exc),
+                                exhausted=True)
                             break
                         delay = self._compute_retry_delay(None, attempt)
                         self._log_transient_retry(
@@ -104,6 +107,8 @@ class QwenBackend(LLMBackend):
                     if resp.status_code == 429:
                         last_failure = f"HTTP 429: {resp.text[:300]}"
                         if attempt >= self._max_retries:
+                            self._log_rate_limited(
+                                resp, attempt=attempt, delay=0, exhausted=True)
                             break
                         delay = self._compute_retry_delay(resp, attempt)
                         self._log_rate_limited(resp, attempt=attempt, delay=delay)

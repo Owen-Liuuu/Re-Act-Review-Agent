@@ -22,6 +22,7 @@ from react_review.hitl.gate import Decision
 from react_review.hitl.policy import CheckpointPolicy, Mode
 from react_review.hitl.render import (
     render_event,
+    render_progress,
     render_prompt,
     render_selectable,
     safe_print,
@@ -46,9 +47,22 @@ class ConsoleCheckpoint:
         self._journal = journal
         self._allow_skip = allow_skip
         self._skip_all = False
+        self._drop_undo: list[tuple[int, dict, list[str]]] = []
 
-    async def check(self, event: StepEvent) -> Decision:
-        mode = self._policy.mode_for(event.stage)
+    def progress(
+        self,
+        label: str,
+        index: int | None = None,
+        total: int | None = None,
+        *,
+        caption: str = "",
+        elapsed_s: float | None = None,
+    ) -> None:
+        safe_print(render_progress(
+            label, index, total, caption=caption, elapsed_s=elapsed_s))
+
+    async def check(self, event: StepEvent, *, force_gate: bool = False) -> Decision:
+        mode = Mode.GATE if force_gate else self._policy.mode_for(event.stage)
         if mode is Mode.SILENT:
             event.decision = Decision.CONTINUE.value
             return Decision.CONTINUE
@@ -65,8 +79,11 @@ class ConsoleCheckpoint:
 
     async def _ask(self, event: StepEvent) -> Decision:
         """Prompt until a key maps to a decision (inspect actions re-prompt)."""
+        self._drop_undo = []
         while True:
-            safe_print(render_prompt(event, allow_skip=self._allow_skip))
+            safe_print(render_prompt(
+                event, allow_skip=self._allow_skip,
+                undo_available=bool(self._drop_undo)))
             key = await asyncio.to_thread(self._read_key)
 
             if key in _CONTINUE_KEYS:
@@ -80,8 +97,14 @@ class ConsoleCheckpoint:
             if key == "a" and self._allow_skip:
                 self._skip_all = True
                 return Decision.SKIP_REST
-            if key == "x" and event.selectable_items():
-                await self._drop_one(event)
+            if key == "n" and event.selectable_items():
+                await self._set_one(event, on=True)
+                continue
+            if key == "f" and event.selectable_items():
+                await self._set_one(event, on=False)
+                continue
+            if key == "u" and self._drop_undo:
+                self._undo_set(event)
                 continue
             if key == "d":
                 safe_print(json.dumps(event.payload, indent=2, ensure_ascii=False))
@@ -91,20 +114,38 @@ class ConsoleCheckpoint:
                 continue
             # Anything else (including a swallowed arrow key) just re-prompts.
 
-    async def _drop_one(self, event: StepEvent) -> None:
-        """Let the human remove one captured item, then re-show what remains."""
-        safe_print(render_selectable(event))
+    async def _set_one(self, event: StepEvent, *, on: bool) -> None:
+        """Set one selectable on or off, then re-show what remains active."""
+        safe_print(render_selectable(event, action="on" if on else "off"))
         key = await asyncio.to_thread(self._read_key)
         if not key.isdigit():
             return
-        removed = event.drop(int(key))
-        if not removed:
+        items = event.selectable_items()
+        choice = int(key)
+        if not 1 <= choice <= len(items):
             safe_print("  (no such item)")
             return
-        remaining = event.selectable_items()
-        safe_print(f"  dropped {removed} — {len(remaining)} left")
-        if not remaining:
-            safe_print("  ! nothing left to process; [S]top unless this is intended")
+        snapshot = dict(items[choice - 1])
+        dropped_before = list(event.dropped)
+        rid = event.set_on(choice) if on else event.set_off(choice)
+        if not rid:
+            safe_print("  (no such item)")
+            return
+        self._drop_undo.append((choice - 1, snapshot, dropped_before))
+        safe_print(f"  set {rid} {'on' if on else 'off'}")
+        if len(event.dropped) == len(event.selectable_items()):
+            safe_print("  ! nothing left to process; [S]Stop unless this is intended")
+
+    def _undo_set(self, event: StepEvent) -> None:
+        """Restore the last On/Off from this pause. Does not cross steps."""
+        index, item, dropped = self._drop_undo.pop()
+        items = event.selectable_items()
+        if 0 <= index < len(items):
+            items[index].clear()
+            items[index].update(item)
+        event.dropped[:] = dropped
+        rid = str(item.get("id") or item.get("table_id") or index + 1)
+        safe_print(f"  restored {rid}")
 
     def _artifact_path(self, event: StepEvent) -> str:
         run_dir = getattr(self._journal, "run_dir", None)

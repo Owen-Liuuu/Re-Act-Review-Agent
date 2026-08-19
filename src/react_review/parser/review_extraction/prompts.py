@@ -13,11 +13,13 @@ RENDERER_IDENTITY = "react_review.review_extraction.render.v1"
 
 REVIEW_LENS_V1 = Path("configs/prompt_contracts/review_lens_v1.json")
 EVIDENCE_LOCALIZE_V1 = Path("configs/prompt_contracts/evidence_localize_v1.json")
+EVIDENCE_LOCALIZE_V2 = Path("configs/prompt_contracts/evidence_localize_v2.json")
 CLAIM_ORIGIN_V1 = Path("configs/prompt_contracts/claim_origin_v1.json")
 
 PROMPT_VERSIONS = {
     "review_lens_v1": "review-lens-v1",
     "evidence_localize_v1": "evidence-localize-v1",
+    "evidence_localize_v2": "evidence-localize-v2",
     "claim_origin_v1": "claim-origin-v1",
 }
 
@@ -53,6 +55,43 @@ The review's compressed ruler:
 A display is evidence_chain=true only when it attributes raw per-study numbers
 (copied from an included paper) to a named included study, and those numbers
 relate to the ruler's population / comparison / outcomes.
+
+evidence_chain=false for pooled OR, GRADE, PRISMA flow, search strategy, and
+any figure or table unrelated to the ruler. Do not use a caption regex. Judge
+from the ruler plus the caption / nearby text in the RESULTS WINDOW.
+
+kind is pdf_table (a typeset table in the PDF text), forest_plot (RevMan-style
+per-study forest, including when only the caption is in the text layer), or
+other.
+
+{{"displays": [
+  {{"display_id": "table_1",
+    "kind": "pdf_table | forest_plot | other",
+    "caption": "verbatim caption",
+    "page_hint": "printed page or empty",
+    "evidence_chain": true,
+    "reason": "why this is / is not on the evidence chain, naming the ruler"}}
+]}}
+
+## RESULTS WINDOW
+{results_window}
+
+Return JSON only."""
+
+_LOCALIZE_V2 = """You are listing the evidence-chain displays in a systematic review.
+
+The review's compressed ruler:
+{lens}
+
+A display is evidence_chain=true only when it attributes raw per-study numbers
+(copied from an included paper) to a named included study, and those numbers
+relate to the ruler's population / comparison / outcomes.
+
+A display is also on the evidence chain when it attributes per-study
+characteristics — sample size per arm, population descriptors, study design,
+country, year — to named included studies, even when it reports none of the
+ruler's outcomes. Those columns carry the arm labels and the study identities
+that later steps depend on.
 
 evidence_chain=false for pooled OR, GRADE, PRISMA flow, search strategy, and
 any figure or table unrelated to the ruler. Do not use a caption regex. Judge
@@ -115,11 +154,13 @@ Return JSON only."""
 PROMPT_TEMPLATES = {
     "review_lens_v1": _LENS,
     "evidence_localize_v1": _LOCALIZE,
+    "evidence_localize_v2": _LOCALIZE_V2,
     "claim_origin_v1": _ORIGIN,
 }
 _CONTRACT_PATHS = {
     "review_lens_v1": REVIEW_LENS_V1,
     "evidence_localize_v1": EVIDENCE_LOCALIZE_V1,
+    "evidence_localize_v2": EVIDENCE_LOCALIZE_V2,
     "claim_origin_v1": CLAIM_ORIGIN_V1,
 }
 

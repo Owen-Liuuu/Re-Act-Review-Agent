@@ -165,6 +165,7 @@ def claim_index(items: Iterable[ReviewDataItem]) -> dict[str, dict[str, object]]
     return {
         item.review_data_id: {
             "study_id": item.study_id,
+            "study_label_raw": str(getattr(item, "study_label_raw", "") or ""),
             "table_id": item.table_id,
             "cell_ref": list(item.cell_ref) if item.cell_ref is not None else None,
             "column_header": item.column_header or item.raw_field_name,

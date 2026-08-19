@@ -61,8 +61,11 @@ async def test_retry_is_only_accepted_when_the_stage_offers_it():
     # no offer → 'r' is meaningless and must not end the prompt
     assert await _gate(["r", "c"]).check(_event()) is Decision.CONTINUE
     assert await _gate(["r"]).check(_event(offers=["retry"])) is Decision.RETRY
+    assert await _gate(["m", "c"]).check(_event()) is Decision.CONTINUE
     assert await _gate(["m"]).check(
         _event(offers=["retry_alt"])) is Decision.RETRY_ALT
+    # no offer → 'm' must not silently continue as if accepted
+    assert await _gate(["m", "c"]).check(_event(offers=["retry"])) is Decision.CONTINUE
 
 
 # --- skip is withheld until explicitly allowed ---
@@ -93,43 +96,177 @@ def _droppable(**kw) -> StepEvent:
 
 
 @pytest.mark.asyncio
-async def test_dropping_removes_the_item_and_records_it_then_reprompts(capsys):
+async def test_off_turns_an_item_off_and_records_it_then_reprompts(capsys):
     event = _droppable()
-    assert await _gate(["x", "3", "c"]).check(event) is Decision.CONTINUE
-    assert [t["id"] for t in event.selectable_items()] == ["table_1", "table_2"]
-    assert event.dropped == ["table_s1"]           # human intervention is recorded
-    assert "dropped table_s1 — 2 left" in capsys.readouterr().out
+    assert await _gate(["f", "3", "c"]).check(event) is Decision.CONTINUE
+    assert [t["id"] for t in event.selectable_items()] == [
+        "table_1", "table_2", "table_s1"]
+    assert event.dropped == ["table_s1"]
+    assert event.selectable_items()[2]["label"].startswith("[off]")
+    assert "set table_s1 off" in capsys.readouterr().out
 
 
 @pytest.mark.asyncio
-async def test_drop_is_not_offered_when_the_stage_has_nothing_selectable():
-    # 'x' is then just an unknown key: re-prompt, never a decision
-    assert await _gate(["x", "c"]).check(_event()) is Decision.CONTINUE
-    assert "[X] drop one" not in render_prompt(_event())
-    assert "[X] drop one" in render_prompt(_droppable())
+async def test_t_key_no_longer_toggles(capsys):
+    event = _droppable()
+    assert await _gate(["t", "c"]).check(event) is Decision.CONTINUE
+    assert event.dropped == []
+    assert all("[off]" not in t["label"] for t in event.selectable_items())
+    assert "set " not in capsys.readouterr().out
 
 
 @pytest.mark.asyncio
-async def test_out_of_range_choice_drops_nothing(capsys):
+async def test_on_and_off_are_idempotent(capsys):
     event = _droppable()
-    await _gate(["x", "7", "c"]).check(event)
+    assert await _gate(["f", "2", "f", "2", "n", "2", "n", "2", "c"]).check(
+        event) is Decision.CONTINUE
+    assert event.dropped == []
+    assert event.selectable_items()[1]["label"].startswith("[on]")
+    out = capsys.readouterr().out
+    assert out.count("set table_2 off") == 2
+    assert out.count("set table_2 on") == 2
+
+
+@pytest.mark.asyncio
+async def test_on_off_are_not_offered_when_the_stage_has_nothing_selectable():
+    assert await _gate(["f", "c"]).check(_event()) is Decision.CONTINUE
+    assert "[N]On <n>" not in render_prompt(_event())
+    assert "[F]Off <n>" not in render_prompt(_event())
+    assert "[T]Toggle one" not in render_prompt(_droppable())
+    assert "[N]On <n>" in render_prompt(_droppable())
+    assert "[F]Off <n>" in render_prompt(_droppable())
+    assert "[U]Undo" not in render_prompt(_droppable())
+    assert "[U]Undo" in render_prompt(_droppable(), undo_available=True)
+
+
+@pytest.mark.asyncio
+async def test_out_of_range_choice_sets_nothing(capsys):
+    event = _droppable()
+    await _gate(["f", "7", "c"]).check(event)
     assert len(event.selectable_items()) == 3 and event.dropped == []
     assert "(no such item)" in capsys.readouterr().out
 
 
 @pytest.mark.asyncio
-async def test_non_digit_choice_aborts_the_drop(capsys):
+async def test_non_digit_choice_aborts_the_set(capsys):
     event = _droppable()
-    await _gate(["x", "z", "c"]).check(event)
+    await _gate(["n", "z", "c"]).check(event)
     assert len(event.selectable_items()) == 3 and event.dropped == []
 
 
 @pytest.mark.asyncio
-async def test_dropping_everything_warns_before_continuing(capsys):
+async def test_setting_everything_off_warns_before_continuing(capsys):
     event = _droppable()
-    await _gate(["x", "1", "x", "1", "x", "1", "c"]).check(event)
-    assert event.selectable_items() == []
+    await _gate(["f", "1", "f", "2", "f", "3", "c"]).check(event)
+    assert [t["id"] for t in event.selectable_items()] == [
+        "table_1", "table_2", "table_s1"]
+    assert event.dropped == ["table_1", "table_2", "table_s1"]
     assert "nothing left to process" in capsys.readouterr().out
+
+
+@pytest.mark.asyncio
+async def test_undo_restores_the_last_on_off_in_the_same_pause():
+    event = _droppable()
+    await _gate(["f", "1", "f", "2", "u", "u", "c"]).check(event)
+    assert [t["id"] for t in event.selectable_items()] == [
+        "table_1", "table_2", "table_s1"]
+    assert event.dropped == []
+
+
+@pytest.mark.asyncio
+async def test_force_gate_pauses_a_show_or_silent_stage():
+    policy = CheckpointPolicy.key_stages()
+    assert policy.mode_for(StepStage.COHORT_REGISTRY) is Mode.SHOW
+    assert policy.mode_for(StepStage.REVIEW_PDF_LOADED) is Mode.SILENT
+    asked: list[StepStage] = []
+    gate = _gate(["c", "c"], policy=policy)
+    orig = gate._ask
+
+    async def counting_ask(event):
+        asked.append(event.stage)
+        return await orig(event)
+
+    gate._ask = counting_ask  # type: ignore[method-assign]
+    event = _event(StepStage.COHORT_REGISTRY)
+    assert await gate.check(event, force_gate=True) is Decision.CONTINUE
+    assert event.decision == "continue"
+    silent = _event(StepStage.REVIEW_PDF_LOADED)
+    assert await gate.check(silent, force_gate=True) is Decision.CONTINUE
+    assert asked == [StepStage.COHORT_REGISTRY, StepStage.REVIEW_PDF_LOADED]
+
+
+@pytest.mark.asyncio
+async def test_silent_pdf_loaded_neither_prints_nor_asks(capsys):
+    gate = _gate([], policy=CheckpointPolicy.key_stages())
+    assert await gate.check(_event(StepStage.REVIEW_PDF_LOADED)) is Decision.CONTINUE
+    assert capsys.readouterr().out == ""
+
+
+@pytest.mark.asyncio
+async def test_show_and_silent_stages_still_write_journal(tmp_path):
+    from react_review.hitl import RunJournal, StepReporter
+
+    journal = RunJournal(tmp_path)
+    gate = _gate([], policy=CheckpointPolicy.key_stages())
+    reporter = StepReporter("r", gate=gate, journal=journal)
+    await reporter.step_or_stop(StepStage.FIELD_RESOLUTION, title="Field concepts")
+    await reporter.step_or_stop(StepStage.REVIEW_PDF_LOADED, title="Review PDF loaded")
+    names = {path.name for path in (tmp_path / "steps").glob("*.json")}
+    assert any("field_resolution" in name for name in names)
+    assert any("review_pdf_loaded" in name for name in names)
+
+
+@pytest.mark.asyncio
+async def test_first_visible_screen_is_one_while_journal_keeps_pdf_loaded(tmp_path):
+    from react_review.hitl import RunJournal, StepReporter, render_event
+
+    class _PolicyContinue:
+        def __init__(self) -> None:
+            self._policy = CheckpointPolicy.key_stages()
+
+        async def check(self, event, *, force_gate=False):
+            event.decision = "continue"
+            return Decision.CONTINUE
+
+    journal = RunJournal(tmp_path)
+    reporter = StepReporter("r", gate=_PolicyContinue(), journal=journal)
+    await reporter.step(StepStage.REVIEW_PDF_LOADED, title="Review PDF loaded",
+                        subject="C:/pdf/review.pdf")
+    await reporter.step(StepStage.REVIEW_LENS, title="Review lens compressed",
+                        subject="C:/pdf/review.pdf")
+    names = {path.name for path in (tmp_path / "steps").glob("*.json")}
+    assert any(name.startswith("001_review_pdf_loaded") for name in names)
+    assert any(name.startswith("002_review_lens") for name in names)
+    lens = reporter.last_event
+    assert lens is not None and lens.screen == 1 and lens.index == 2
+    out = render_event(lens)
+    assert "[1] Review lens compressed" in out
+    assert "\n\n  file: C:/pdf/review.pdf" in out
+
+
+
+def test_key_stages_gates_nine_decision_points():
+    policy = CheckpointPolicy.key_stages()
+    gated = {s for s in StepStage if policy.mode_for(s) is Mode.GATE}
+    show = {s for s in StepStage if policy.mode_for(s) is Mode.SHOW}
+    silent = {s for s in StepStage if policy.mode_for(s) is Mode.SILENT}
+    assert StepStage.FIELD_RESOLUTION in show
+    assert StepStage.CHECKLIST_REVIEW in show
+    assert StepStage.CHECKLIST_STUDY_COVERAGE in show
+    assert StepStage.COHORT_REGISTRY in show
+    assert StepStage.COLLECT_STUDY in show
+    assert StepStage.REVIEW_PDF_LOADED in silent
+    assert StepStage.FOREST_OCR in silent
+    assert StepStage.CHECKLIST in gated
+    used = [
+        StepStage.REVIEW_LENS, StepStage.EVIDENCE_LOCALIZE,
+        StepStage.TABLE_CAPTURE, StepStage.CLAIM_ORIGIN,
+        StepStage.LONG_FORMAT_ROWS, StepStage.REFERENCE_COVERAGE,
+        StepStage.COLLECTION_REVIEW, StepStage.AUDIT_SUMMARY,
+        StepStage.JUDGE_FLAGS,
+    ]
+    assert all(s in gated for s in used)
+    assert len(used) == 9
 
 
 # --- policy modes ---
@@ -139,7 +276,7 @@ async def test_show_mode_prints_but_never_asks(capsys):
     gate = _gate([], policy=CheckpointPolicy.key_stages())    # COLLECT_STUDY is SHOW
     assert await gate.check(_event(StepStage.COLLECT_STUDY)) is Decision.CONTINUE
     out = capsys.readouterr().out
-    assert "C:/pdf/paper.pdf" in out and "[C]ontinue" not in out
+    assert "C:/pdf/paper.pdf" in out and "[C]Continue" not in out
 
 
 @pytest.mark.asyncio
@@ -180,3 +317,13 @@ def test_ctrl_c_raises_keyboard_interrupt(monkeypatch):
     monkeypatch.setitem(__import__("sys").modules, "msvcrt", fake)
     with pytest.raises(KeyboardInterrupt):           # getwch does not raise it for us
         ConsoleCheckpoint._read_key()
+
+
+def test_retry_offers_hide_model_2_when_unwired():
+    from react_review.hitl.gate import require_alt_backend, retry_offers
+
+    assert retry_offers(None) == ["retry"]
+    assert retry_offers(object()) == ["retry", "retry_alt"]
+    with pytest.raises(RuntimeError, match="no alt_backend"):
+        require_alt_backend(None, stage="review_table_capture")
+    assert require_alt_backend("llm2", stage="review_lens") == "llm2"

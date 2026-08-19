@@ -25,4 +25,7 @@ class FetchFullTextTool(Tool):
             doc is not None
             and doc.document_scope is not DocumentScope.METADATA_ONLY
         )
-        return FetchResult(reference=payload, retrieved=retrieved, document=doc)
+        tables = list(getattr(self._retriever, "captured_tables", []) or [])
+        return FetchResult(
+            reference=payload, retrieved=retrieved, document=doc, tables=tables,
+        )

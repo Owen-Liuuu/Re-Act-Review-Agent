@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from types import SimpleNamespace
 
 import structlog
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from react_review.contracts import ContractError
 from react_review.schemas.telemetry import SINGLE_EXTRACTION
@@ -19,7 +20,12 @@ from react_review.llm.base import LLMBackend, parse_llm_response
 from react_review.normalize.anchors import normalised_contains
 from react_review.normalize.cohorts import ComparisonTarget
 from react_review.normalize.population import PopulationScope, classify_population
-from react_review.schemas.evidence import AggregationProvenance, CohortCount, SourceNumericComponents
+from react_review.schemas.evidence import (
+    AggregationProvenance,
+    CohortCount,
+    ReviewDataItem,
+    SourceNumericComponents,
+)
 from react_review.steps.data_extraction.schemas import PaperDocument
 from react_review.tools.base import Tool, ToolStage
 from react_review.tools.extraction_cache import (
@@ -92,7 +98,7 @@ Find the value of **{concept}** for the **{group_desc}**.
 (The review's column was labelled "{raw_label}"; internal field_type: {field_type}.)
 The paper may name this field using: {concept_variants}
 Expected unit (hint, may differ in the paper): "{unit_hint}"
-{targeted_target}
+{outcome_line}{targeted_target}
 ## RULES
 {cohort_rules}
 - First list every cohort/column the paper reports for this field in ``cohorts_seen``.
@@ -204,12 +210,20 @@ _TARGETED_OUTPUTS = """,
                                                  "ci_lower": 0, "ci_upper": 0}}]"""
 
 
-def _targeted_target(payload: "ExtractSourceValueInput") -> str:
+def _targeted_target(comparison: ComparisonTarget | None) -> str:
     """The extra TARGET paragraph the targeted contract adds, if any."""
-    if payload.comparison is not None:
-        return _TARGETED_COMPARISON.format(left=payload.comparison.left,
-                                           right=payload.comparison.right)
+    if comparison is not None:
+        return _TARGETED_COMPARISON.format(left=comparison.left,
+                                           right=comparison.right)
     return _TARGETED_ARM
+
+
+def _outcome_line(profile: str, outcome: str) -> str:
+    """Outcome clause for targeted_v7 only — empty on frozen v3/v4/v6 bytes."""
+    text = (outcome or "").strip()
+    if profile != "targeted_v7" or not text:
+        return ""
+    return f'This claim is about the outcome: "{text}".\n'
 
 
 def cohort_description(group: str, *, display: str = "",
@@ -287,6 +301,114 @@ def _overlap(label: str, variants: list[str]) -> float:
     return best
 
 
+class SourceQuery(BaseModel):
+    """What a source-paper extraction may be asked — concepts and cohorts only.
+
+    This is the prompt-argument envelope. It has no slot for a review cell
+    value, so a later change cannot start interpolating ``review_value`` into
+    the source prompt by adding a field here.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    concept: str = ""
+    concept_variants: list[str] = Field(default_factory=list)
+    field_type: str = ""
+    cohort_target: str = ""
+    unit_hint: str = ""
+    research_context: str = ""
+    outcome: str = ""
+
+
+def source_query_from_claim(
+    claim: ReviewDataItem,
+    *,
+    concept: str = "",
+    concept_variants: list[str] | None = None,
+    research_context: str = "",
+) -> SourceQuery:
+    """Build a source query from a review claim without reading its value."""
+    return SourceQuery(
+        concept=concept or claim.raw_field_name or claim.field_type,
+        concept_variants=list(concept_variants or []),
+        field_type=claim.field_type,
+        cohort_target=claim.cohort_label or claim.group,
+        unit_hint=claim.unit,
+        research_context=research_context,
+        outcome=str(getattr(claim, "outcome", "") or ""),
+    )
+
+
+def source_query_from_payload(payload: "ExtractSourceValueInput") -> SourceQuery:
+    """The query envelope for a single-target request. Never copies a cell value."""
+    return SourceQuery(
+        concept=payload.concept or payload.raw_field_name or payload.field_type,
+        concept_variants=list(payload.concept_variants),
+        field_type=payload.field_type,
+        cohort_target=payload.cohort_display or payload.group,
+        unit_hint=payload.unit_hint,
+        research_context=payload.research_context,
+        outcome=payload.outcome,
+    )
+
+
+def render_source_extract_prompt(
+    query: SourceQuery,
+    *,
+    paper_text: str,
+    raw_label: str = "",
+    group: str = "-",
+    cohort_display: str = "",
+    cohorts: dict[str, list[str]] | None = None,
+    comparison: ComparisonTarget | None = None,
+    attempt: int = 0,
+    extraction_profile: str = DEFAULT_PROFILE,
+) -> str:
+    """Render the single-target source prompt from a SourceQuery plus paper text.
+
+    Structural extras (group, profile, comparison, attempt) describe HOW to ask,
+    not WHAT value the review reported. The review cell is not an argument.
+    """
+    profile = prompt_profile(SimpleNamespace(extraction_profile=extraction_profile))
+    targeted = uses_targeted_sections(profile)
+    target = query.concept
+    group_desc = (
+        f'comparison of "{comparison.left}" versus "{comparison.right}"'
+        if targeted and comparison is not None else
+        cohort_description(
+            group, display=cohort_display,
+            variants=(cohorts or {}).get(group, [])))
+    return _PROMPT.format(
+        targeted_target=(_targeted_target(comparison) if targeted else ""),
+        targeted_rules=(_TARGETED_RULES if targeted else ""),
+        targeted_outputs=(_TARGETED_OUTPUTS if targeted else ""),
+        cohort_rules=(_COHORT_RULES_V6 if profile in {"targeted_v6", "targeted_v7"}
+                      else _COHORT_RULES_V3).format(group_desc=group_desc),
+        outcome_line=_outcome_line(profile, query.outcome),
+        context=query.research_context or "a systematic review",
+        concept=target,
+        raw_label=raw_label or target,
+        field_type=query.field_type or "(unresolved)",
+        concept_variants=(", ".join(query.concept_variants)
+                          or raw_or_target(raw_label, target)),
+        group_desc=group_desc,
+        unit_hint=query.unit_hint,
+        sample_size_rules=(
+            _SAMPLE_SIZE_RULES if query.field_type == "sample_size" and
+            (group or "").strip().lower() in {"all", "-"} else ""),
+        retry_rules=("- RETRY CORRECTION: the previous response failed a "
+                     "deterministic evidence check. Re-read the paper and "
+                     "return only an exact contiguous quote that is visibly "
+                     "present in PAPER TEXT and contains the extracted value. "
+                     "The returned unit must also be exactly the unit printed "
+                     "in that quote; do not correct a paper's apparent typo."
+                     if attempt else ""),
+        paper_text=_paper_excerpt(
+            paper_text, target=target, raw_label=raw_label,
+            field_type=query.field_type, variants=query.concept_variants),
+    )
+
+
 class ExtractSourceValueInput(BaseModel):
     document: PaperDocument
     field_type: str
@@ -323,6 +445,9 @@ class ExtractSourceValueInput(BaseModel):
     # as a structured pair is what lets the request say WHICH hazard ratio, and
     # what lets the assignment check the direction.
     comparison: ComparisonTarget | None = None
+    # Which review-side outcome this claim is about. Carried on every request;
+    # interpolated into the prompt only under targeted_v7.
+    outcome: str = ""
 
 
 class SourceValueResult(BaseModel):
@@ -400,8 +525,22 @@ class ExtractSourceValueTool(Tool):
         self._cache_mode = cache_mode
         self._stage = stage
         self._telemetry = telemetry
+        # Cross-claim reuse of the same (paper, group, field, outcome) question.
+        # attempt>0 still runs: collector retries must not be short-circuited.
+        self._query_reuse: dict[tuple, SourceValueResult] = {}
 
     async def run(self, payload: ExtractSourceValueInput) -> SourceValueResult:
+        query = source_query_from_payload(payload)
+        reuse_key = (
+            str(getattr(payload.document, "paper_id", "") or ""),
+            payload.group,
+            payload.field_type,
+            query.outcome,
+        )
+        if payload.attempt == 0:
+            reused = self._query_reuse.get(reuse_key)
+            if reused is not None:
+                return reused
         if self._telemetry is not None:
             self._telemetry.attempt("extract_source_value")
             if payload.attempt:
@@ -409,7 +548,6 @@ class ExtractSourceValueTool(Tool):
         # The target description prefers the canonical concept, but falls back to
         # the review's RAW column label — so an UNRESOLVED field (no field_type)
         # is still extractable: the raw name itself says what to look for.
-        target = payload.concept or payload.raw_field_name or payload.field_type
         profile = prompt_profile(payload)
         if profile == "targeted_v5_batch":
             # The second gate. A v5 request reaching here would be built with the
@@ -424,45 +562,16 @@ class ExtractSourceValueTool(Tool):
                 "That path builds the legacy prompt and would record it under the "
                 "v5 cache namespace, which is neither contract. Route it to the "
                 "batch tool or fail the run")
-        targeted = uses_targeted_sections(profile)
-        group_desc = (
-            # A comparison is not a cohort. Describing "a_vs_b" as a cohort
-            # asked the paper for an arm by that name, which no paper has.
-            f'comparison of "{payload.comparison.left}" versus '
-            f'"{payload.comparison.right}"'
-            if targeted and payload.comparison is not None else
-            cohort_description(
-                payload.group, display=payload.cohort_display,
-                variants=payload.cohorts.get(payload.group, [])))
-        prompt = _PROMPT.format(
-            targeted_target=(_targeted_target(payload) if targeted else ""),
-            targeted_rules=(_TARGETED_RULES if targeted else ""),
-            targeted_outputs=(_TARGETED_OUTPUTS if targeted else ""),
-            cohort_rules=(_COHORT_RULES_V6 if profile == "targeted_v6"
-                          else _COHORT_RULES_V3).format(group_desc=group_desc),
-            context=payload.research_context or "a systematic review",
-            concept=target,
-            raw_label=payload.raw_field_name or target,
-            field_type=payload.field_type or "(unresolved)",
-            concept_variants=(", ".join(payload.concept_variants)
-                              or raw_or_target(payload.raw_field_name, target)),
-            group_desc=group_desc,
-            unit_hint=payload.unit_hint,
-            sample_size_rules=(
-                _SAMPLE_SIZE_RULES if payload.field_type == "sample_size" and
-                (payload.group or "").strip().lower() in {"all", "-"} else ""),
-            retry_rules=("- RETRY CORRECTION: the previous response failed a "
-                         "deterministic evidence check. Re-read the paper and "
-                         "return only an exact contiguous quote that is visibly "
-                         "present in PAPER TEXT and contains the extracted value. "
-                         "The returned unit must also be exactly the unit printed "
-                         "in that quote; do not correct a paper's apparent typo."
-                         if payload.attempt else ""),
-            paper_text=_paper_excerpt(
-                payload.document.full_text or "", target=target,
-                raw_label=payload.raw_field_name,
-                field_type=payload.field_type,
-                variants=payload.concept_variants),
+        prompt = render_source_extract_prompt(
+            query,
+            paper_text=payload.document.full_text or "",
+            raw_label=payload.raw_field_name,
+            group=payload.group,
+            cohort_display=payload.cohort_display,
+            cohorts=payload.cohorts,
+            comparison=payload.comparison,
+            attempt=payload.attempt,
+            extraction_profile=payload.extraction_profile,
         )
         model_id = ((self._backend.model_id if self._backend is not None else "")
                     or (self._cache.model_id if self._cache is not None else "")
@@ -518,6 +627,8 @@ class ExtractSourceValueTool(Tool):
         # quote that is, and in one place rather than on every return path.
         if result.source_scope is None and result.quote:
             result.source_scope = classify_population(result.quote)
+        if payload.attempt == 0:
+            self._query_reuse[reuse_key] = result
         return result
 
 
@@ -1152,3 +1263,35 @@ def _label_anchors(label: str, quote: str) -> bool:
         }
         return len(quote_tokens - generic) >= 2
     return False
+
+
+def bind_claim_outcome_and_dedup(collector):
+    """Fill SourceQuery.outcome from the claim without editing collector.py.
+
+    ``collector.py`` is inside the evidence-adequacy hash boundary. Production
+    wraps the extract tool here so a claim's outcome travels with the request
+    and same-key questions reuse the first attempt-0 result.
+    """
+    inner = collector._extract
+    current: dict[str, object] = {"claim": None}
+
+    class _Bound:
+        async def run(self, payload: ExtractSourceValueInput) -> SourceValueResult:
+            claim = current["claim"]
+            outcome = str(getattr(claim, "outcome", "") or payload.outcome or "")
+            if outcome and payload.outcome != outcome:
+                payload = payload.model_copy(update={"outcome": outcome})
+            return await inner.run(payload)
+
+    collector._extract = _Bound()
+    original = collector.collect
+
+    async def collect(review_item, *args, **kwargs):
+        current["claim"] = review_item
+        try:
+            return await original(review_item, *args, **kwargs)
+        finally:
+            current["claim"] = None
+
+    collector.collect = collect
+    return collector

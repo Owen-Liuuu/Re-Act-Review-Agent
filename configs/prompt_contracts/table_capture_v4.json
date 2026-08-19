@@ -1,0 +1,15 @@
+{
+  "prompt_id": "table_capture_v4",
+  "prompt_version": "table-capture-v4",
+  "written_on": "2026-08-18",
+  "hash_algorithm": "sha256-rendered-utf8-v1",
+  "renderer_identity": "react_review.table_capture.render.v1",
+  "purpose": "v3 with domain few-shot cells replaced by angle-bracket placeholders. Single-variable de-exemplarisation; production stays on v3 until A/B says otherwise.",
+  "boundary": "The rendered prompt bytes sent to the model, using the model-independent fixture input below. Python comments, helper names and source layout are outside the boundary.",
+  "governance": "Do not edit this prompt or replace this hash. A model-visible change is a new prompt profile and a new contract file.",
+  "fixture_inputs": {
+    "text": "Fixture review text for pinning TableCapture rendering.",
+    "selected": "[{\"display_id\": \"table_1\", \"caption\": \"Table 1\"}]"
+  },
+  "rendered_prompt_sha256": "A8A491C58E691EB4F9E71BAD120BE7E70519E15F894DCC2F45CC1F77D6AC997C"
+}

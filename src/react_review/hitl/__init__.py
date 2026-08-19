@@ -28,6 +28,7 @@ from react_review.hitl.policy import CheckpointPolicy, Mode
 from react_review.hitl.render import (
     box_chars,
     render_event,
+    render_progress,
     render_prompt,
     rule,
     safe_print,
@@ -41,7 +42,7 @@ __all__ = [
     "ConsoleCheckpoint",
     "RunJournal", "NullJournal",
     "CheckpointPolicy", "Mode",
-    "safe_print", "render_event", "render_prompt", "rule", "box_chars",
+    "safe_print", "render_event", "render_prompt", "render_progress", "rule", "box_chars",
     "supports_unicode",
     "StepReporter",
 ]

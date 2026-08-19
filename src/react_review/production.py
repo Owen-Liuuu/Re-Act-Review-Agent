@@ -132,8 +132,10 @@ def build_collector(registry, *, contract, knowledge=None, cohorts=None,
     the tests, which built their own, stayed green.
     """
     from react_review.agents.collector import Collector
+    from react_review.tools.extract_source import bind_claim_outcome_and_dedup
+    from react_review.tools.search.resolve_reference import bind_identifier_resolve
 
-    return Collector(
+    return bind_identifier_resolve(bind_claim_outcome_and_dedup(Collector(
         registry, knowledge=knowledge, cohorts=cohorts, contract=contract,
         aggregation_runtime=(runtime if runtime is not None
                              else aggregation_runtime(contract)),
@@ -141,7 +143,7 @@ def build_collector(registry, *, contract, knowledge=None, cohorts=None,
             adequacy_evaluator if adequacy_evaluator is not None
             else evidence_adequacy_runtime(contract)),
         knowledge_fingerprint=knowledge_fingerprint, telemetry=telemetry,
-        extraction_profile=contract.extraction_profile)
+        extraction_profile=contract.extraction_profile)))
 
 
 def snapshot_cache_totals(telemetry: RunTelemetry, *, extraction=None,

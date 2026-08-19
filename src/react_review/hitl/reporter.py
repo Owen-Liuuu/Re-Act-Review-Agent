@@ -19,6 +19,7 @@ from react_review.core.exceptions import RunStopped
 from react_review.hitl.events import StepEvent, StepStage, SubjectKind
 from react_review.hitl.gate import AutoContinue, CheckpointGate, Decision
 from react_review.hitl.journal import NullJournal, RunJournal
+from react_review.hitl.policy import Mode
 
 
 class StepReporter:
@@ -38,6 +39,7 @@ class StepReporter:
         # captured table, say), so stages that offer edits read the result back
         # from here rather than from the payload they passed in.
         self.last_event: StepEvent | None = None
+        self._screen = 0
 
     async def step(
         self,
@@ -53,10 +55,13 @@ class StepReporter:
         selectable: str = "",
         sidecars: dict[str, str] | None = None,
         started: float | None = None,
+        force_gate: bool = False,
     ) -> Decision:
         """Report one step and return the human's decision."""
         event = StepEvent(
-            run_id=self.run_id, index=self.journal.next_index(), stage=stage,
+            run_id=self.run_id, index=self.journal.next_index(),
+            screen=self._next_screen(stage, force_gate=force_gate),
+            stage=stage,
             title=title, subject=subject, subject_kind=subject_kind,
             payload=payload or {}, render_blocks=render_blocks or [],
             warnings=warnings or [], offers=offers or [], selectable=selectable,
@@ -64,9 +69,20 @@ class StepReporter:
         )
         self.last_event = event
         self.journal.emit(event, sidecars=sidecars)      # disk first — survives Ctrl-C
-        decision = await self.gate.check(event)
+        decision = await self.gate.check(event, force_gate=force_gate)
         self.journal.record_decision(event)              # also records any edits
         return decision
+
+    def _next_screen(self, stage: StepStage, *, force_gate: bool) -> int:
+        """Visible-checkpoint number. Silent journal-only steps stay at 0."""
+        policy = getattr(self.gate, "_policy", None)
+        visible = True
+        if policy is not None:
+            visible = force_gate or policy.mode_for(stage) is not Mode.SILENT
+        if not visible:
+            return 0
+        self._screen += 1
+        return self._screen
 
     async def step_or_stop(self, stage: StepStage, **kw) -> Decision:
         """Like :meth:`step`, but raise :class:`RunStopped` on a STOP decision."""
@@ -78,3 +94,19 @@ class StepReporter:
                 reason=f"stopped by user at {stage.value}",
             )
         return decision
+
+    def progress(
+        self,
+        label: str,
+        index: int | None = None,
+        total: int | None = None,
+        *,
+        caption: str = "",
+        started: float | None = None,
+    ) -> None:
+        """One discrete progress line. No-op unless the gate prints them."""
+        sink = getattr(self.gate, "progress", None)
+        if not callable(sink):
+            return
+        elapsed_s = (time.monotonic() - started) if started is not None else None
+        sink(label, index, total, caption=caption, elapsed_s=elapsed_s)

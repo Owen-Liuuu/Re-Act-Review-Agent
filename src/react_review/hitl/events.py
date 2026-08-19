@@ -60,6 +60,7 @@ class StepEvent(BaseModel):
 
     run_id: str
     index: int
+    screen: int = 0
     stage: StepStage
     title: str = ""
     # The advisor's minimum requirement #1: every step says which file it read.
@@ -104,3 +105,38 @@ class StepEvent(BaseModel):
         rid = str(removed.get("id") or removed.get("table_id") or index)
         self.dropped.append(rid)
         return rid
+
+    def set_on(self, index: int) -> str:
+        """Set the 1-based entry ON. Idempotent. Returns its id ("" if out of range)."""
+        return self._set_flag(index, True)
+
+    def set_off(self, index: int) -> str:
+        """Set the 1-based entry OFF. Idempotent. Returns its id ("" if out of range)."""
+        return self._set_flag(index, False)
+
+    def _set_flag(self, index: int, on: bool) -> str:
+        items = self.selectable_items()
+        if not 1 <= index <= len(items):
+            return ""
+        item = items[index - 1]
+        rid = str(item.get("id") or item.get("table_id") or item.get("display_id")
+                  or index)
+        if "evidence_chain" in item:
+            item["evidence_chain"] = on
+        if on:
+            self.dropped = [d for d in self.dropped if d != rid]
+        elif rid not in self.dropped:
+            self.dropped.append(rid)
+        item["label"] = _flag_label(str(item.get("label") or rid), on)
+        return rid
+
+
+def _flag_label(label: str, on: bool) -> str:
+    """Ensure a selectable label starts with ``[on]`` / ``[off]``."""
+    text = label.strip()
+    for prefix in ("[on]", "[off]", "[ON]", "[OFF]"):
+        if text.lower().startswith(prefix.lower()):
+            text = text[len(prefix):].lstrip()
+            break
+    flag = "on" if on else "off"
+    return f"[{flag}] {text}".strip()

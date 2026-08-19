@@ -25,6 +25,7 @@ BATCH_V5 = "extract-source-v5-batch"
 #: recordings must stay reachable, so the two can be scored against each other
 #: rather than swapped on the belief that neutral wording must be better.
 TARGETED_V6 = "extract-source-v6-targeted-neutral-examples"
+TARGETED_V7 = "extract-source-v7-targeted-outcome"
 
 #: profile name -> the ``prompt_version`` recorded in the replay cache key.
 PROMPT_VERSIONS = {
@@ -32,6 +33,7 @@ PROMPT_VERSIONS = {
     "targeted_v4": TARGETED_V4,
     "targeted_v5_batch": BATCH_V5,
     "targeted_v6": TARGETED_V6,
+    "targeted_v7": TARGETED_V7,
 }
 #: The profile name a batch request runs under, so the batch tool need not
 #: repeat the string that keys its own recordings.
@@ -40,7 +42,7 @@ DEFAULT_PROFILE = "legacy_v3"
 #: Profiles whose prompt renders the enumerate-then-assign sections, so the
 #: audit rather than the model decides which arm an answer belongs to. One place
 #: to add a profile to, instead of a string comparison per call site.
-_TARGETED_PROFILES = frozenset({"targeted_v4", "targeted_v6"})
+_TARGETED_PROFILES = frozenset({"targeted_v4", "targeted_v6", "targeted_v7"})
 
 
 def prompt_profile(payload: object) -> str:

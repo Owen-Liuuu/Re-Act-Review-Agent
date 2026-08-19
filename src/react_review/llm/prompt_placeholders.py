@@ -116,6 +116,25 @@ def bare_description_index() -> dict[str, frozenset[str]]:
     return {key: frozenset(values) for key, values in grouped.items()}
 
 
+# Few-shot tokens from frozen v1/v3 / forest_ocr_v1 examples. A transcription
+# that emits one of these when the source material does not contain it has
+# copied the prompt, not the paper.
+EXAMPLE_LEAK_TOKENS: tuple[str, ...] = (
+    "Ahmad",
+    "Egypt",
+    "T1DM",
+    "Li J 2015",
+    "6.60",
+)
+
+
+def example_leak_tokens(output: str, source_text: str) -> list[str]:
+    """Example tokens present in ``output`` but absent from the source material."""
+    blob = output or ""
+    source = source_text or ""
+    return [token for token in EXAMPLE_LEAK_TOKENS if token in blob and token not in source]
+
+
 def warn_echoed_placeholders(payload: Any, *, model_id: str = "") -> None:
     """Log when a parsed value equals the prompt's instructional phrase for that key."""
     index = bare_description_index()

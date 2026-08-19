@@ -106,6 +106,16 @@ def test_capture_window_starts_after_the_abstract():
 
 def test_localize_contract_does_not_drift():
     assert ExtractionPromptContract.load("evidence_localize_v1").drifts() == []
+    assert ExtractionPromptContract.load("evidence_localize_v2").drifts() == []
+
+
+def test_evidence_localize_v1_bytes_are_frozen():
+    import hashlib
+
+    from react_review.contracts import repo_root
+
+    raw = (repo_root() / "configs/prompt_contracts/evidence_localize_v1.json").read_bytes()
+    assert hashlib.sha256(raw).hexdigest().upper()[:16] == "2528D2FA3F018307"
 
 
 def test_page_hint_must_be_digits_or_empty():
@@ -135,6 +145,8 @@ async def test_doc05_fixture_keeps_table1_and_four_forests_drops_table2():
     assert LENS_ESCC.lens_one_line in prompt
     assert "SECRET_ABSTRACT_TOKEN" not in prompt
     assert "evidence_chain=true only when" in prompt
+    assert "sample size per arm" in prompt
+    assert "none of the" in prompt and "ruler's outcomes" in prompt
 
 
 @pytest.mark.asyncio

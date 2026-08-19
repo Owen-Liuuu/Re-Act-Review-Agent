@@ -53,6 +53,8 @@ def test_render_table_set_numbers_the_tables_for_dropping():
     out = render_table_set([TABLE, CapturedTable(table_id="table_2", caption="Outcomes")])
     assert "(1)" in out and "(2)" in out
     assert "[table_1]" in out and "[table_2]" in out
+    assert "(1) [table_1]" in out
+    assert "(1)\n" not in out
 
 
 def test_shape_report_surfaces_ragged_rows_and_model_difficulties():
