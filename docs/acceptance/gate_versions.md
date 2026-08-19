@@ -57,6 +57,8 @@ version reported a registered, release-eligible run.
 | — | `eval/benchmark_2/phase8_batch_profile.json` | `8F13C10443B8BEDE` | the benchmark that runs it |
 
 | v5 | `configs/prompt_contracts/batch_v5.json` | `1A02A44DDE55A797` | what `targeted_v5_batch` ASKS |
+| v1 | `configs/prompt_contracts/batch_locate_v1.json` | `5DC73D73DBF6004F` | batch split locate (no values) |
+| v1 | `configs/prompt_contracts/batch_transcribe_v1.json` | `09FBE674CA0F20C3` | batch split transcribe (own-quote values) |
 | v1 | `eval/benchmark_2/excerpt_gold_v1.json` | `030A04D6332A5E2E` | WHERE the evidence is, for excerpt coverage |
 
 | v5 | `configs/aggregation/registry_v5.json` | `B4BFFCB393E581F2` | current |

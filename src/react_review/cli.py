@@ -534,7 +534,10 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
         cache_mode=execution.extraction_mode, telemetry=telemetry,
         stage=stages.single))
     reg.register(ExtractSourceBatchTool(
-        backends.batch, cache=extraction_cache,
+        backends.batch,
+        locate_backend=backends.extract_locate,
+        transcribe_backend=backends.extract_transcribe,
+        cache=extraction_cache,
         cache_mode=execution.extraction_mode, telemetry=telemetry))
     reg.register(ResolveReferenceTool(reconciler))          # no-DOI refs → gated online DOI
     # Text the numeric comparison cannot read ("ICU" vs "intensive care unit")

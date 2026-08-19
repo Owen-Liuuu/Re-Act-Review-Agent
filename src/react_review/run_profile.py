@@ -130,7 +130,8 @@ class RunContractProfile(BaseModel):
 
     @property
     def batching(self) -> bool:
-        return any(r == "targeted_v5_batch" for r in self.extraction_routes.values())
+        from react_review.tools.extraction_profile import is_batch_route
+        return any(is_batch_route(r) for r in self.extraction_routes.values())
 
     @property
     def scope_enabled(self) -> bool:
@@ -374,12 +375,13 @@ def _routes(body: dict, version: int, path: Path) -> tuple[dict[str, str], str, 
     routes = {kind: one_of(declared[kind], known, field=f"extraction_routes.{kind}")
               for kind in CLAIM_KINDS}
 
-    batching = any(r == "targeted_v5_batch" for r in routes.values())
+    from react_review.tools.extraction_profile import is_batch_route
+    batching = any(is_batch_route(r) for r in routes.values())
     policy_id = str(body.get("aggregation_policy_id") or "")
     evaluator_version = str(body.get("evaluator_version") or "")
     if batching and not (policy_id and evaluator_version):
         raise ContractError(
-            f"{path} routes a claim kind to targeted_v5_batch without naming an "
+            f"{path} routes a claim kind to a batch profile without naming an "
             "aggregation_policy_id and evaluator_version. A batched read can "
             "derive a total, and a derived total is worth exactly as much as the "
             "identity that cleared the rules it was derived under")

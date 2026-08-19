@@ -14,6 +14,7 @@ import json
 import pytest
 
 from react_review.agents.collector import Collector
+from react_review.agents.split_collector import SplitAwareCollector
 from react_review.contracts import ContractError
 from react_review.llm.base import LLMBackend
 from react_review.run_profile import load_run_contract
@@ -74,7 +75,8 @@ def _contract(tmp_path, value_route, identity_route="targeted_v4", **extra):
             "context_policy": "cli_only", "scope_policy": "off",
             "extraction_routes": {"value": value_route,
                                   "arm_identity": identity_route}}
-    if value_route == "targeted_v5_batch" or identity_route == "targeted_v5_batch":
+    if value_route == "targeted_v5_batch" or identity_route == "targeted_v5_batch" \
+            or value_route == "batch_split_v1" or identity_route == "batch_split_v1":
         body["aggregation_policy_id"] = "safe_sum_v5"
         body["evaluator_version"] = "1.6.1"
     body.update(extra)
@@ -361,3 +363,73 @@ def test_identical_claims_do_not_overwrite_each_others_positions(tmp_path):
                           raw_field_name="Arm, n", value="316")
     groups = group_claims([twin, twin.model_copy(), twin.model_copy()])
     assert groups[0].positions == [0, 1, 2]
+
+
+class _SplitBackend(LLMBackend):
+    """Locate then transcribe: two replies, whatever the group size."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+        self.prompts: list[str] = []
+
+    @property
+    def model_id(self) -> str:
+        return "stub"
+
+    async def complete(self, prompt: str, *, seed: int = 42) -> str:
+        self.prompts.append(prompt)
+        self.calls += 1
+        if "Do NOT return a value" in prompt:
+            return json.dumps({"readings": [
+                {"arm_label": "nivolumab group", "quote": PAPER,
+                 "population_phrase": "underwent randomization"},
+                {"arm_label": "ipilimumab group", "quote": PAPER,
+                 "population_phrase": "underwent randomization"}]})
+        return json.dumps({"readings": [
+            {"index": 0, "value": "316", "unit": "",
+             "source_field_name": "patients assigned"},
+            {"index": 1, "value": "315", "unit": "",
+             "source_field_name": "patients assigned"}]})
+
+
+def test_batch_split_answers_two_claims_in_two_calls_not_n(tmp_path):
+    """The point of batching: +1 round-trip, not ×N."""
+    from react_review.tools.extract_batch import ExtractSourceBatchTool
+
+    backend = _SplitBackend()
+    registry = ToolRegistry()
+    registry.register(_Fetch())
+    registry.register(ExtractSourceValueTool(_Backend()))
+    collector = SplitAwareCollector(
+        registry, contract=_contract(tmp_path, "batch_split_v1"),
+        batch_tool=ExtractSourceBatchTool(backend),
+        cohorts=_cohorts())
+    result = asyncio.run(collector.collect_study(_claims()[:2], REFERENCE))
+    assert backend.calls == 2
+    assert [r.source_item.source_value for r in result.claim_results] == \
+        ["316", "315"]
+    assert result.claim_results[0].source_item.batch_provenance.route == \
+        "batch_split_v1"
+    mapping = [r for r in result.claim_results[0].source_item.reasons
+               if r.code == "source_field_mapping"]
+    assert mapping and "patients assigned" in mapping[0].message
+    assert mapping[0].detail == {}
+
+
+def test_frozen_collector_cannot_honour_batch_split(tmp_path):
+    """collector.py is hash-frozen and still only batches targeted_v5_batch.
+
+    A batch_split_v1 claim reaching it falls through to the single-target
+    extractor, which refuses the route. Production uses SplitAwareCollector.
+    """
+    from react_review.tools.extract_batch import ExtractSourceBatchTool
+
+    collector = Collector(
+        _registry(_Backend()),
+        contract=_contract(tmp_path, "batch_split_v1"),
+        batch_tool=ExtractSourceBatchTool(_SplitBackend()),
+        cohorts=_cohorts())
+    with pytest.raises(ContractError, match="single-target extractor"):
+        asyncio.run(collector.collect_study(_claims()[:2], REFERENCE))
+

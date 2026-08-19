@@ -117,6 +117,8 @@ PINNED = {
     "configs/run_profiles/phase8_batch_v8.json": "90951FD4B8E950B0",
     "eval/benchmark_2/phase8_batch_v8_profile.json":
         "F00D89C28BB24673",
+    "configs/prompt_contracts/batch_locate_v1.json": "5DC73D73DBF6004F",
+    "configs/prompt_contracts/batch_transcribe_v1.json": "09FBE674CA0F20C3",
 }
 
 

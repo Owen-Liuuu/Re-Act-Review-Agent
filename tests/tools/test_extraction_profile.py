@@ -39,6 +39,8 @@ from react_review.tools.extraction_profile import (
     TARGETED_V4,
     TARGETED_V6,
     TARGETED_V7,
+    BATCH_SPLIT_V1,
+    is_batch_route,
     prompt_profile,
     prompt_version,
     uses_targeted_sections,
@@ -295,3 +297,12 @@ def test_an_unknown_profile_cannot_be_read_as_not_targeted():
     """Returning False would render the legacy body under an undefined name."""
     with pytest.raises(ValueError, match="unknown extraction profile"):
         uses_targeted_sections("targeted_v9_missing")
+
+
+def test_batch_split_is_a_batch_route_and_v5_stays_one():
+    """v5 one-shot stays frozen; split is a second batch route, not an edit."""
+    assert is_batch_route("targeted_v5_batch")
+    assert is_batch_route("batch_split_v1")
+    assert not is_batch_route("targeted_v4")
+    assert prompt_version("batch_split_v1") == BATCH_SPLIT_V1
+    assert BATCH_SPLIT_V1 != prompt_version("targeted_v5_batch")

@@ -36,6 +36,7 @@ from react_review.tools.extraction_cache import (
 from react_review.tools.extraction_profile import (
     DEFAULT_PROFILE,
     LEGACY_V3,
+    is_batch_route,
     prompt_profile,
     prompt_version,
     uses_targeted_sections,
@@ -549,19 +550,17 @@ class ExtractSourceValueTool(Tool):
         # the review's RAW column label — so an UNRESOLVED field (no field_type)
         # is still extractable: the raw name itself says what to look for.
         profile = prompt_profile(payload)
-        if profile == "targeted_v5_batch":
-            # The second gate. A v5 request reaching here would be built with the
-            # LEGACY prompt body — v5 is not one of the profiles that turn the
-            # targeted sections on — and cached under the v5 prompt version:
-            # neither contract, and
-            # written into the namespace of the one it is not. The startup gate
-            # should make this unreachable; this is what makes a hole in the
-            # startup gate a crash rather than a poisoned recording.
+        if is_batch_route(profile):
+            # The second gate. A batch request reaching here would be built with
+            # the LEGACY prompt body and cached under the batch prompt version:
+            # neither contract. The startup gate should make this unreachable;
+            # this is what makes a hole in the startup gate a crash rather than
+            # a poisoned recording.
             raise ContractError(
-                "a targeted_v5_batch claim reached the single-target extractor. "
-                "That path builds the legacy prompt and would record it under the "
-                "v5 cache namespace, which is neither contract. Route it to the "
-                "batch tool or fail the run")
+                f"a {profile} claim reached the single-target extractor. "
+                "That path builds the legacy prompt and would record it under "
+                "the batch cache namespace, which is neither contract. Route "
+                "it to the batch tool or fail the run")
         prompt = render_source_extract_prompt(
             query,
             paper_text=payload.document.full_text or "",

@@ -284,7 +284,7 @@ def test_the_production_builder_is_what_the_cli_calls():
     assert "ProductionBackends(" in source
     assert "ProductionSession(" in source
     # And the builder is not a second copy of the wiring.
-    assert "Collector(" in inspect.getsource(production.build_collector)
+    assert "SplitAwareCollector(" in inspect.getsource(production.build_collector)
 
 
 def test_the_cli_does_not_let_the_pipeline_save_the_finished_package():

@@ -226,11 +226,11 @@ def build_collector(registry, *, contract, knowledge=None, cohorts=None,
     and the telemetry. Each of those was separately missing at some point while
     the tests, which built their own, stayed green.
     """
-    from react_review.agents.collector import Collector
+    from react_review.agents.split_collector import SplitAwareCollector
     from react_review.tools.extract_source import bind_claim_outcome_and_dedup
     from react_review.tools.search.resolve_reference import bind_identifier_resolve
 
-    return bind_identifier_resolve(bind_claim_outcome_and_dedup(Collector(
+    return bind_identifier_resolve(bind_claim_outcome_and_dedup(SplitAwareCollector(
         registry, knowledge=knowledge, cohorts=cohorts, contract=contract,
         aggregation_runtime=(runtime if runtime is not None
                              else aggregation_runtime(contract)),

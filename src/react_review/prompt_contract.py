@@ -37,16 +37,26 @@ from typing import Any
 
 from react_review.contracts import ContractError, read_json_object, repo_root
 from react_review.tools.batch_prompt import build_batch_prompt
+from react_review.tools.batch_split import (
+    build_batch_locate_prompt,
+    build_batch_transcribe_prompt,
+)
 from react_review.tools.extraction_cache import extraction_cache_key
 
 #: The contract governing `targeted_v5_batch`. One file per prompt contract, so
 #: a second contract cannot be added by widening this one.
 BATCH_V5 = "configs/prompt_contracts/batch_v5.json"
+BATCH_LOCATE_V1 = "configs/prompt_contracts/batch_locate_v1.json"
+BATCH_TRANSCRIBE_V1 = "configs/prompt_contracts/batch_transcribe_v1.json"
 
 #: Renderers by contract id. A contract file names the prompt it pins rather
 #: than being assumed to pin this one — a loader that always called the batch
 #: builder would happily "verify" a contract for some other prompt.
-_RENDERERS = {"batch_v5": build_batch_prompt}
+_RENDERERS = {
+    "batch_v5": build_batch_prompt,
+    "batch_locate_v1": build_batch_locate_prompt,
+    "batch_transcribe_v1": build_batch_transcribe_prompt,
+}
 
 
 def sha256_text(text: str) -> str:

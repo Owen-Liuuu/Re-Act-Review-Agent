@@ -26,6 +26,9 @@ BATCH_V5 = "extract-source-v5-batch"
 #: rather than swapped on the belief that neutral wording must be better.
 TARGETED_V6 = "extract-source-v6-targeted-neutral-examples"
 TARGETED_V7 = "extract-source-v7-targeted-outcome"
+#: Locate-then-transcribe batch: two calls for the group, not N. The v5
+#: one-shot contract stays frozen; this is a new route.
+BATCH_SPLIT_V1 = "extract-source-batch-split-v1"
 
 #: profile name -> the ``prompt_version`` recorded in the replay cache key.
 PROMPT_VERSIONS = {
@@ -34,10 +37,13 @@ PROMPT_VERSIONS = {
     "targeted_v5_batch": BATCH_V5,
     "targeted_v6": TARGETED_V6,
     "targeted_v7": TARGETED_V7,
+    "batch_split_v1": BATCH_SPLIT_V1,
 }
 #: The profile name a batch request runs under, so the batch tool need not
 #: repeat the string that keys its own recordings.
 BATCH_PROFILE_NAME = "targeted_v5_batch"
+BATCH_SPLIT_PROFILE = "batch_split_v1"
+BATCH_ROUTES = frozenset({BATCH_PROFILE_NAME, BATCH_SPLIT_PROFILE})
 DEFAULT_PROFILE = "legacy_v3"
 #: Profiles whose prompt renders the enumerate-then-assign sections, so the
 #: audit rather than the model decides which arm an answer belongs to. One place
@@ -63,6 +69,11 @@ def prompt_version(profile: str) -> str:
         raise ValueError(
             f"unknown extraction profile {profile!r} "
             f"(known: {', '.join(sorted(PROMPT_VERSIONS))})") from None
+
+
+def is_batch_route(profile: str) -> bool:
+    """Whether this extraction route reads a group in one (or two) batch calls."""
+    return profile in BATCH_ROUTES
 
 
 def uses_targeted_sections(profile: str) -> bool:

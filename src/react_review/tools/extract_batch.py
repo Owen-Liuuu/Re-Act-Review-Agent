@@ -42,6 +42,14 @@ from react_review.schemas.batch import (
 )
 from react_review.tools.batch_parse import BatchReading, parse_batch
 from react_review.tools.batch_prompt import aggregation_applies, build_batch_prompt
+from react_review.tools.batch_split import (
+    BATCH_LOCATE_VERSION,
+    BATCH_TRANSCRIBE_VERSION,
+    build_batch_transcribe_prompt,
+    format_passages,
+    merge_located_and_transcribed,
+    parse_locate,
+)
 from react_review.tools.extraction_cache import (
     ExtractionCache,
     ExtractionCacheMiss,
@@ -101,6 +109,9 @@ class BatchRecord:
     attempts: list[BatchAttempt] = field(default_factory=list)
     failure: str = ""
     detail: str = ""
+    #: Paper labels transcribed per located index. Kept off BatchEntry because
+    #: schemas/batch.py is inside the frozen evaluator boundary.
+    field_names: dict = field(default_factory=dict)
 
     @property
     def execution_id(self) -> str:
@@ -157,6 +168,8 @@ class ExtractSourceBatchTool:
     stage = ToolStage.EXTRACT
 
     def __init__(self, backend: LLMBackend | None, *,
+                 locate_backend: LLMBackend | None = None,
+                 transcribe_backend: LLMBackend | None = None,
                  cache: ExtractionCache | None = None, cache_mode: str = "live",
                  max_attempts: int = 3, telemetry=None) -> None:
         if cache_mode not in {"live", "record", "replay"}:
@@ -166,6 +179,9 @@ class ExtractSourceBatchTool:
         if cache_mode != "replay" and backend is None:
             raise ValueError("a live or recording run needs a backend")
         self._backend = backend
+        self._locate_backend = locate_backend if locate_backend is not None else backend
+        self._transcribe_backend = (
+            transcribe_backend if transcribe_backend is not None else backend)
         self._cache = cache
         self._cache_mode = cache_mode
         self._telemetry = telemetry
@@ -227,7 +243,67 @@ class ExtractSourceBatchTool:
             return record
         return record
 
-    async def _one_attempt(self, prompt: str, key: str):
+    async def read_split(self, *, question: BatchQuestionId, locate_prompt: str,
+                         document: str) -> BatchRecord:
+        """Locate every reading, then transcribe every quote — two calls, not N."""
+        record = BatchRecord(question=question)
+        locate_payload, locate_ok = await self._retry_payload(
+            record, locate_prompt, version=BATCH_LOCATE_VERSION,
+            backend=self._locate_backend)
+        if not locate_ok:
+            return record
+        located, nothing = parse_locate(locate_payload, document)
+        if not located:
+            record.model_payload = locate_payload if isinstance(locate_payload, dict) else None
+            record.reading = BatchReading(nothing_reported_reason=nothing)
+            return record
+
+        transcribe_prompt = build_batch_transcribe_prompt(
+            concept=question.concept or question.raw_field_name or question.field_type,
+            raw_label=question.raw_field_name or question.concept,
+            field_type=question.field_type, unit_hint=question.unit_hint,
+            passages=format_passages(located))
+        transcribe_payload, transcribe_ok = await self._retry_payload(
+            record, transcribe_prompt, version=BATCH_TRANSCRIBE_VERSION,
+            backend=self._transcribe_backend)
+        if not transcribe_ok:
+            return record
+        reading, field_names = merge_located_and_transcribed(
+            located, transcribe_payload, document,
+            target_shape=question.target_shape)
+        if reading.batch_error:
+            record.model_payload = (transcribe_payload
+                                    if isinstance(transcribe_payload, dict) else None)
+            record.failure, record.detail = BAD_SHAPE, reading.batch_error
+            record.reading = reading
+            return record
+        record.model_payload = transcribe_payload if isinstance(transcribe_payload, dict) else None
+        record.reading = reading
+        record.field_names = field_names
+        return record
+
+    async def _retry_payload(self, record: BatchRecord, prompt: str, *,
+                             version: str, backend) -> tuple[object | None, bool]:
+        """Retry transport / not-JSON under one prompt version."""
+        for attempt in range(self._max_attempts):
+            key = self._key(prompt, attempt, version=version, backend=backend)
+            payload, failure, detail, cached = await self._one_attempt(
+                prompt, key, backend=backend)
+            record.attempts.append(BatchAttempt(
+                attempt=attempt, cache_key=key, served_from_cache=cached,
+                failure=failure, detail=detail))
+            if failure:
+                if (failure in RETRYABLE and attempt < self._max_attempts - 1
+                        and self._telemetry is not None):
+                    self._telemetry.repeated_attempts += 1
+                if failure not in RETRYABLE or attempt == self._max_attempts - 1:
+                    record.failure, record.detail = failure, detail
+                    return None, False
+                continue
+            return payload, True
+        return None, False
+
+    async def _one_attempt(self, prompt: str, key: str, *, backend=None):
         """One call or one cache read. Never both, and never a silent fallback."""
         # An attempt is an attempt whether or not a recording answers it. The
         # single-target tool has always counted it before the cache lookup, and
@@ -252,10 +328,11 @@ class ExtractSourceBatchTool:
                 # artifact whose own label is false.
                 raise ExtractionCacheMiss(
                     "no recorded batch for this question and attempt")
-            assert self._backend is not None
-            raw = await self._backend.complete(prompt)
+            who = backend if backend is not None else self._backend
+            assert who is not None
+            raw = await who.complete(prompt)
             try:
-                payload = parse_llm_response(raw, self._backend.model_id)
+                payload = parse_llm_response(raw, who.model_id)
             except LLMError as exc:
                 # The model answered; it just did not answer in JSON. Recording
                 # that as a transport failure would make a formatting problem
@@ -265,7 +342,7 @@ class ExtractSourceBatchTool:
             if not isinstance(payload, dict):
                 return None, NOT_JSON, "the response did not decode to an object", False
             if self._cache_mode == "record" and self._cache is not None:
-                self._cache.put(key, payload, model_id=self._backend.model_id)
+                self._cache.put(key, payload, model_id=who.model_id)
             return payload, "", "", False
         except ExtractionCacheMiss:
             raise
@@ -285,7 +362,8 @@ class ExtractSourceBatchTool:
         self._telemetry.record_stage_cache(BATCH_EXTRACTION, hits=hits,
                                            misses=misses)
 
-    def _key(self, prompt: str, attempt: int) -> str:
+    def _key(self, prompt: str, attempt: int, *, version: str | None = None,
+             backend=None) -> str:
         """The address a recording lives at.
 
         Unchanged from the single-target contract on purpose: model, prompt
@@ -294,12 +372,13 @@ class ExtractSourceBatchTool:
         and two runs that send the same words may share it whatever they intend
         to do with the answer.
         """
-        model_id = ((self._backend.model_id if self._backend is not None else "")
+        who = backend if backend is not None else self._backend
+        model_id = ((who.model_id if who is not None else "")
                     or (self._cache.model_id if self._cache is not None else "")
                     or "replay")
         return extraction_cache_key(
             model_id=model_id,
-            prompt_version=prompt_version(BATCH_PROFILE_NAME),
+            prompt_version=version or prompt_version(BATCH_PROFILE_NAME),
             prompt=prompt, attempt=attempt)
 
 

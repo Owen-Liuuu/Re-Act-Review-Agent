@@ -92,6 +92,22 @@ def test_a_v2_contract_may_route_two_kinds_differently(tmp_path):
     assert contract.extraction_profile == "targeted_v5_batch"
 
 
+def test_batch_split_is_a_batching_route_and_needs_an_aggregator(tmp_path):
+    """Locate-then-transcribe still derives totals; it is not a free ride."""
+    contract = load_run_contract(_write(
+        tmp_path,
+        extraction_routes={"value": "batch_split_v1",
+                           "arm_identity": "targeted_v4"}))
+    assert contract.batching
+    assert contract.route_for("value") == "batch_split_v1"
+    with pytest.raises(ContractError, match="aggregation_policy_id"):
+        load_run_contract(_write(
+            tmp_path,
+            extraction_routes={"value": "batch_split_v1",
+                               "arm_identity": "targeted_v4"},
+            aggregation_policy_id=None, evaluator_version=None))
+
+
 def test_the_identity_of_a_routed_contract_records_every_route(tmp_path):
     identity = load_run_contract(_write(tmp_path)).identity()
     assert identity["extraction_routes"] == {
