@@ -4,9 +4,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
+from react_review.core.exceptions import LLMError
 from react_review.llm.base import parse_llm_response
 from react_review.llm.prompt_placeholders import (
     bare_skeleton_hits,
+    example_leak_tokens,
     is_allowed_skeleton_value,
 )
 
@@ -71,3 +75,28 @@ def test_numeric_page_hint_is_not_an_echo(monkeypatch):
     )
     parse_llm_response('{"page_hint": "10"}', "stub")
     assert "prompt_placeholder_echoed" not in seen
+
+
+def test_example_leak_tokens_require_absence_from_source():
+    assert example_leak_tokens('{"rows":[["Ahmad 2022","Egypt"]]}', "unrelated") == [
+        "Ahmad", "Egypt"]
+    assert example_leak_tokens(
+        '{"rows":[["Ahmad 2022","Egypt"]]}', "Ahmad 2022 Egypt T1DM") == []
+
+
+def test_copied_few_shot_row_is_rejected():
+    with pytest.raises(LLMError, match="prompt-example token"):
+        parse_llm_response(
+            '{"rows":[["Li J 2015","23","58","32","54"]]}',
+            "stub",
+            source_text="Capovilla 2023 19 58",
+        )
+
+
+def test_tokens_that_are_in_the_source_are_not_rejected():
+    data = parse_llm_response(
+        '{"rows":[["Li J 2015","23","58"]]}',
+        "stub",
+        source_text="Li J 2015 23 58 32 54 Total (Wald)",
+    )
+    assert data["rows"][0][0] == "Li J 2015"

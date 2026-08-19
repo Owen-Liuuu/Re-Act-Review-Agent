@@ -29,18 +29,35 @@ class Decision(str, Enum):
     SKIP_REST = "skip_rest"
 
 
+def retry_offers(alt_backend: object | None) -> list[str]:
+    """Retry keys for a checkpoint. Model 2 is offered only when a fallback exists."""
+    offers = ["retry"]
+    if alt_backend is not None:
+        offers.append("retry_alt")
+    return offers
+
+
+def require_alt_backend(alt_backend, *, stage: str):
+    """Raise rather than silently accepting when Model 2 was requested but missing."""
+    if alt_backend is None:
+        raise RuntimeError(
+            f"{stage}: Retry with Model 2 was requested but no alt_backend "
+            "is configured")
+    return alt_backend
+
+
 @runtime_checkable
 class CheckpointGate(Protocol):
     """Decide whether a run may proceed past ``event``."""
 
-    async def check(self, event: StepEvent) -> Decision:
+    async def check(self, event: StepEvent, *, force_gate: bool = False) -> Decision:
         ...
 
 
 class AutoContinue:
     """Never blocks — the library/CI default. Records the decision on the event."""
 
-    async def check(self, event: StepEvent) -> Decision:
+    async def check(self, event: StepEvent, *, force_gate: bool = False) -> Decision:
         event.decision = Decision.CONTINUE.value
         return Decision.CONTINUE
 
@@ -52,7 +69,7 @@ class ScriptedCheckpoint:
         self._queue = list(decisions or [])
         self.seen: list[StepEvent] = []
 
-    async def check(self, event: StepEvent) -> Decision:
+    async def check(self, event: StepEvent, *, force_gate: bool = False) -> Decision:
         self.seen.append(event)
         decision = self._queue.pop(0) if self._queue else Decision.CONTINUE
         event.decision = decision.value

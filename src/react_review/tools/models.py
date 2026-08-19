@@ -1,7 +1,7 @@
 """Small input/output models for tools that don't reuse an existing schema."""
 from __future__ import annotations
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from react_review.schemas.adequacy import AdequacyStatus, EvidenceAdequacy
 from react_review.schemas.table import CapturedTable
@@ -69,11 +69,17 @@ class FetchResult(BaseModel):
 
     ``retrieved`` is False when all retrieval tiers failed (``document`` is then
     a metadata-only fallback or None).
+
+    ``tables`` carries structured PMC ``<table-wrap>`` captures when the
+    retriever produced them. They sit here rather than on ``PaperDocument`` so
+    the evidence-adequacy evaluator hash (which includes that schema) does not
+    have to be re-frozen for a source-side table object.
     """
 
     reference: ReferenceEntry
     retrieved: bool = False
     document: PaperDocument | None = None
+    tables: list[CapturedTable] = Field(default_factory=list)
 
 
 class ForestOcrInput(BaseModel):

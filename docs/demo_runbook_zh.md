@@ -40,8 +40,10 @@ python -m react_review run --pdf "eval/benchmark_1/raw/EAT_T1DM_SRMA.pdf" --stud
 到达表格捕获门时,屏幕上是**逐字转录的表格**加上 `difficulties`(哪一格读不准、为什么),提示行是:
 
 ```
-  [C]ontinue  [S]top  [X] drop one  [D]etail  [O]pen artifact  [A]ll (skip remaining checkpoints) >
+  [C]Continue  [S]Stop  [N]On <n>  [F]Off <n>  [R]Retry  [D]Detail  [O]Open artifact  [A]All (skip remaining checkpoints) >
 ```
+
+配置了 `llm2` 时还会出现 `[M]Retry with Model 2`;未配置时这个键不出现(按了也不会静默当成 Continue)。
 
 现场按键顺序建议:
 
@@ -49,7 +51,9 @@ python -m react_review run --pdf "eval/benchmark_1/raw/EAT_T1DM_SRMA.pdf" --stud
 |---|---|---|
 | `O` | 打印这一步的 artifact 路径 | "每一步在**问你之前**就已经写盘了,Ctrl-C 也不会丢" |
 | `D` | 打印完整 payload | "给你看的不是摘要,是它接下来真正要用的全部内容" |
-| `X` | 进入可丢弃列表,选一个表格丢掉 | "你可以在这里把一张读错的表**踢出去**,后面的流程不会再碰它" |
+| `N` / `F` | 把第 n 项设为 ON / OFF(幂等) | "读错的表可以直接关掉,再按一次还是关;不靠记住当前状态" |
+| `R` | 用同一模型换 seed 重跑这一步 | "尺子(lens)或表格抽错了,当场重抽,不必整跑重来" |
+| `M` | 用 Model 2(`llm2`)重跑 | "只有配了第二模型才出现这个键" |
 | `S` | 停止 | "这就是它会停的证明" |
 
 按 `S` 之后:

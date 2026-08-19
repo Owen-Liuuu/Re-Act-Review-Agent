@@ -15,13 +15,16 @@ stopped — or interrupted — keeps the evidence it had already collected.
 """
 from __future__ import annotations
 
+import time
 import uuid
 from collections import Counter
+from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 import structlog
 
 from react_review.checklist.schema import ChecklistApplication
+from react_review.core.enums import CollectionOutcome
 from react_review.hitl.events import StepStage, SubjectKind
 from react_review.hitl.reporter import StepReporter
 from react_review.normalize.cohorts import CohortRegistry
@@ -120,8 +123,10 @@ class AuditPipeline:
         seen_readings: set[str] = set()
         groups = _group_by_study(review_items)
         per_study: list[dict] = []
+        n_papers = len(groups)
+        batch_started = time.monotonic()
 
-        for study_id, claims in groups:
+        for i, (study_id, claims) in enumerate(groups, start=1):
             reference = reference_for(study_id)
             # Opened once for the whole study: every claim about this paper is
             # then answered from the same retrieval, and the cost of an audit
@@ -187,7 +192,7 @@ class AuditPipeline:
             # Shown in full, not gated — see StepStage.COLLECT_STUDY.
             await self._reporter.step_or_stop(
                 StepStage.COLLECT_STUDY,
-                title=f"Source evidence · {study_id}",
+                title=self._collect_title(study_id, collected, source),
                 subject=subject,
                 subject_kind=SubjectKind.SOURCE_PDF,
                 payload={"study_id": study_id,
@@ -196,6 +201,10 @@ class AuditPipeline:
                 render_blocks=[self._render_study(study_id, claims, collected)],
                 warnings=warnings,
             )
+            if i % 10 == 0 or i == n_papers:
+                self._reporter.progress(
+                    "paper", i, n_papers, caption=study_id, started=batch_started)
+                batch_started = time.monotonic()
 
         # ONE checkpoint for the whole collection, however many papers there were.
         await self._reporter.step_or_stop(
@@ -251,6 +260,110 @@ class AuditPipeline:
         return package
 
     # --- rendering helpers (strings only; the gate does the printing) ---
+
+    _TITLE_MAX = 72
+    _ACCESS_FAILED = frozenset({
+        CollectionOutcome.SOURCE_ACCESS_FAILED.value,
+        CollectionOutcome.UNRESOLVED_SOURCE.value,
+    })
+
+    @classmethod
+    def _collect_title(cls, study_id: str, collected: list, source) -> str:
+        """One glance: which paper, which tier, how much text, which scope."""
+        if cls._retrieval_failed(collected, source):
+            mismatch = cls._unresolved_note(source)
+            suffix = mismatch or "all four retrieval tiers failed"
+            return cls._clip_title(f"{study_id} · NOT RETRIEVED") + f"     ({suffix})"
+
+        ident = cls._source_ident(collected, source)
+        parts = [study_id, ident]
+        n_chars = cls._source_chars(source)
+        if n_chars:
+            parts.append(f"{n_chars:,} chars")
+        scope = cls._scope_for(source)
+        if scope in {"", DocumentScope.UNKNOWN.value} and collected:
+            item_scope = getattr(collected[0], "document_scope", None)
+            scope = getattr(item_scope, "value", str(item_scope or ""))
+        if scope and scope != DocumentScope.UNKNOWN.value:
+            parts.append(scope)
+        title = cls._clip_title(" · ".join(parts))
+        note = cls._retrieval_note(collected, source)
+        return f"{title}     ({note})" if note else title
+
+    @staticmethod
+    def _unresolved_note(source) -> str:
+        """Reject-all-candidates text; empty when this was a fetch failure."""
+        outcome = getattr(source, "outcome", None) if source is not None else None
+        value = getattr(outcome, "value", outcome)
+        if value != CollectionOutcome.UNRESOLVED_SOURCE.value:
+            return ""
+        from react_review.tools.search.reconciler import unresolved_note_for
+        return unresolved_note_for(getattr(source, "reference", None)) or (
+            "no matching record: candidates did not match the citation")
+
+    @classmethod
+    def _retrieval_note(cls, collected: list, source) -> str:
+        """How this paper was actually retrieved — never a planned path."""
+        doi = ""
+        if source is not None:
+            doi = str((getattr(source, "provenance", None) or {}).get("source_doi") or "")
+        if not doi and collected:
+            doi = str(getattr(collected[0], "source_doi", "") or "")
+        retriever = next((str(s.retriever_kind) for s in collected
+                          if getattr(s, "retriever_kind", "")), "")
+        if not retriever and source is not None:
+            retriever = str((getattr(source, "provenance", None) or {}).get(
+                "retriever_kind") or "")
+        if retriever == "pmc":
+            return "hit:PMC esearch by DOI"
+        if retriever == "unpaywall":
+            return "hit:Unpaywall"
+        if retriever.startswith("openalex"):
+            return "hit:OpenAlex"
+        if retriever == "pubmed_abstract":
+            return ("fallback: DOI miss → title search" if not doi
+                    else "fallback: DOI miss → PubMed abstract")
+        if retriever == "local_pdf":
+            return "hit:local PDF"
+        if retriever:
+            return f"hit:{retriever}"
+        return ""
+
+    @classmethod
+    def _clip_title(cls, title: str) -> str:
+        if len(title) <= cls._TITLE_MAX:
+            return title
+        return title[: cls._TITLE_MAX - 3] + "..."
+
+    @classmethod
+    def _retrieval_failed(cls, collected: list, source) -> bool:
+        if source is not None and not getattr(source, "retrieved", False):
+            return True
+        outcomes = [
+            getattr(s.collection_outcome, "value", str(s.collection_outcome))
+            for s in collected
+        ]
+        return bool(outcomes) and all(o in cls._ACCESS_FAILED for o in outcomes)
+
+    @staticmethod
+    def _source_ident(collected: list, source) -> str:
+        path = next((str(s.source_file) for s in collected
+                     if getattr(s, "source_file", "")), "")
+        if not path and source is not None:
+            path = str((getattr(source, "provenance", None) or {}).get("source_file") or "")
+        if path:
+            return Path(path).name
+        kind = next((str(s.retriever_kind) for s in collected
+                     if getattr(s, "retriever_kind", "")), "")
+        if not kind and source is not None:
+            kind = str((getattr(source, "provenance", None) or {}).get("retriever_kind") or "")
+        return kind or "unknown source"
+
+    @staticmethod
+    def _source_chars(source) -> int:
+        document = getattr(source, "document", None) if source is not None else None
+        text = getattr(document, "full_text", "") or ""
+        return len(text)
 
     @staticmethod
     def _subject_for(collected: list, reference) -> str:

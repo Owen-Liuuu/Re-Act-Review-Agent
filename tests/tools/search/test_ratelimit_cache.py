@@ -146,3 +146,13 @@ async def test_gives_up_after_retries_and_degrades(monkeypatch):
     _patch_http(monkeypatch, [_Resp(429, {})], idx)   # always throttled
     cands = await CrossRefResolver().resolve(ReferenceQuery(title="x"))
     assert cands == [] and idx[0] == 3               # exhausted retries → graceful []
+
+
+@pytest.mark.asyncio
+async def test_openalex_does_not_retry_429(monkeypatch):
+    from react_review.tools.search import OpenAlexResolver
+
+    idx = [0]
+    _patch_http(monkeypatch, [_Resp(429, {})], idx)
+    cands = await OpenAlexResolver().resolve(ReferenceQuery(title="x"))
+    assert cands == [] and idx[0] == 1

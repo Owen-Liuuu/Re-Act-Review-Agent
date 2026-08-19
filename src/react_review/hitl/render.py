@@ -47,9 +47,13 @@ def rule(title: str = "", width: int = 78, stream=None) -> str:
 
 def render_event(event: StepEvent, *, width: int = 78, stream=None) -> str:
     """The full checkpoint block: what step, which file, what it produced."""
-    lines: list[str] = ["", rule(f"[{event.index}] {event.title or event.stage.value}",
-                                width, stream)]
+    number = event.screen or event.index
+    heading = f"[{number}] {event.title or event.stage.value}"
+    if event.elapsed_ms:
+        heading += f"  ({_elapsed_label(event.elapsed_ms)})"
+    lines: list[str] = ["", rule(heading, width, stream)]
     if event.subject:
+        lines.append("")
         lines.append(f"  file: {event.subject}")
     for block in event.render_blocks:
         lines.append("")
@@ -61,24 +65,53 @@ def render_event(event: StepEvent, *, width: int = 78, stream=None) -> str:
     return "\n".join(lines)
 
 
-def render_prompt(event: StepEvent, *, allow_skip: bool = False) -> str:
+def _elapsed_label(elapsed_ms: int) -> str:
+    seconds = max(0, int(round(elapsed_ms / 1000)))
+    return f"{seconds}s"
+
+
+def render_progress(
+    label: str,
+    index: int | None = None,
+    total: int | None = None,
+    *,
+    caption: str = "",
+    elapsed_s: float | None = None,
+) -> str:
+    """One discrete progress line. Never uses carriage-return overwrite."""
+    parts = ["   ⋯", label]
+    if index is not None and total is not None:
+        parts.append(f"{index}/{total}")
+    if caption:
+        clipped = caption if len(caption) <= 42 else caption[:41] + "…"
+        parts.append(f'"{clipped}"')
+    if elapsed_s is not None:
+        parts.append(f"{int(round(max(0, elapsed_s)))}s")
+    return " ".join(parts)
+
+
+def render_prompt(event: StepEvent, *, allow_skip: bool = False,
+                  undo_available: bool = False) -> str:
     """The one-line question. Keep it cheap to answer: C continues."""
-    opts = ["[C]ontinue", "[S]top"]
+    opts = ["[C]Continue", "[S]Stop"]
     if event.selectable_items():
-        opts.append("[X] drop one")
+        opts.append("[N]On <n>")
+        opts.append("[F]Off <n>")
+    if undo_available:
+        opts.append("[U]Undo")
     if "retry" in event.offers:
-        opts.append("[R]etry")
+        opts.append("[R]Retry")
     if "retry_alt" in event.offers:
-        opts.append("retry with [M]odel2")
-    opts += ["[D]etail", "[O]pen artifact"]
+        opts.append("[M]Retry with Model 2")
+    opts += ["[D]Detail", "[O]Open artifact"]
     if allow_skip:
-        opts.append("[A]ll (skip remaining checkpoints)")
+        opts.append("[A]All (skip remaining checkpoints)")
     return "  " + "  ".join(opts) + " > "
 
 
-def render_selectable(event: StepEvent) -> str:
-    """The numbered list shown when the human asks to drop something."""
-    lines = ["  drop which?"]
+def render_selectable(event: StepEvent, *, action: str = "set") -> str:
+    """The numbered list shown when the human sets an item on or off."""
+    lines = [f"  {action} which?"]
     for i, item in enumerate(event.selectable_items(), start=1):
         label = item.get("label") or item.get("id") or item.get("table_id") or f"item {i}"
         lines.append(f"    [{i}] {label}")

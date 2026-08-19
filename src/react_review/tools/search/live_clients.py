@@ -19,6 +19,70 @@ import structlog
 from react_review.normalize.doi import normalize_doi
 from react_review.tools.search.models import CandidateWork, ReferenceQuery
 
+
+def _pmid_of(raw: object) -> str:
+    text = str(raw or "").strip()
+    if text.lower().startswith("https://pubmed.ncbi.nlm.nih.gov/"):
+        text = text.rsplit("/", 1)[-1]
+    return text if text.isdigit() else ""
+
+
+def _from_crossref_item(it: dict, source: str) -> CandidateWork | None:
+    try:
+        titles = it.get("title") or [""]
+        journals = it.get("container-title") or [""]
+        authors = [" ".join(x for x in (a.get("given"), a.get("family")) if x).strip()
+                   for a in (it.get("author") or [])]
+        parts = (it.get("issued") or it.get("published") or {}).get("date-parts") or [[None]]
+        year = parts[0][0] if parts and parts[0] else None
+        pmid = ""
+        for ident in it.get("alternative-id") or []:
+            pmid = _pmid_of(ident)
+            if pmid:
+                break
+        return CandidateWork(
+            doi=normalize_doi(it.get("DOI")), title=titles[0], authors=authors,
+            year=int(year) if year else None, journal=journals[0],
+            pmid=pmid, source=source)
+    except Exception:                                      # noqa: BLE001
+        return None
+
+
+def _from_openalex_work(w: dict, source: str) -> CandidateWork | None:
+    try:
+        loc = w.get("primary_location") or w.get("host_venue") or {}
+        src = loc.get("source") or loc
+        authors = [(a.get("author") or {}).get("display_name", "")
+                   for a in (w.get("authorships") or [])]
+        ids = w.get("ids") or {}
+        return CandidateWork(
+            doi=normalize_doi(w.get("doi")),
+            title=w.get("title") or w.get("display_name") or "",
+            authors=[a for a in authors if a],
+            year=w.get("publication_year"),
+            journal=src.get("display_name", "") if isinstance(src, dict) else "",
+            pmcid=ids.get("pmcid", "") or "",
+            pmid=_pmid_of(ids.get("pmid")),
+            source=source)
+    except Exception:                                      # noqa: BLE001
+        return None
+
+
+def _from_europepmc_result(r: dict, source: str) -> CandidateWork | None:
+    try:
+        authors = [a.strip() for a in (r.get("authorString") or "").rstrip(".").split(",")
+                   if a.strip()]
+        year = r.get("pubYear")
+        pmid = _pmid_of(r.get("pmid") or (r.get("id") if r.get("source") == "MED" else ""))
+        return CandidateWork(
+            doi=normalize_doi(r.get("doi")), title=r.get("title") or "",
+            authors=authors, year=int(year) if year else None,
+            journal=r.get("journalTitle") or "", pmcid=r.get("pmcid") or "",
+            pmid=pmid, source=source)
+    except Exception:                                      # noqa: BLE001
+        return None
+
+
 logger = structlog.get_logger(__name__)
 
 
@@ -47,13 +111,14 @@ async def _get_json(
     url: str, params: dict, *, timeout: float, limiter: _RateLimiter,
     retries: int = 3, backoff_cap: float = 8.0,
 ) -> dict:
-    """Rate-limited GET → JSON, retrying with exponential backoff on 429/503."""
+    """Rate-limited GET → JSON. ``retries=1`` means one attempt, no 429 loop."""
     resp = None
-    for attempt in range(retries):
+    attempts = max(1, retries)
+    for attempt in range(attempts):
         await limiter.acquire()
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.get(url, params=params)
-        if getattr(resp, "status_code", 200) in (429, 503) and attempt < retries - 1:
+        if getattr(resp, "status_code", 200) in (429, 503) and attempt < attempts - 1:
             await asyncio.sleep(min(2 ** attempt, backoff_cap))
             continue
         break
@@ -84,6 +149,35 @@ class CrossRefResolver:
         self._rows = rows
         self._limiter = _RateLimiter(min_interval)
 
+    def _params(self, extra: dict[str, str | int] | None = None) -> dict[str, str | int]:
+        params: dict[str, str | int] = dict(extra or {})
+        if self._mailto:
+            params["mailto"] = self._mailto
+        return params
+
+    async def resolve_identifier(self, query: ReferenceQuery) -> list[CandidateWork]:
+        doi = normalize_doi(query.doi)
+        pmid = (query.pmid or "").strip()
+        try:
+            if doi:
+                data = await _get_json(
+                    f"{self._base_url}/works/{doi}", self._params(),
+                    timeout=self._timeout, limiter=self._limiter)
+                item = data.get("message")
+                cand = _from_crossref_item(item, self.name) if isinstance(item, dict) else None
+                return [cand] if cand is not None else []
+            if pmid:
+                data = await _get_json(
+                    f"{self._base_url}/works",
+                    self._params({"filter": f"alternative-id:{pmid}", "rows": self._rows}),
+                    timeout=self._timeout, limiter=self._limiter)
+                items = data.get("message", {}).get("items", [])
+                return [c for it in items if (c := _from_crossref_item(it, self.name))]
+        except Exception as exc:                                   # noqa: BLE001
+            logger.warning("crossref_identifier_failed", error=str(exc)[:120])
+            return []
+        return []
+
     async def resolve(self, query: ReferenceQuery) -> list[CandidateWork]:
         params: dict[str, str | int] = {"rows": self._rows}
         if query.citation:
@@ -101,21 +195,7 @@ class CrossRefResolver:
         except Exception as exc:                                   # noqa: BLE001
             logger.warning("crossref_resolve_failed", error=str(exc)[:120])
             return []
-        out: list[CandidateWork] = []
-        for it in items:
-            try:
-                titles = it.get("title") or [""]
-                journals = it.get("container-title") or [""]
-                authors = [" ".join(x for x in (a.get("given"), a.get("family")) if x).strip()
-                           for a in (it.get("author") or [])]
-                parts = (it.get("issued") or it.get("published") or {}).get("date-parts") or [[None]]
-                year = parts[0][0] if parts and parts[0] else None
-                out.append(CandidateWork(
-                    doi=normalize_doi(it.get("DOI")), title=titles[0], authors=authors,
-                    year=int(year) if year else None, journal=journals[0], source=self.name))
-            except Exception:                                      # noqa: BLE001
-                continue
-        return out
+        return [c for it in items if (c := _from_crossref_item(it, self.name))]
 
 
 class OpenAlexResolver:
@@ -132,6 +212,29 @@ class OpenAlexResolver:
         self._per_page = per_page
         self._limiter = _RateLimiter(min_interval)
 
+    def _params(self, extra: dict[str, str | int] | None = None) -> dict[str, str | int]:
+        params: dict[str, str | int] = dict(extra or {})
+        if self._mailto:
+            params["mailto"] = self._mailto
+        return params
+
+    async def resolve_identifier(self, query: ReferenceQuery) -> list[CandidateWork]:
+        doi = normalize_doi(query.doi)
+        pmid = (query.pmid or "").strip()
+        filt = f"doi:https://doi.org/{doi}" if doi else (f"ids.pmid:{pmid}" if pmid else "")
+        if not filt:
+            return []
+        try:
+            data = await _get_json(
+                f"{self._base_url}/works",
+                self._params({"filter": filt, "per_page": self._per_page}),
+                timeout=self._timeout, limiter=self._limiter, retries=1)
+            results = data.get("results", [])
+        except Exception as exc:                                   # noqa: BLE001
+            logger.warning("openalex_identifier_failed", error=str(exc)[:120])
+            return []
+        return [c for w in results if (c := _from_openalex_work(w, self.name))]
+
     async def resolve(self, query: ReferenceQuery) -> list[CandidateWork]:
         params: dict[str, str | int] = {
             "search": query.title or query.citation, "per_page": self._per_page}
@@ -139,28 +242,13 @@ class OpenAlexResolver:
             params["mailto"] = self._mailto
         try:
             data = await _get_json(f"{self._base_url}/works", params,
-                                   timeout=self._timeout, limiter=self._limiter)
+                                   timeout=self._timeout, limiter=self._limiter,
+                                   retries=1)
             results = data.get("results", [])
         except Exception as exc:                                   # noqa: BLE001
             logger.warning("openalex_resolve_failed", error=str(exc)[:120])
             return []
-        out: list[CandidateWork] = []
-        for w in results:
-            try:
-                loc = w.get("primary_location") or w.get("host_venue") or {}
-                src = loc.get("source") or loc
-                authors = [(a.get("author") or {}).get("display_name", "")
-                           for a in (w.get("authorships") or [])]
-                out.append(CandidateWork(
-                    doi=normalize_doi(w.get("doi")),
-                    title=w.get("title") or w.get("display_name") or "",
-                    authors=[a for a in authors if a],
-                    year=w.get("publication_year"),
-                    journal=src.get("display_name", "") if isinstance(src, dict) else "",
-                    pmcid=(w.get("ids") or {}).get("pmcid", ""), source=self.name))
-            except Exception:                                      # noqa: BLE001
-                continue
-        return out
+        return [c for w in results if (c := _from_openalex_work(w, self.name))]
 
 
 class EuropePMCResolver:
@@ -175,6 +263,26 @@ class EuropePMCResolver:
         self._page_size = page_size
         self._limiter = _RateLimiter(min_interval)
 
+    async def resolve_identifier(self, query: ReferenceQuery) -> list[CandidateWork]:
+        doi = normalize_doi(query.doi)
+        pmid = (query.pmid or "").strip()
+        if pmid:
+            q = f"EXT_ID:{pmid} AND SRC:MED"
+        elif doi:
+            q = f'DOI:"{doi}"'
+        else:
+            return []
+        try:
+            data = await _get_json(
+                f"{self._base_url}/search",
+                {"query": q, "format": "json", "pageSize": self._page_size},
+                timeout=self._timeout, limiter=self._limiter)
+            results = (data.get("resultList") or {}).get("result", [])
+        except Exception as exc:                                   # noqa: BLE001
+            logger.warning("europepmc_identifier_failed", error=str(exc)[:120])
+            return []
+        return [c for r in results if (c := _from_europepmc_result(r, self.name))]
+
     async def resolve(self, query: ReferenceQuery) -> list[CandidateWork]:
         params = {"query": query.title or query.citation, "format": "json",
                   "pageSize": self._page_size}
@@ -185,17 +293,4 @@ class EuropePMCResolver:
         except Exception as exc:                                   # noqa: BLE001
             logger.warning("europepmc_resolve_failed", error=str(exc)[:120])
             return []
-        out: list[CandidateWork] = []
-        for r in results:
-            try:
-                authors = [a.strip() for a in (r.get("authorString") or "").rstrip(".").split(",")
-                           if a.strip()]
-                year = r.get("pubYear")
-                out.append(CandidateWork(
-                    doi=normalize_doi(r.get("doi")), title=r.get("title") or "",
-                    authors=authors, year=int(year) if year else None,
-                    journal=r.get("journalTitle") or "", pmcid=r.get("pmcid") or "",
-                    source=self.name))
-            except Exception:                                      # noqa: BLE001
-                continue
-        return out
+        return [c for r in results if (c := _from_europepmc_result(r, self.name))]

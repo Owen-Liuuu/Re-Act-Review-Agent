@@ -9,7 +9,7 @@ import pytest
 from react_review.checklist import Checklist, ChecklistItem
 from react_review.dkb import FieldResolver, KnowledgeBase, load_runtime_knowledge
 from react_review.core.exceptions import RunStopped
-from react_review.hitl import Decision, ScriptedCheckpoint, StepReporter, StepStage
+from react_review.hitl import Decision, ScriptedCheckpoint, StepReporter, StepStage, SubjectKind
 from react_review.llm.base import LLMBackend
 from react_review.parser.review_parser import ReviewParser, _study_slug
 from react_review.schemas.table import CapturedTable
@@ -66,7 +66,8 @@ def _cell(row, col, study, header, value, unit="", cohort="") -> dict:
 @pytest.mark.asyncio
 async def test_parse_produces_normalized_long_items(monkeypatch):
     monkeypatch.setattr(
-        "react_review.parser.review_parser._pdf_text", lambda p: "review text"
+        "react_review.parser.review_parser._pdf_text",
+        lambda p: "Ahmad 2022 Egypt T1DM 6.60 review text",
     )
     backend = QueueBackend([
         _capture([["Ahmad et al. [2022]", "100", "6.60 ± 0.71"]]),
@@ -90,12 +91,13 @@ async def test_parse_produces_normalized_long_items(monkeypatch):
 
     got = {(i.study_id, i.group, i.field_type, i.value, i.unit) for i in parsed.items}
     assert got == {
-        ("Ahmad et al. [2022]", "t1dm", "eat_thickness", "6.60 ± 0.71", "mm"),
-        ("Ahmad et al. [2022]", "control", "eat_thickness", "3.83 ± 0.35", "mm"),
-        ("Ahmad et al. [2022]", "-", "sample_size", "100", ""),  # study-level → group "-"
-        ("Ahmad et al. [2022]", "t1dm", "", "5", ""),            # unknown → KEPT, field_type null
-        ("Ahmad et al. [2022]", "t1dm", "", None, "years"),      # placeholder → KEPT, value null
+        ("ahmad_2022", "t1dm", "eat_thickness", "6.60 ± 0.71", "mm"),
+        ("ahmad_2022", "control", "eat_thickness", "3.83 ± 0.35", "mm"),
+        ("ahmad_2022", "-", "sample_size", "100", ""),  # study-level → group "-"
+        ("ahmad_2022", "t1dm", "", "5", ""),            # unknown → KEPT, field_type null
+        ("ahmad_2022", "t1dm", "", None, "years"),      # placeholder → KEPT, value null
     }
+    assert {i.study_label_raw for i in parsed.items} == {"Ahmad et al. [2022]"}
     assert len(parsed.items) == 5
     assert [item.review_data_id for item in parsed.items] == [
         "A_01", "A_02", "A_03", "A_04", "A_05"]
@@ -127,11 +129,22 @@ async def test_parse_produces_normalized_long_items(monkeypatch):
         event for event in gate.seen if event.stage is StepStage.LONG_FORMAT_ROWS)
     assert long_event.payload["claim_index"]["A_01"]["cell_ref"] == [0, 1]
     assert "[A_01" in long_event.render_blocks[0]
+    review_pdf = str(Path("dummy.pdf").resolve())
+    for stage in (
+        StepStage.COHORT_REGISTRY,
+        StepStage.LONG_FORMAT_ROWS,
+        StepStage.REFERENCE_COVERAGE,
+    ):
+        event = next(e for e in gate.seen if e.stage is stage)
+        assert event.subject == review_pdf
+        assert event.subject_kind is SubjectKind.REVIEW_PDF
+    assert all(event.subject for event in gate.seen)
+    assert all(event.subject_kind is not None for event in gate.seen)
 
 
 @pytest.mark.asyncio
 async def test_runtime_ontology_is_visible_in_field_gate_and_parsed_contract(monkeypatch):
-    monkeypatch.setattr("react_review.parser.review_parser._pdf_text", lambda p: "t")
+    monkeypatch.setattr("react_review.parser.review_parser._pdf_text", lambda p: "Ahmad T1DM 6.60 t")
     backend = QueueBackend([
         _capture([["Ahmad et al. [2022]", "100"]], ("Study", "N")),
         {"rows": [_cell(0, 1, "Ahmad et al. [2022]", "N", "100")]},
@@ -233,7 +246,7 @@ async def test_stopping_at_checklist_never_emits_routed_long_rows(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_study_level_field_collapses_to_one_row(monkeypatch):
-    monkeypatch.setattr("react_review.parser.review_parser._pdf_text", lambda p: "t")
+    monkeypatch.setattr("react_review.parser.review_parser._pdf_text", lambda p: "Ahmad T1DM 6.60 t")
     # the review repeats N in BOTH cohort rows; it must collapse to one study-level
     # row (group "-"), while a genuine per-cohort field stays split.
     backend = QueueBackend([
@@ -255,7 +268,7 @@ async def test_study_level_field_collapses_to_one_row(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_stopping_at_field_resolution_never_emits_derived_long_rows(monkeypatch):
-    monkeypatch.setattr("react_review.parser.review_parser._pdf_text", lambda p: "t")
+    monkeypatch.setattr("react_review.parser.review_parser._pdf_text", lambda p: "Ahmad T1DM 6.60 t")
     backend = QueueBackend([
         _capture([["Ahmad et al. [2022]", "100"]], ("Study", "N")),
         {"rows": [_cell(0, 1, "Ahmad et al. [2022]", "N", "100")]},
@@ -274,7 +287,7 @@ async def test_stopping_at_field_resolution_never_emits_derived_long_rows(monkey
 
 @pytest.mark.asyncio
 async def test_unknown_column_has_one_resolution_record_for_all_numeric_rows(monkeypatch):
-    monkeypatch.setattr("react_review.parser.review_parser._pdf_text", lambda p: "t")
+    monkeypatch.setattr("react_review.parser.review_parser._pdf_text", lambda p: "Ahmad T1DM 6.60 t")
     backend = QueueBackend([
         _capture(
             [["Smith 2020", "7.1"], ["Jones 2021", "8.2"]],
@@ -298,7 +311,7 @@ async def test_unknown_column_has_one_resolution_record_for_all_numeric_rows(mon
 async def test_parse_extracts_research_context_and_dois(monkeypatch):
     monkeypatch.setattr(
         "react_review.parser.review_parser._pdf_text",
-        lambda p: "body text …\n\nReferences\n1. Ahmad A. 2022. J Cardiol. doi:10.1/x\n"
+        lambda p: "body text T1DM …\n\nReferences\n1. Ahmad A. 2022. J Cardiol. doi:10.1/x\n"
                   "2. Aslan B. 2015. Echocardiography.",
     )
     capture = _capture([["Ahmad et al. [2022]", "100"]], ("Study", "N"))
@@ -341,9 +354,9 @@ async def test_parser_keeps_only_printed_doi_and_pmid(monkeypatch):
 @pytest.mark.asyncio
 async def test_table_join_key_keeps_printed_words_and_pairs_citations(monkeypatch):
     # Offline doc05 shape: Study cell without a year, Year in the next column,
-    # two papers whose first word is Li. The table identity stays the printed
-    # words; coverage pairs them to citation slugs (and the 2025 DOI).
-    monkeypatch.setattr("react_review.parser.review_parser._pdf_text", lambda p: "t")
+    # two papers whose first word is Li. Claims slug to the same keys as the
+    # citation list; the printed row wording is kept as study_label_raw.
+    monkeypatch.setattr("react_review.parser.review_parser._pdf_text", lambda p: "Ahmad T1DM 6.60 t")
     backend = QueueBackend([
         {"research_context": "",
          "tables": [
@@ -381,6 +394,8 @@ async def test_table_join_key_keeps_printed_words_and_pairs_citations(monkeypatc
         reporter=StepReporter("doc05-join", gate=gate)).parse("d.pdf")
 
     assert {i.study_id for i in parsed.items} == {
+        "li_2015", "li_2025", "capovilla_2023"}
+    assert {i.study_label_raw for i in parsed.items} == {
         "Li J et al. 2015", "Li K et al. 2025", "Capovilla G et al. 2023"}
     assert [t.table_id for t in parsed.tables.tables] == ["table_1", "table_2"]
     long_event = next(e for e in gate.seen if e.stage is StepStage.LONG_FORMAT_ROWS)
@@ -393,11 +408,17 @@ async def test_table_join_key_keeps_printed_words_and_pairs_citations(monkeypatc
     assert not event.warnings
     assert "3 match a study in the data table" in event.render_blocks[0]
     assert "0 table study/studies have none" in event.render_blocks[0]
+    block = event.render_blocks[0]
+    assert "retrieval plan:" in block
+    assert "li_2015" in block and "no DOI · no PMID" in block
+    assert "plan:title + author + year search" in block
+    assert "li_2025" in block and "DOI 10.1007/s00423-025-03877-4" in block
+    assert "plan:lookup by DOI" in block
 
 
 @pytest.mark.asyncio
 async def test_research_context_falls_back_to_arg_when_not_extracted(monkeypatch):
-    monkeypatch.setattr("react_review.parser.review_parser._pdf_text", lambda p: "t")
+    monkeypatch.setattr("react_review.parser.review_parser._pdf_text", lambda p: "Ahmad T1DM 6.60 t")
     backend = QueueBackend([
         {"tables": []},                      # nothing captured, no research_context
         {"studies": []},
@@ -453,6 +474,24 @@ def test_empty_cohort_label_takes_arm_from_column_header():
     total = by_header["Total"]
     assert total.group == "all"
     assert total.cohort_status == "combined"
+
+
+def test_table_and_forest_row_labels_share_one_study_id():
+    """Printed wording stays on study_label_raw; study_key is applied without taken=."""
+    parser = _parser(QueueBackend([]))
+    rows = [
+        {"column_header": "N", "value": "80",
+         "row_key": {"Study": "Li J et al."}, "row_year": "2015",
+         "table_id": "table_1", "row": 0, "col": 2},
+        {"column_header": "Events", "value": "22",
+         "row_key": {"Study": "Li J 2015"}, "row_year": "",
+         "table_id": "figure_2", "row": 0, "col": 1,
+         "display_kind": "forest_plot", "outcome": "overall complications"},
+    ]
+    items = parser._postprocess(rows, {})
+    assert len(items) == 2
+    assert {i.study_id for i in items} == {"li_2015"}
+    assert {i.study_label_raw for i in items} == {"Li J et al. 2015", "Li J 2015"}
 
 
 @pytest.mark.asyncio
@@ -593,4 +632,62 @@ def test_study_scope_identical_values_are_still_deduped():
     assert [i.value for i in years] == ["2015"]
     assert not any(
         r.code == "study_scope_conflict" for i in years for r in i.reasons)
+
+
+@pytest.mark.asyncio
+async def test_truncated_pdf_and_empty_cohorts_pass_force_gate(monkeypatch):
+    monkeypatch.setattr(
+        "react_review.parser.review_parser._pdf_text", lambda p: "x" * 20)
+    recorded: list[tuple[StepStage, bool]] = []
+    parser = _parser(
+        QueueBackend([{"tables": []}, {"studies": []}]), max_chars=5)
+    orig = parser._reporter.step
+
+    async def wrapped(stage, **kw):
+        recorded.append((stage, bool(kw.get("force_gate", False))))
+        return await orig(stage, **kw)
+
+    parser._reporter.step = wrapped  # type: ignore[method-assign]
+    await parser.parse("d.pdf")
+    by_stage = dict(recorded)
+    assert by_stage[StepStage.REVIEW_PDF_LOADED] is True
+    assert by_stage[StepStage.COHORT_REGISTRY] is True
+
+
+@pytest.mark.asyncio
+async def test_complete_pdf_does_not_force_gate_loaded_or_known_cohorts(monkeypatch):
+    monkeypatch.setattr(
+        "react_review.parser.review_parser._pdf_text",
+        lambda p: "Ahmad T1DM 6.60 t",
+    )
+    recorded: list[tuple[StepStage, bool]] = []
+    parser = _parser(QueueBackend([
+        _capture([["Ahmad et al. [2022]", "100"]], ("Study", "N")),
+        {"rows": [_cell(0, 1, "Ahmad et al. [2022]", "N", "100", cohort="T1DM")]},
+        {"studies": []},
+    ]))
+    orig = parser._reporter.step
+
+    async def wrapped(stage, **kw):
+        recorded.append((stage, bool(kw.get("force_gate", False))))
+        return await orig(stage, **kw)
+
+    parser._reporter.step = wrapped  # type: ignore[method-assign]
+    await parser.parse("d.pdf")
+    by_stage = dict(recorded)
+    assert by_stage[StepStage.REVIEW_PDF_LOADED] is False
+    assert by_stage[StepStage.COHORT_REGISTRY] is False
+
+
+def test_coverage_plan_uses_doi_pmid_not_retrieval_results():
+    from react_review.parser.review_parser import ParsedStudy, ReviewParser
+
+    doi = ParsedStudy(study_id="li_2025", doi="10.xxxx/y")
+    pmid = ParsedStudy(study_id="x", pmid="12345")
+    none = ParsedStudy(study_id="li_2015")
+    assert ReviewParser._planned_lookup(doi) == "lookup by DOI"
+    assert ReviewParser._planned_lookup(pmid) == "lookup by PMID"
+    assert ReviewParser._planned_lookup(none) == "title + author + year search"
+    assert ReviewParser._ident_status(none) == "no DOI · no PMID"
+    assert ReviewParser._ident_status(doi) == "DOI 10.xxxx/y · no PMID"
 

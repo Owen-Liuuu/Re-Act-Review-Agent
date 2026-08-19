@@ -34,11 +34,15 @@ async def test_step_writes_artifact_and_ndjson(tmp_path):
     assert artifact.is_file()
     data = json.loads(artifact.read_text(encoding="utf-8"))
     assert data["subject"] == "C:/x/review.pdf"          # WHICH file — requirement #1
+    assert data["subject_kind"] == "review_pdf"
     assert data["payload"] == {"rows": [["a", "b"]]}     # FULL content — requirement #2
     assert data["warnings"] == ["ragged row 2"]
 
     line = json.loads((tmp_path / "journal.ndjson").read_text(encoding="utf-8").strip())
     assert line["stage"] == "review_table_capture" and line["warnings"] == 1
+    # Index line is a pointer, not the StepEvent: kind lives in the artifact.
+    assert "subject_kind" not in line
+
 
 
 @pytest.mark.asyncio
@@ -75,3 +79,8 @@ async def test_default_reporter_never_blocks_and_never_writes(tmp_path):
     # The library default: no journal, no gate — tests and eval runners are unaffected.
     assert await StepReporter().step(StepStage.AUDIT_SUMMARY) is Decision.CONTINUE
     assert list(tmp_path.iterdir()) == []
+
+
+def test_progress_is_noop_on_auto_continue(capsys):
+    StepReporter().progress("table", 1, 1, caption="Table 1", started=0.0)
+    assert capsys.readouterr().out == ""

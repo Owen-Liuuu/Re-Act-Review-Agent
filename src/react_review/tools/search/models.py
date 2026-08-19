@@ -12,6 +12,8 @@ class ReferenceQuery(BaseModel):
     authors: list[str] = Field(default_factory=list)
     year: int | None = None
     journal: str = ""
+    doi: str = ""                       # already known → identifier lookup, no title-search gate
+    pmid: str = ""                      # PubMed ID → identifier lookup, no title-search gate
 
 
 class CandidateWork(BaseModel):
@@ -23,6 +25,7 @@ class CandidateWork(BaseModel):
     year: int | None = None
     journal: str = ""
     pmcid: str = ""
+    pmid: str = ""
     source: str = ""                    # crossref | openalex | europepmc | ...
 
 
@@ -36,6 +39,8 @@ class ResolvedReference(BaseModel):
     confidence: float = 0.0
     matched_title: str = ""
     agreed_sources: list[str] = Field(default_factory=list)   # services agreeing on the DOI
+    candidates_seen: int = 0
+    note: str = ""                      # why a non-match, when candidates existed
 
     @property
     def resolved(self) -> bool:
@@ -51,6 +56,7 @@ class ResolveReferenceInput(BaseModel):
     year: int | None = None
     journal: str = ""
     doi: str = ""                       # already known → passthrough (no lookup)
+    pmid: str = ""                      # PubMed ID → identifier lookup, skip title-search gate
 
 
 class ResolveReferenceResult(ResolvedReference):

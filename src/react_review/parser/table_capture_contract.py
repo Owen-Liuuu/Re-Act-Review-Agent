@@ -18,6 +18,7 @@ from react_review.contracts import ContractError, read_json_object, repo_root
 TABLE_CAPTURE_V1 = Path("configs/prompt_contracts/table_capture_v1.json")
 TABLE_CAPTURE_V2 = Path("configs/prompt_contracts/table_capture_v2.json")
 TABLE_CAPTURE_V3 = Path("configs/prompt_contracts/table_capture_v3.json")
+TABLE_CAPTURE_V4 = Path("configs/prompt_contracts/table_capture_v4.json")
 # Frozen v1/v2 stay callable. New production runs use v3 (selected displays only).
 DEFAULT_TABLE_CAPTURE_PROFILE = "table_capture_v3"
 LEGACY_TABLE_CAPTURE_PROFILES = frozenset({"table_capture_v1", "table_capture_v2"})
@@ -26,6 +27,7 @@ PROMPT_VERSIONS = {
     "table_capture_v1": "table-capture-v1",
     "table_capture_v2": "table-capture-v2",
     "table_capture_v3": "table-capture-v3",
+    "table_capture_v4": "table-capture-v4",
 }
 
 
@@ -180,15 +182,62 @@ Also state the review's research question in one line.
 Return JSON only."""
 
 
+_CAPTURE_V4 = """You are a systematic-review methodologist transcribing SELECTED tables of a review
+so a colleague can check them against the original PDF.
+
+Transcribe ONLY the tables listed under SELECTED DISPLAYS. Match them by caption
+or table_id. Do NOT transcribe any other table. Do NOT invent cells for forest
+plots, figures, or unlisted tables. If a listed table is not in REVIEW TEXT,
+omit it and record that in difficulties — never fill a gap with a guessed cell.
+
+TRANSCRIBE — do not interpret:
+- Copy every cell EXACTLY as printed, including "NR", "NA", "—", "not reported",
+  "not reached", and blanks. An empty cell stays an empty string.
+- Do NOT rename headers, do NOT standardise units, do NOT convert numbers, do NOT
+  reorder or drop columns — including columns whose meaning is unclear to you.
+- Keep multi-level headers as SEPARATE header rows. If a header spans several
+  columns, put it once and leave the columns it spans empty on that row.
+- Every data row must have the same number of cells as the widest header row.
+- If part of a table is unreadable, still transcribe what you can and say what
+  went wrong in "difficulties". Never invent a value to fill a gap.
+
+Also state the review's research question in one line.
+
+{{"research_context": "one line: population + exposure/intervention + outcome",
+  "tables": [
+    {{"table_id": "table_1",
+      "caption": "the table's printed caption",
+      "role": "characteristics | outcomes | quality | other",
+      "header_rows": [["<exact header cell>"]],
+      "rows": [["<exact cell text>"]],
+      "footnotes": ["values are mean ± SD unless stated"],
+      "row_axis_columns": ["Study"],
+      "shape_notes": "one row per study; the cohort split is a column pair",
+      "cohort_labels_seen": ["<exact printed cohort label>"],
+      "extraction_confidence": 0.0,
+      "difficulties": ["the last column was cut off in the text layer"]}}
+  ]}}
+
+## SELECTED DISPLAYS
+{selected}
+
+## REVIEW TEXT
+{text}
+
+Return JSON only."""
+
+
 PROMPT_TEMPLATES = {
     "table_capture_v1": _CAPTURE_V1,
     "table_capture_v2": _CAPTURE_V2,
     "table_capture_v3": _CAPTURE_V3,
+    "table_capture_v4": _CAPTURE_V4,
 }
 _CONTRACT_PATHS = {
     "table_capture_v1": TABLE_CAPTURE_V1,
     "table_capture_v2": TABLE_CAPTURE_V2,
     "table_capture_v3": TABLE_CAPTURE_V3,
+    "table_capture_v4": TABLE_CAPTURE_V4,
 }
 
 

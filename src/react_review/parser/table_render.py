@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 
 from react_review.schemas.table import CapturedTable
 
@@ -59,7 +60,10 @@ def render_table_set(tables: list[CapturedTable], **kw) -> str:
         return "  (no tables captured)"
     blocks = []
     for i, t in enumerate(tables, start=1):
-        blocks.append(f"  ({i})\n{render_captured_table(t, **kw)}")
+        body = render_captured_table(t, **kw)
+        first, sep, rest = body.partition("\n")
+        numbered = f"  ({i}) {first.strip()}"
+        blocks.append(numbered if not sep else numbered + "\n" + rest)
     return "\n\n".join(blocks)
 
 
@@ -81,3 +85,49 @@ def to_csv(table: CapturedTable) -> str:
     for row in table.rows:
         writer.writerow(list(row) + [""] * (table.width - len(row)))
     return buf.getvalue()
+
+
+_FOREST_CAPTION = re.compile(
+    r"^(?:figure\s+[\d.]+\s+)?forest plot of\s+",
+    re.IGNORECASE,
+)
+
+
+def display_caption(caption: str) -> str:
+    """Human-facing caption: strip the boilerplate 'Forest plot of' prefix."""
+    text = " ".join((caption or "").split())
+    text = _FOREST_CAPTION.sub("", text)
+    return text.rstrip(".")
+
+
+def forest_summary_line(table: CapturedTable) -> str:
+    """One-line forest status: study-row count and checksum."""
+    kinds = table.row_kinds or []
+    n_study = sum(1 for kind in kinds if kind == "study") or len(table.rows)
+    if table.checksum_failures:
+        return f"{n_study} study row(s) · checksum failed"
+    return f"{n_study} study row(s) · checksum ok"
+
+
+def render_display_summary(
+    tables: list[CapturedTable], figures: list[CapturedTable],
+) -> str:
+    """At-a-glance tables/figures block for the combined Displays captured pause."""
+    lines = ["  tables:"]
+    if tables:
+        for table in tables:
+            cap = table.caption or "(no caption)"
+            lines.append(f"    [{table.table_id}] {cap}")
+            lines.append(
+                f"              {len(table.rows)} row(s) x {table.width} column(s)")
+    else:
+        lines.append("    (none)")
+    lines.append("  figures:")
+    if figures:
+        for fig in figures:
+            lines.append(
+                f"    [{fig.table_id}] {display_caption(fig.caption or fig.outcome)}")
+            lines.append(f"               {forest_summary_line(fig)}")
+    else:
+        lines.append("    (none)")
+    return "\n".join(lines)

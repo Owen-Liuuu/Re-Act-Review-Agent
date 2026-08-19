@@ -5,7 +5,9 @@ from react_review.tools.search import (
     DEFAULT_THRESHOLD,
     CandidateWork,
     ReferenceQuery,
+    candidate_fits_citation,
     evaluate,
+    journals_match,
     score_match,
 )
 
@@ -45,3 +47,44 @@ def test_title_only_query_uses_title_alone():
 
 def test_year_off_by_one_lowers_but_does_not_disqualify():
     assert score_match(Q, _cand(year=2022)) > score_match(Q, _cand(year=2023)) >= DEFAULT_THRESHOLD
+
+
+def test_evaluate_rejects_year_off_by_one_even_when_the_score_clears():
+    off = _cand(year=2023)
+    assert score_match(Q, off) >= DEFAULT_THRESHOLD
+    assert not candidate_fits_citation(Q, off)
+    assert not evaluate(Q, off).accepted
+
+
+def test_capovilla_dote_supplement_is_rejected():
+    query = ReferenceQuery(
+        title="Minimally invasive esophagectomy after neoadjuvant therapy",
+        year=2023, journal="Front Oncol")
+    dote = CandidateWork(
+        doi="10.1093/dote/doad052.248",
+        title="Minimally invasive esophagectomy after neoadjuvant therapy",
+        year=2023, journal="Diseases of the Esophagus", source="crossref")
+    assert not candidate_fits_citation(query, dote)
+    assert not evaluate(query, dote).accepted
+
+
+def test_li_j_and_li_k_abbreviations_still_match():
+    li_j = ReferenceQuery(
+        title="Thoracoscopic esophagectomy", year=2015, journal="Surg Endosc")
+    assert candidate_fits_citation(li_j, CandidateWork(
+        doi="10.1007/s00464-014-3750-0", title="Thoracoscopic esophagectomy",
+        year=2015, journal="Surgical Endoscopy"))
+    assert journals_match("Surg Endosc", "Surgical Endoscopy")
+
+    li_k = ReferenceQuery(
+        title="Robotic esophagectomy", year=2025, journal="Langenbecks Arch Surg")
+    assert candidate_fits_citation(li_k, CandidateWork(
+        doi="10.1007/s00423-025-03877-4", title="Robotic esophagectomy",
+        year=2025, journal="Langenbeck's Archives of Surgery"))
+    assert journals_match("Langenbecks Arch Surg", "Langenbeck's Archives of Surgery")
+    assert evaluate(li_j, CandidateWork(
+        doi="10.1007/s00464-014-3750-0", title="Thoracoscopic esophagectomy",
+        year=2015, journal="Surgical Endoscopy")).accepted
+    assert evaluate(li_k, CandidateWork(
+        doi="10.1007/s00423-025-03877-4", title="Robotic esophagectomy",
+        year=2025, journal="Langenbeck's Archives of Surgery")).accepted

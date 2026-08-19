@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from react_review.normalize.citation import citation_journal, citation_year
 from react_review.normalize.study_key import best_identity_match
 from react_review.schemas.evidence import IncludedStudy, ReviewDataItem
 from react_review.schemas.reason import ReasonRecord
@@ -95,6 +96,8 @@ def build_reference_resolver_from_parsed(studies: "list[ParsedStudy]"):
             title=s.citation or study_id,
             doi=(s.doi or None),
             pmid=(s.pmid or None),
+            year=citation_year(s.citation),
+            journal=citation_journal(s.citation),
         )
     return resolver
 
@@ -105,7 +108,12 @@ def build_reference_resolver(sid_to_study: dict[str, IncludedStudy]):
         s = sid_to_study.get(study_id)
         if s is None:
             return ReferenceEntry(title=study_id)
-        return ReferenceEntry(title=s.review_citation or study_id, doi=s.doi or None)
+        return ReferenceEntry(
+            title=s.review_citation or study_id,
+            doi=s.doi or None,
+            year=citation_year(s.review_citation),
+            journal=citation_journal(s.review_citation),
+        )
     return resolver
 
 

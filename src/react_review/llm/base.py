@@ -141,11 +141,11 @@ class LLMBackend(ABC):
         *,
         attempt: int,
         delay: float,
+        exhausted: bool = False,
     ) -> None:
-        """Emit a structured warning when we back off on HTTP 429."""
+        """Log a 429 backoff. Mid-retry is debug; exhaustion is the warning."""
         used_header = bool(response.headers.get("Retry-After"))
-        logger.warning(
-            "llm_rate_limited_retry",
+        payload = dict(
             model=self.model_id,
             attempt=attempt + 1,
             max_retries=self._max_retries,
@@ -153,6 +153,10 @@ class LLMBackend(ABC):
             source="Retry-After" if used_header else "exponential_backoff",
             status=response.status_code,
         )
+        if exhausted:
+            logger.warning("llm_rate_limited_exhausted", **payload)
+        else:
+            logger.debug("llm_rate_limited_retry", **payload)
 
     def _log_transient_retry(
         self,
@@ -160,26 +164,23 @@ class LLMBackend(ABC):
         attempt: int,
         delay: float,
         detail: str = "",
+        exhausted: bool = False,
     ) -> None:
-        """Emit a structured warning when we back off on a network error.
-
-        Network errors (connection reset, read timeout, remote protocol
-        error) are transient — typically a side-effect of the provider
-        being hammered while rate-limited. Treating them like a 429 and
-        retrying with backoff recovers extractions that would otherwise
-        be lost as a hard failure.
-        """
-        logger.warning(
-            "llm_network_error_retry",
+        """Log a network-error backoff. Mid-retry is debug; exhaustion is the warning."""
+        payload = dict(
             model=self.model_id,
             attempt=attempt + 1,
             max_retries=self._max_retries,
             delay_s=round(delay, 2),
             detail=(detail or "")[:160],
         )
+        if exhausted:
+            logger.warning("llm_network_error_exhausted", **payload)
+        else:
+            logger.debug("llm_network_error_retry", **payload)
 
 
-def parse_llm_response(raw: str, model_id: str) -> dict:
+def parse_llm_response(raw: str, model_id: str, *, source_text: str = "") -> dict:
     """Extract a JSON object from a raw LLM response.
 
     Handles common cases where the model wraps JSON in markdown
@@ -188,12 +189,16 @@ def parse_llm_response(raw: str, model_id: str) -> dict:
     Args:
         raw: Raw text response from the LLM.
         model_id: Model identifier (for error messages).
+        source_text: The material the model was asked to transcribe. When
+            set, few-shot example tokens that appear in the JSON but not
+            here are rejected as leakage.
 
     Returns:
         Parsed dictionary.
 
     Raises:
-        LLMError: If no valid JSON can be extracted.
+        LLMError: If no valid JSON can be extracted, or if the JSON copies
+            a prompt-example token that is absent from ``source_text``.
     """
     # Strip <think>...</think> reasoning blocks (deepseek-reasoner, etc.)
     raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
@@ -202,7 +207,7 @@ def parse_llm_response(raw: str, model_id: str) -> dict:
     # mis-encode ± etc. and the model echoes them) instead of hard-failing.
     # Try direct parse first
     try:
-        return _parsed(json.loads(raw, strict=False), model_id)
+        return _parsed(json.loads(raw, strict=False), model_id, source_text)
     except json.JSONDecodeError:
         pass
 
@@ -210,7 +215,8 @@ def parse_llm_response(raw: str, model_id: str) -> dict:
     match = re.search(r"```(?:json)?\s*\n?(.*?)```", raw, re.DOTALL)
     if match:
         try:
-            return _parsed(json.loads(match.group(1).strip(), strict=False), model_id)
+            return _parsed(
+                json.loads(match.group(1).strip(), strict=False), model_id, source_text)
         except json.JSONDecodeError:
             pass
 
@@ -218,7 +224,8 @@ def parse_llm_response(raw: str, model_id: str) -> dict:
     match = re.search(r"\{.*\}", raw, re.DOTALL)
     if match:
         try:
-            return _parsed(json.loads(match.group(0), strict=False), model_id)
+            return _parsed(
+                json.loads(match.group(0), strict=False), model_id, source_text)
         except json.JSONDecodeError:
             pass
 
@@ -228,7 +235,19 @@ def parse_llm_response(raw: str, model_id: str) -> dict:
     )
 
 
-def _parsed(data: dict, model_id: str) -> dict:
-    from react_review.llm.prompt_placeholders import warn_echoed_placeholders
+def _parsed(data: dict, model_id: str, source_text: str = "") -> dict:
+    from react_review.llm.prompt_placeholders import (
+        example_leak_tokens,
+        warn_echoed_placeholders,
+    )
     warn_echoed_placeholders(data, model_id=model_id)
+    if source_text:
+        leaked = example_leak_tokens(
+            json.dumps(data, ensure_ascii=False), source_text)
+        if leaked:
+            logger.warning(
+                "prompt_example_leaked", tokens=leaked, model=model_id)
+            raise LLMError(
+                f"{model_id} response copied prompt-example token(s) "
+                f"absent from the source: {', '.join(leaked)}")
     return data

@@ -18,6 +18,8 @@ from react_review.tools.search.models import CandidateWork, ReferenceQuery
 # BOTH sides count, and the score is renormalized by their weight.
 _WEIGHTS = {"title": 0.6, "author": 0.2, "year": 0.1, "journal": 0.1}
 DEFAULT_THRESHOLD = 0.72
+# Words that do not identify a journal when matching an abbreviation to a name.
+_JOURNAL_STOP = {"the", "of", "and", "in", "for", "a", "an"}
 
 
 def _norm(s: str) -> str:
@@ -53,6 +55,74 @@ def _year_score(qy: int | None, cy: int | None) -> float:
     if qy == cy:
         return 1.0
     return 0.5 if abs(qy - cy) == 1 else 0.0
+
+
+def journals_match(query_journal: str, candidate_journal: str) -> bool:
+    """Soft journal identity: abbreviations may meet the full name.
+
+    Missing either side is not a mismatch — the caller decides whether a
+    journal is required. A high title score must not override a real conflict.
+    """
+    nq, nc = _norm(query_journal), _norm(candidate_journal)
+    if not nq or not nc:
+        return True
+    if nq == nc or nq in nc or nc in nq:
+        return True
+    if SequenceMatcher(None, nq, nc).ratio() >= 0.72:
+        return True
+    qt, ct = _journal_tokens(query_journal), _journal_tokens(candidate_journal)
+    if not qt or not ct:
+        return True
+    return _tokens_cover(qt, ct) or _tokens_cover(ct, qt)
+
+
+def _journal_tokens(name: str) -> list[str]:
+    out: list[str] = []
+    for token in re.findall(r"[a-z]+", (name or "").lower()):
+        if token in _JOURNAL_STOP:
+            continue
+        if token == "j":
+            out.append("journal")
+            continue
+        out.append(token)
+    return out
+
+
+def _tokens_cover(need: list[str], have: list[str]) -> bool:
+    """Every needed token is the other side's token, or a prefix of it."""
+    for token in need:
+        if any(_token_meets(token, other) for other in have):
+            continue
+        return False
+    return True
+
+
+def _token_meets(token: str, other: str) -> bool:
+    if token == other:
+        return True
+    if min(len(token), len(other)) < 3:
+        return False
+    return other.startswith(token) or token.startswith(other)
+
+
+def years_match(query_year: int | None, candidate_year: int | None) -> bool:
+    """Hard year identity when both sides printed one."""
+    if query_year is None or candidate_year is None:
+        return True
+    return int(query_year) == int(candidate_year)
+
+
+def candidate_fits_citation(query: ReferenceQuery, cand: CandidateWork) -> bool:
+    """Year must agree; journal must soft-match when both sides name one.
+
+    Applied AFTER title scoring so a similar title cannot sneak a conference
+    abstract into a journal citation. Deterministic — not a model judgement.
+    """
+    if not years_match(query.year, cand.year):
+        return False
+    if query.journal and cand.journal and not journals_match(query.journal, cand.journal):
+        return False
+    return True
 
 
 def _journal_score(q: str, c: str) -> float:
@@ -98,4 +168,5 @@ def evaluate(
     query: ReferenceQuery, candidate: CandidateWork, *, threshold: float = DEFAULT_THRESHOLD,
 ) -> ReferenceMatch:
     s = score_match(query, candidate)
-    return ReferenceMatch(candidate=candidate, confidence=s, accepted=s >= threshold)
+    accepted = s >= threshold and candidate_fits_citation(query, candidate)
+    return ReferenceMatch(candidate=candidate, confidence=s, accepted=accepted)

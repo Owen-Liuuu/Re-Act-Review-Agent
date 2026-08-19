@@ -26,6 +26,7 @@ class ReviewClaim(ReviewDataItem):
     value_source: str = ""
     outcome: str = ""
     display_kind: str = ""
+    study_label_raw: str = ""
 
 
 class ReviewLens(BaseModel):

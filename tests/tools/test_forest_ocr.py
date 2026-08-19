@@ -66,6 +66,25 @@ DOC05 = Path(__file__).resolve().parents[2] / "eval" / "benchmark_3" / "raw" / "
 
 def test_forest_ocr_contract_does_not_drift():
     assert ForestOcrPromptContract.load().drifts() == []
+    assert ForestOcrPromptContract.load("forest_ocr_v2").drifts() == []
+
+
+def test_forest_ocr_v2_differs_from_v1_only_in_the_example_row():
+    from react_review.tools.forest_ocr import (
+        render_forest_ocr_prompt,
+        render_forest_ocr_v2_prompt,
+    )
+    fixture = ForestOcrPromptContract.load().fixture_inputs
+    v1 = render_forest_ocr_prompt(**fixture).splitlines()
+    v2 = render_forest_ocr_v2_prompt(**fixture).splitlines()
+    changed = [(a, b) for a, b in zip(v1, v2) if a != b]
+    assert len(v1) == len(v2)
+    assert len(changed) == 2
+    old, new = "\n".join(a for a, _ in changed), "\n".join(b for _, b in changed)
+    assert "Li J 2015" in old
+    assert "Li J 2015" not in new
+    assert "<exact header cell>" in new
+    assert "<exact cell text>" in new
 
 
 def test_forest_vision_contract_does_not_drift():

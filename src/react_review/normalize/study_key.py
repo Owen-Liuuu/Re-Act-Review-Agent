@@ -11,9 +11,11 @@ citation; the row's key is the table's words. Pairing uses the year when both
 sides have one, and the row's content words against the citation (or id) text.
 Zero or two hits is a refusal, never a guess.
 
-``study_key`` remains for turning a full citation into a compact alias when
-there is no table cell — the reference list, collision suffixes. It is not
-applied to table rows.
+``study_key`` turns a citation — and, at claim landing, a table or forest
+row label — into a compact alias (``li_2015``). The printed row wording is
+kept beside it as ``study_label_raw``, so a human can still see ``Li J 2015``
+versus ``Li J et al. 2015``. Collision suffixes (``taken=``) are for genuine
+two-paper clashes, not for those wording variants.
 """
 from __future__ import annotations
 

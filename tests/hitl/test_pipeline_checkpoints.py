@@ -15,6 +15,7 @@ from react_review.hitl import (
     ScriptedCheckpoint,
     StepReporter,
     StepStage,
+    SubjectKind,
 )
 from react_review.orchestrator import AuditOrchestrator, AuditPipeline, Judge
 from react_review.schemas.agent import AgentRun
@@ -169,5 +170,128 @@ async def test_collect_event_names_the_paper_and_shows_every_value(tmp_path):
                    run_id="run1")
     first = next(e for e in gate.seen if e.stage is StepStage.COLLECT_STUDY)
     assert first.subject == "doi:10.1/x"                     # which paper
+    assert first.subject_kind is SubjectKind.SOURCE_PDF
+    assert first.title.startswith("ahmad_2022 ·")
+    assert "unknown source" in first.title
     assert len(first.payload["evidence"]) == 2               # full content, both claims
     assert "review '24'" in first.render_blocks[0]
+
+
+def test_collect_title_distinguishes_pmc_abstract_and_unretrieved():
+    from types import SimpleNamespace
+
+    from react_review.core.enums import CollectionOutcome
+    from react_review.orchestrator.audit_pipeline import AuditPipeline
+    from react_review.steps.data_extraction.schemas import DocumentScope
+
+    pmc_item = SourceEvidenceItem(
+        study_id="svanteson_2019", group="t1dm", field_type="bmi",
+        retriever_kind="pmc", document_scope=DocumentScope.FULL_TEXT,
+        collection_outcome=CollectionOutcome.FOUND)
+    pmc_source = SimpleNamespace(
+        retrieved=True,
+        document=SimpleNamespace(full_text="x" * 17619, document_scope=DocumentScope.FULL_TEXT),
+        provenance={"retriever_kind": "pmc"},
+    )
+    assert AuditPipeline._collect_title(
+        "svanteson_2019", [pmc_item], pmc_source
+    ) == "svanteson_2019 · pmc · 17,619 chars · full_text     (hit:PMC esearch by DOI)"
+
+    abs_item = SourceEvidenceItem(
+        study_id="ahmad_2022", group="t1dm", field_type="bmi",
+        retriever_kind="pubmed_abstract", document_scope=DocumentScope.ABSTRACT_ONLY,
+        collection_outcome=CollectionOutcome.FOUND)
+    abs_source = SimpleNamespace(
+        retrieved=True,
+        document=SimpleNamespace(
+            full_text="y" * 2041, document_scope=DocumentScope.ABSTRACT_ONLY),
+        provenance={"retriever_kind": "pubmed_abstract"},
+    )
+    assert AuditPipeline._collect_title(
+        "ahmad_2022", [abs_item], abs_source
+    ) == "ahmad_2022 · pubmed_abstract · 2,041 chars · abstract_only     (fallback: DOI miss → title search)"
+
+    abs_doi_source = SimpleNamespace(
+        retrieved=True,
+        document=SimpleNamespace(
+            full_text="y" * 2041, document_scope=DocumentScope.ABSTRACT_ONLY),
+        provenance={"retriever_kind": "pubmed_abstract", "source_doi": "10.1/x"},
+    )
+    assert "fallback: DOI miss → PubMed abstract" in AuditPipeline._collect_title(
+        "ahmad_2022", [abs_item], abs_doi_source)
+
+    failed = SourceEvidenceItem(
+        study_id="elbaky_2023", group="t1dm", field_type="bmi",
+        collection_outcome=CollectionOutcome.SOURCE_ACCESS_FAILED)
+    failed_source = SimpleNamespace(
+        retrieved=False, document=None, provenance={})
+    assert AuditPipeline._collect_title(
+        "elbaky_2023", [failed], failed_source
+    ) == "elbaky_2023 · NOT RETRIEVED     (all four retrieval tiers failed)"
+
+    unresolved = SourceEvidenceItem(
+        study_id="capovilla_2023", group="mie", field_type="event_count",
+        collection_outcome=CollectionOutcome.UNRESOLVED_SOURCE)
+    unresolved_source = SimpleNamespace(
+        retrieved=False, document=None, provenance={},
+        outcome=CollectionOutcome.UNRESOLVED_SOURCE,
+        reference=SimpleNamespace(
+            title="Capovilla G. Front Oncol. 2023;13:1104109.",
+            authors=[], year=2023, journal="Front Oncol"),
+    )
+    from react_review.tools.search.reconciler import _UNRESOLVED_NOTES, _query_key
+    from react_review.tools.search.models import ReferenceQuery
+    key = _query_key(ReferenceQuery(
+        citation="Capovilla G. Front Oncol. 2023;13:1104109.",
+        title="Capovilla G. Front Oncol. 2023;13:1104109.",
+        year=2023, journal="Front Oncol"))
+    _UNRESOLVED_NOTES[key] = "retrieved 3 candidates, none matched the citation"
+    title = AuditPipeline._collect_title(
+        "capovilla_2023", [unresolved], unresolved_source)
+    assert "四层全失败" not in title
+    assert "all four retrieval tiers failed" not in title
+    assert "all tiers failed" not in title.lower()
+    assert "retrieved 3 candidates, none matched the citation" in title
+
+
+def test_collect_title_failure_paths_do_not_blank_or_crash():
+    from types import SimpleNamespace
+
+    from react_review.core.enums import CollectionOutcome
+    from react_review.orchestrator.audit_pipeline import AuditPipeline
+
+    empty = SourceEvidenceItem(
+        study_id="x", group="t1dm", field_type="bmi",
+        collection_outcome=CollectionOutcome.FOUND)
+    title = AuditPipeline._collect_title("x", [empty], None)
+    assert "unknown source" in title
+    assert title.strip()
+
+    local = SourceEvidenceItem(
+        study_id="ahmad_2022", group="t1dm", field_type="bmi",
+        source_file=r"C:\papers\Ahmad 2022.pdf",
+        retriever_kind="local_pdf",
+        collection_outcome=CollectionOutcome.FOUND)
+    local_source = SimpleNamespace(
+        retrieved=True,
+        document=SimpleNamespace(full_text="z" * 100, document_scope=None),
+        provenance={"source_file": r"C:\papers\Ahmad 2022.pdf",
+                    "retriever_kind": "local_pdf"},
+    )
+    titled = AuditPipeline._collect_title("ahmad_2022", [local], local_source)
+    assert "Ahmad 2022.pdf" in titled
+    assert "(hit:local PDF)" in titled
+    assert "10.xxxx" not in titled
+    assert "doi:" not in titled
+
+    no_scope = AuditPipeline._collect_title(
+        "ahmad_2022", [empty],
+        SimpleNamespace(
+            retrieved=True,
+            document=SimpleNamespace(full_text="hi", document_scope=None),
+            provenance={"retriever_kind": "pmc"},
+        ),
+    )
+    assert no_scope == "ahmad_2022 · pmc · 2 chars     (hit:PMC esearch by DOI)"
+    assert "unknown" not in no_scope
+

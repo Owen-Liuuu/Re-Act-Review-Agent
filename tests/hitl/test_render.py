@@ -6,6 +6,7 @@ from react_review.hitl import (
     StepStage,
     box_chars,
     render_event,
+    render_progress,
     render_prompt,
     rule,
     supports_unicode,
@@ -52,19 +53,45 @@ def test_render_event_shows_the_file_and_the_content():
     assert "eat_thickness: 6.60" in out            # requirement #2: full content
     assert "! control/age: missing_source" in out
     assert "[3] Source evidence" in out
+    assert "\n\n  file: C:/pdf/Ahmad 2022.pdf" in out
 
 
 def test_render_event_without_a_subject_omits_the_file_line():
     assert "file:" not in render_event(_event(subject=""), stream=_Stream("utf-8"))
 
 
-def test_prompt_offers_retry_only_when_the_stage_does():
-    assert "[R]etry" not in render_prompt(_event())
-    assert "[R]etry" in render_prompt(_event(offers=["retry"]))
-    assert "retry with [M]odel2" in render_prompt(_event(offers=["retry", "retry_alt"]))
+def test_prompt_keys_use_letter_outside_the_verb():
+    text = render_prompt(_event())
+    assert "[C]Continue" in text and "[S]Stop" in text
+    assert "[D]Detail" in text and "[O]Open artifact" in text
+    assert "[C]ontinue" not in text
+    assert "[T]Toggle one" not in render_prompt(_event(
+        selectable="tables", payload={"tables": [{"id": "t1", "label": "t1"}]}))
+    assert "[N]On <n>" in render_prompt(_event(
+        selectable="tables", payload={"tables": [{"id": "t1", "label": "t1"}]}))
+    assert "[F]Off <n>" in render_prompt(_event(
+        selectable="tables", payload={"tables": [{"id": "t1", "label": "t1"}]}))
+    assert "[M]Retry with Model 2" not in render_prompt(_event(offers=["retry"]))
+    assert "[R]Retry" not in render_prompt(_event())
+    assert "[R]Retry" in render_prompt(_event(offers=["retry"]))
+    assert "[M]Retry with Model 2" in render_prompt(_event(offers=["retry", "retry_alt"]))
 
 
 def test_skip_is_hidden_unless_explicitly_allowed():
     # Findings are shown unconditionally until the pipeline has earned trust.
     assert "skip remaining" not in render_prompt(_event())
     assert "skip remaining" in render_prompt(_event(), allow_skip=True)
+
+
+def test_progress_line_is_discrete_with_fraction_and_elapsed():
+    line = render_progress(
+        "table", 1, 1,
+        caption="Table 1. Characteristics of included studies.",
+        elapsed_s=11,
+    )
+    assert "1/1" in line
+    assert "11s" in line
+    assert "\r" not in line
+    elapsed_only = render_progress("review_lens", elapsed_s=9.2)
+    assert "9s" in elapsed_only
+    assert "/" not in elapsed_only.split("review_lens", 1)[1]

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -110,7 +111,7 @@ class ParsedStudy(BaseModel):
 
 
 class ParsedReview(BaseModel):
-    items: list[ReviewDataItem] = Field(default_factory=list)
+    items: list[ReviewClaim] = Field(default_factory=list)
     record: AgentRun
     research_context: str = ""          # LLM-extracted from the review (falls back to the arg)
     studies: list[ParsedStudy] = Field(default_factory=list)   # included-study DOIs
@@ -139,8 +140,8 @@ def _pdf_text(pdf_path: Path | str) -> str:
         doc.close()
 
 
-# Reference-list aliases still come from the citation slug. Table rows use
-# join_key (the printed label plus a year) — see normalize/study_key.py.
+# Reference-list aliases and claim study_ids both use the citation slug.
+# The printed table/forest label is kept on ReviewClaim.study_label_raw.
 _study_slug = study_key
 
 
@@ -189,6 +190,16 @@ def _row_key_label(row_key: Any) -> str:
 def _row_join_key(row: dict[str, Any]) -> str:
     """Table-row identity: printed label plus a year the cell itself omitted."""
     return join_key(_row_key_label(row.get("row_key")), str(row.get("row_year") or ""))
+
+
+def _row_study_ids(row: dict[str, Any]) -> tuple[str, str]:
+    """Canonical study_id plus the printed row label kept for a human check.
+
+    ``study_key`` is applied without ``taken=`` so ``Li J 2015`` and
+    ``Li J et al. 2015`` share ``li_2015`` rather than becoming ``li_2015_b``.
+    """
+    raw = _row_join_key(row)
+    return study_key(raw), raw
 
 
 # A unit printed inside the cell itself ("80.2 ± 49.0 cm3"). Recovering it is
@@ -259,17 +270,19 @@ class ReviewParser:
         text = full_text[: self._max_chars]
         logger.info("review_parse_start", chars=len(text))
 
+        truncated = len(full_text) > self._max_chars
         await self._reporter.step_or_stop(
             StepStage.REVIEW_PDF_LOADED,
             title="Review PDF loaded",
             subject=str(Path(pdf_path).resolve()),
             subject_kind=SubjectKind.REVIEW_PDF,
             payload={"chars_total": len(full_text), "chars_used": len(text),
-                     "truncated": len(full_text) > self._max_chars},
+                     "truncated": truncated},
             render_blocks=[f"  {len(full_text):,} characters extracted"
                            f" (using the first {len(text):,})"],
             warnings=([f"text truncated to {self._max_chars:,} chars — the data table "
-                       "may sit past the cut"] if len(full_text) > self._max_chars else []),
+                       "may sit past the cut"] if truncated else []),
+            force_gate=truncated,
         )
 
         # 1. Capture the review's tables. Frozen v1/v2 transcribe every data
@@ -288,7 +301,9 @@ class ReviewParser:
                 prompt_profile=self._table_capture_prompt_profile,
                 keep_tables=self._keep_tables, drop_tables=self._drop_tables,
                 vision_backend=self._vision,
-            ).run(full_text, pdf_path=pdf_path, text_window=text)
+            ).run(full_text, pdf_path=pdf_path, text_window=text,
+                  chars_total=len(full_text), chars_used=len(text),
+                  truncated=truncated)
             table_set = extracted.tables
             captured_ctx = extracted.research_context
         ctx = captured_ctx or research_context
@@ -296,7 +311,9 @@ class ReviewParser:
         # 2. Unpivot each approved table, in row chunks.
         raw_rows: list[dict[str, Any]] = []
         skipped_study_tables: list[str] = []
-        for table in table_set.tables:
+        n_tables = max(1, len(table_set.tables))
+        for i, table in enumerate(table_set.tables, start=1):
+            started = time.monotonic()
             if table.display_kind == "forest_plot":
                 from react_review.parser.review_extraction.forest_unpivot import (
                     unpivot_forest,
@@ -308,11 +325,17 @@ class ReviewParser:
                 skipped_study_tables.append(
                     f"{table.table_id} ({table.role or 'no role'}; "
                     f"row axis {', '.join(table.row_axis_columns) or 'unset'})")
+                self._reporter.progress(
+                    "long_format", i, n_tables,
+                    caption=table.table_id, started=started)
                 continue
             for row in chunk:
                 row.update(fields_for_cell(
                     list(table_set.origin_labels), table, row))
             raw_rows.extend(chunk)
+            self._reporter.progress(
+                "long_format", i, n_tables,
+                caption=table.caption or table.table_id, started=started)
 
         # 3. Discover this review's cohorts from the labels it actually used —
         #    BEFORE any resolution, so nothing has been folded into a default.
@@ -321,14 +344,19 @@ class ReviewParser:
             + [c for t in table_set.tables for c in t.cohort_labels_seen],
             aliases=self._cohort_aliases,
         )
+        unknown = list(registry.unassigned)
         await self._reporter.step_or_stop(
             StepStage.COHORT_REGISTRY,
             title="Cohorts found in this review",
-            payload={"cohorts": [c.model_dump(mode="json") for c in registry.labels]},
+            subject=str(Path(pdf_path).resolve()),
+            subject_kind=SubjectKind.REVIEW_PDF,
+            payload={"cohorts": [c.model_dump(mode="json") for c in registry.labels],
+                     "unassigned": unknown},
             render_blocks=[self._render_cohorts(registry)],
             warnings=([] if registry.labels else
                       ["no cohort labels were found — every value will be treated "
                        "as a single combined cohort"]),
+            force_gate=(not registry.labels or bool(unknown)),
         )
 
         # 4. Resolve the UNIQUE field questions before applying any answer to a
@@ -399,6 +427,8 @@ class ReviewParser:
         await self._reporter.step_or_stop(
             StepStage.LONG_FORMAT_ROWS,
             title="Table converted to long format",
+            subject=str(Path(pdf_path).resolve()),
+            subject_kind=SubjectKind.REVIEW_PDF,
             payload={"rows": raw_rows,
                      "items": [i.model_dump(mode="json") for i in items],
                      "claim_index": claim_index(items)},
@@ -409,7 +439,7 @@ class ReviewParser:
 
         # 6. included-study references, extracted from the reference window (doc tail).
         studies = await self._extract_studies(_refs_window(full_text))
-        studies = await self._review_coverage(studies, items)
+        studies = await self._review_coverage(studies, items, pdf_path)
 
         if self._checklist is not None and checklist_review_application is not None:
             # Second pass: the approved references are now the authoritative
@@ -578,6 +608,7 @@ class ReviewParser:
 
     async def _review_coverage(
         self, studies: list[ParsedStudy], items: list[ReviewDataItem],
+        pdf_path: Path | str,
     ) -> list[ParsedStudy]:
         """Show which studies have a citation, and let a human drop the rest.
 
@@ -594,6 +625,8 @@ class ReviewParser:
         await self._reporter.step_or_stop(
             StepStage.REFERENCE_COVERAGE,
             title="Source papers for the studies in the table",
+            subject=str(Path(pdf_path).resolve()),
+            subject_kind=SubjectKind.REVIEW_PDF,
             payload={"references": [
                 {"id": s.study_id, "label": f"{s.study_id}  {s.citation[:70]}"
                                             f"{'  [doi]' if s.doi else '  [no doi]'}",
@@ -606,10 +639,10 @@ class ReviewParser:
         event = self._reporter.last_event
         if event is None or not event.dropped:
             return studies
-        kept = {r["id"] for r in event.selectable_items()}
+        dropped = set(event.dropped)
         logger.info("references_dropped",
-                    ids=[s.study_id for s in studies if s.study_id not in kept])
-        return [s for s in studies if s.study_id in kept]
+                    ids=[s.study_id for s in studies if s.study_id in dropped])
+        return [s for s in studies if s.study_id not in dropped]
 
     @staticmethod
     def _render_coverage(studies: list[ParsedStudy], paired: dict[str, str | None],
@@ -620,6 +653,14 @@ class ReviewParser:
         lines = [f"  {len(studies)} reference(s) extracted; "
                  f"{len(used)} match a study in the data table, "
                  f"{len(extra)} do not; {len(missing)} table study/studies have none."]
+        if studies:
+            lines.append("  retrieval plan:")
+            width = max((len(s.study_id) for s in studies), default=12)
+            for study in studies:
+                lines.append(
+                    f"    {study.study_id:<{width}}  "
+                    f"{ReviewParser._ident_status(study)}   → "
+                    f"plan:{ReviewParser._planned_lookup(study)}")
         if extra:
             lines.append("  references with no claim in the table "
                          "(cited works, not included studies):")
@@ -630,6 +671,20 @@ class ReviewParser:
             lines.append("  studies in the table with NO citation found:")
             lines += [f"    {sid}" for sid in missing[:12]]
         return "\n".join(lines)
+
+    @staticmethod
+    def _ident_status(study: ParsedStudy) -> str:
+        doi = f"DOI {study.doi}" if study.doi else "no DOI"
+        pmid = f"PMID {study.pmid}" if study.pmid else "no PMID"
+        return f"{doi} · {pmid}"
+
+    @staticmethod
+    def _planned_lookup(study: ParsedStudy) -> str:
+        if study.doi:
+            return "lookup by DOI"
+        if study.pmid:
+            return "lookup by PMID"
+        return "title + author + year search"
 
     @staticmethod
     def _resolution_inputs(row: dict[str, Any]) -> tuple[str, object, str, str] | None:
@@ -660,9 +715,10 @@ class ReviewParser:
     ) -> None:
         """Fold a per-row outcome into one auditable resolution record."""
         reason = "; ".join(r.message or r.code for r in resolved.reasons)
+        study_id, _raw = _row_study_ids(row)
         cell = ResolutionCellRef(
             table_id=str(row.get("table_id") or ""), cell_ref=_cell_ref(row),
-            study_id=_row_join_key(row),
+            study_id=study_id,
             column_header=str(row.get("column_header") or ""), unit=resolved.unit,
             status=resolved.status, field_type=resolved.field_type or "", reason=reason,
         )
@@ -791,7 +847,7 @@ class ReviewParser:
             timepoint_label = str(r.get("timepoint_label") or "").strip()
             table_id = str(r.get("table_id") or "")
             cell_ref = _cell_ref(r)
-            study_id = _row_join_key(r)
+            study_id, study_label_raw = _row_study_ids(r)
             cohort = registry.resolve(cohort_label)
             # Unpivot often leaves cohort_label empty when the arm is only in
             # the column header ("N MIE"). The registry already discovered
@@ -812,6 +868,7 @@ class ReviewParser:
                 value_source=str(r.get("value_source") or ""),
                 outcome=str(r.get("outcome") or ""),
                 display_kind=str(r.get("display_kind") or ""),
+                study_label_raw=study_label_raw,
             )
             cohort_reasons = ([] if cohort.known else [ReasonRecord(
                 code="cohort_unknown", stage="parser", message=cohort.reason)])

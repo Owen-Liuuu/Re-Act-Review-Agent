@@ -26,10 +26,13 @@ from react_review.tools.models import ForestOcrInput, ForestOcrResult
 logger = structlog.get_logger(__name__)
 
 FOREST_OCR_V1 = Path("configs/prompt_contracts/forest_ocr_v1.json")
+FOREST_OCR_V2 = Path("configs/prompt_contracts/forest_ocr_v2.json")
 FOREST_OCR_VISION_V1 = Path("configs/prompt_contracts/forest_ocr_vision_v1.json")
 RENDERER_IDENTITY = "react_review.review_extraction.render.v1"
 PROMPT_ID = "forest_ocr_v1"
 PROMPT_VERSION = "forest-ocr-v1"
+PROMPT_ID_V2 = "forest_ocr_v2"
+PROMPT_VERSION_V2 = "forest-ocr-v2"
 VISION_PROMPT_ID = "forest_ocr_vision_v1"
 VISION_PROMPT_VERSION = "forest-ocr-vision-v1"
 
@@ -59,6 +62,35 @@ Ruler outcomes (do not extract a different endpoint): {outcomes}
 {figure_text}
 
 Return JSON only. Wrap the object as {{"tables": [<the table above>]}}."""
+
+
+_FOREST_V2 = """You are reading the TEXT DUMP of one RevMan-style forest plot from a
+systematic review. Transcribe per-study Events and Total only.
+
+Copy study row labels verbatim. Extract Events and Total for each arm the plot
+prints (typically experimental then control). Skip the pooled / diamond /
+"Total (95% CI)" / "Total (Wald)" footer. Do NOT copy Odds ratio, Weight, or
+heterogeneity statistics — those are review-computed.
+
+If the dump is not a readable forest plot, return an empty rows array and say
+so in difficulties. Never invent an event count.
+
+{{"table_id": "{figure_id}",
+  "caption": "{caption}",
+  "role": "outcomes",
+  "header_rows": [["<exact header cell>"]],
+  "rows": [["<exact cell text>"]],
+  "row_axis_columns": ["Study or Subgroup"],
+  "cohort_labels_seen": [],
+  "difficulties": []}}
+
+Ruler outcomes (do not extract a different endpoint): {outcomes}
+
+## FIGURE TEXT
+{figure_text}
+
+Return JSON only. Wrap the object as {{"tables": [<the table above>]}}."""
+
 
 # Verbatim from eval/probe_forest_vision.py (v2 named-value schema). Do not
 # rewrite: the checksum needs the summary/total rows this prompt asks for.
@@ -98,7 +130,11 @@ and must not be copied literally:
 
 Do not output the angle-bracket placeholders. Return JSON only."""
 
-PROMPT_TEMPLATES = {PROMPT_ID: _FOREST, VISION_PROMPT_ID: _FOREST_VISION}
+PROMPT_TEMPLATES = {
+    PROMPT_ID: _FOREST,
+    PROMPT_ID_V2: _FOREST_V2,
+    VISION_PROMPT_ID: _FOREST_VISION,
+}
 
 
 def _placeholders(template: str) -> set[str]:
@@ -116,6 +152,15 @@ def render_forest_ocr_prompt(**values: str) -> str:
         raise ContractError(
             f"{PROMPT_ID} is missing prompt values: {', '.join(sorted(missing))}")
     return _FOREST.format(**{key: values[key] for key in needed})
+
+
+def render_forest_ocr_v2_prompt(**values: str) -> str:
+    needed = _placeholders(_FOREST_V2)
+    missing = needed - values.keys()
+    if missing:
+        raise ContractError(
+            f"{PROMPT_ID_V2} is missing prompt values: {', '.join(sorted(missing))}")
+    return _FOREST_V2.format(**{key: values[key] for key in needed})
 
 
 def render_forest_vision_prompt(**values: str) -> str:
@@ -139,20 +184,23 @@ class ForestOcrPromptContract:
 
     @classmethod
     def load(cls, profile_or_path: str | Path = PROMPT_ID) -> "ForestOcrPromptContract":
-        if isinstance(profile_or_path, str) and profile_or_path == PROMPT_ID:
-            path = repo_root() / FOREST_OCR_V1
+        paths = {PROMPT_ID: FOREST_OCR_V1, PROMPT_ID_V2: FOREST_OCR_V2}
+        if isinstance(profile_or_path, str) and profile_or_path in paths:
+            path = repo_root() / paths[profile_or_path]
         else:
             path = Path(profile_or_path)
             if not path.is_absolute():
                 path = repo_root() / path
         body = read_json_object(path, kind="forest OCR prompt contract")
+        prompt_id = str(body.get("prompt_id") or "")
+        template = PROMPT_TEMPLATES.get(prompt_id, _FOREST)
         fixture_inputs = body.get("fixture_inputs")
-        needed = _placeholders(_FOREST)
+        needed = _placeholders(template)
         if not isinstance(fixture_inputs, dict) or set(fixture_inputs) != needed:
             raise ContractError(
                 f"forest OCR contract {path} must pin fixture_inputs {sorted(needed)}")
         return cls(
-            prompt_id=str(body.get("prompt_id") or ""),
+            prompt_id=prompt_id,
             prompt_version=str(body.get("prompt_version") or ""),
             rendered_prompt_sha256=str(body.get("rendered_prompt_sha256") or "").upper(),
             renderer_identity=str(body.get("renderer_identity") or ""),
@@ -163,15 +211,19 @@ class ForestOcrPromptContract:
 
     def drifts(self) -> list[str]:
         found: list[str] = []
-        if self.prompt_id != PROMPT_ID:
+        versions = {PROMPT_ID: PROMPT_VERSION, PROMPT_ID_V2: PROMPT_VERSION_V2}
+        expected_version = versions.get(self.prompt_id)
+        if expected_version is None:
             found.append(f"prompt_id is {self.prompt_id!r}")
-        if self.prompt_version != PROMPT_VERSION:
+        elif self.prompt_version != expected_version:
             found.append(f"version is {self.prompt_version!r}")
         if self.renderer_identity != RENDERER_IDENTITY:
             found.append(f"renderer is {self.renderer_identity!r}")
         if self.hash_algorithm != "sha256-rendered-utf8-v1":
             found.append("unsupported hash algorithm")
-        rendered = render_forest_ocr_prompt(**self.fixture_inputs)
+        render = (render_forest_ocr_v2_prompt if self.prompt_id == PROMPT_ID_V2
+                  else render_forest_ocr_prompt)
+        rendered = render(**self.fixture_inputs)
         actual = sha256_rendered_prompt(rendered)
         if actual != self.rendered_prompt_sha256:
             found.append(
@@ -923,7 +975,8 @@ class ForestOcrTool(Tool):
         )
         try:
             raw = parse_llm_response(
-                await self._backend.complete(prompt), self._backend.model_id)
+                await self._backend.complete(prompt), self._backend.model_id,
+                source_text=dump[:12000])
         except Exception as exc:  # noqa: BLE001
             logger.warning("forest_ocr_llm_failed", error=str(exc)[:160])
             empty = _empty_table(

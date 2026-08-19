@@ -38,6 +38,7 @@ from react_review.tools.extraction_profile import (
     LEGACY_V3,
     TARGETED_V4,
     TARGETED_V6,
+    TARGETED_V7,
     prompt_profile,
     prompt_version,
     uses_targeted_sections,
@@ -237,10 +238,60 @@ async def test_v6_asks_the_model_to_enumerate_arms_like_v4():
 
 def test_v6_version_string_is_registered_and_distinct():
     assert prompt_version("targeted_v6") == TARGETED_V6
-    assert len({LEGACY_V3, TARGETED_V4, TARGETED_V6}) == 3
+    assert prompt_version("targeted_v7") == TARGETED_V7
+    assert len({LEGACY_V3, TARGETED_V4, TARGETED_V6, TARGETED_V7}) == 4
+
+
+@pytest.mark.asyncio
+async def test_v7_without_outcome_matches_v6_bytes():
+    """v7 is v6 plus an outcome clause that is empty when none is supplied."""
+    assert await _rendered("targeted_v6") == await _rendered("targeted_v7")
+
+
+@pytest.mark.asyncio
+async def test_v7_interpolates_outcome_and_frozen_profiles_do_not():
+    outcome = "overall complications"
+    v4 = await _rendered("targeted_v4", outcome=outcome)
+    v6 = await _rendered("targeted_v6", outcome=outcome)
+    v7 = await _rendered("targeted_v7", outcome=outcome)
+    assert outcome not in v4
+    assert outcome not in v6
+    assert outcome in v7
+    assert hashlib.sha256(v4.encode("utf-8")).hexdigest() == TARGETED_V4_PROMPT_SHA256
+    assert hashlib.sha256(v6.encode("utf-8")).hexdigest() == TARGETED_V6_PROMPT_SHA256
+    assert uses_targeted_sections("targeted_v7")
+
+
+def test_targeted_v7_contract_pins_the_rendered_prompt_with_outcome():
+    """The new profile has a contract file; its hash is of the rendered prompt."""
+    from react_review.contracts import repo_root
+
+    body = json.loads(
+        (repo_root() / "configs/prompt_contracts/targeted_v7.json"
+         ).read_text(encoding="utf-8"))
+    assert body["extraction_profile"] == "targeted_v7"
+    assert body["prompt_version"] == TARGETED_V7
+    assert body["rendered_prompt_sha256"] != "PENDING"
+
+
+@pytest.mark.asyncio
+async def test_targeted_v7_contract_hash_matches_what_the_tool_sends():
+    from react_review.contracts import repo_root
+
+    body = json.loads(
+        (repo_root() / "configs/prompt_contracts/targeted_v7.json"
+         ).read_text(encoding="utf-8"))
+    fixture = body["fixture_inputs"]
+    prompt = await _rendered(
+        "targeted_v7",
+        outcome=fixture["outcome"],
+        research_context=fixture["context"],
+    )
+    digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest().upper()
+    assert digest == body["rendered_prompt_sha256"]
 
 
 def test_an_unknown_profile_cannot_be_read_as_not_targeted():
     """Returning False would render the legacy body under an undefined name."""
     with pytest.raises(ValueError, match="unknown extraction profile"):
-        uses_targeted_sections("targeted_v7")
+        uses_targeted_sections("targeted_v9_missing")

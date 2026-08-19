@@ -34,13 +34,21 @@ class CheckpointPolicy(BaseModel):
 
     @classmethod
     def key_stages(cls) -> "CheckpointPolicy":
-        """Default: gate the structural stages; SHOW each paper, gate the batch.
+        """Default: gate the structural stages that need a decision.
 
-        Per-paper evidence is printed in full but not gated, so the number of
-        keypresses is the same whether the review includes 9 source papers or 80.
+        Read-only stages SHOW (print + journal, no key). REVIEW_PDF_LOADED and
+        FOREST_OCR are SILENT because their content is folded into a later
+        checkpoint; the journal still writes them. Truncation / empty-or-unknown
+        cohorts re-gate via ``force_gate``, not this table.
         """
         by_stage = {s: Mode.GATE for s in _ALL_STAGES}
         by_stage[StepStage.COLLECT_STUDY] = Mode.SHOW
+        by_stage[StepStage.COHORT_REGISTRY] = Mode.SHOW
+        by_stage[StepStage.FIELD_RESOLUTION] = Mode.SHOW
+        by_stage[StepStage.CHECKLIST_REVIEW] = Mode.SHOW
+        by_stage[StepStage.CHECKLIST_STUDY_COVERAGE] = Mode.SHOW
+        by_stage[StepStage.REVIEW_PDF_LOADED] = Mode.SILENT
+        by_stage[StepStage.FOREST_OCR] = Mode.SILENT
         return cls(by_stage=by_stage, default=Mode.GATE)
 
     @classmethod

@@ -27,6 +27,7 @@ import httpx
 import structlog
 
 from react_review.core.config import PubMedSettings
+from react_review.schemas.table import CapturedTable
 from react_review.steps.data_extraction.schemas import DocumentScope, PaperDocument
 from react_review.steps.paper_verification.interfaces import PaperRetriever
 from react_review.steps.paper_verification.schemas import ReferenceEntry
@@ -95,7 +96,11 @@ class FullTextRetriever(PaperRetriever):
         self._api_key = pubmed_settings.api_key
         self._unpaywall_email = unpaywall_email or pubmed_settings.email
         self._unpaywall_enabled = unpaywall_enabled
-        self._timeout = httpx.Timeout(60.0, connect=15.0)
+        self._timeout = httpx.Timeout(25.0, connect=10.0)
+        # Structured tables from the last PMC XML parse. Not stored on
+        # PaperDocument: that schema is inside the evidence-adequacy hash
+        # boundary. Callers copy this onto FetchResult.
+        self.captured_tables: list[CapturedTable] = []
 
     async def retrieve(self, reference: ReferenceEntry) -> PaperDocument | None:
         """Try to get the fullest text available for a reference.
@@ -104,6 +109,7 @@ class FullTextRetriever(PaperRetriever):
         """
         paper_id = reference.doi or reference.title[:50]
         logger.info("fulltext_retrieve_start", paper_id=paper_id[:50])
+        self.captured_tables = []
 
         # --- Tier 1: PubMed Central full text ---
         doc = await self._try_pmc(reference)
@@ -148,6 +154,7 @@ class FullTextRetriever(PaperRetriever):
 
             full_text = await self._fetch_pmc_fulltext(pmc_id)
             if not full_text or len(full_text) < 200:
+                self.captured_tables = []
                 return None
 
             # Keep only core sections (Methods/Results/Tables) to cut LLM
@@ -173,6 +180,7 @@ class FullTextRetriever(PaperRetriever):
 
         except Exception as exc:
             logger.debug("pmc_tier_failed", error=str(exc)[:120])
+            self.captured_tables = []
             return None
 
     async def _find_pmc_id(self, reference: ReferenceEntry) -> str | None:
@@ -215,6 +223,7 @@ class FullTextRetriever(PaperRetriever):
             resp.raise_for_status()
             xml_text = resp.text
 
+        self.captured_tables = pmc_xml_to_tables(xml_text)
         return self._pmc_xml_to_text(xml_text)
 
     @staticmethod
@@ -374,7 +383,7 @@ class FullTextRetriever(PaperRetriever):
             return ""
 
         async with httpx.AsyncClient(
-            timeout=httpx.Timeout(120.0, connect=30.0),
+            timeout=httpx.Timeout(25.0, connect=10.0),
             follow_redirects=True,
         ) as client:
             resp = await client.get(url)
@@ -897,3 +906,76 @@ def _table_to_text(table_el: ET.Element) -> str:
         if cells:
             rows.append("\t".join(cells))
     return "\n".join(rows)
+
+
+def pmc_xml_to_tables(xml_text: str) -> list[CapturedTable]:
+    """Parse PMC/JATS XML into structured tables. Empty on parse failure."""
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return []
+    return _pmc_xml_to_tables(root)
+
+
+def _pmc_xml_to_tables(root: ET.Element) -> list[CapturedTable]:
+    """Walk the same ``<table-wrap>`` nodes ``_pmc_xml_to_text`` already visits.
+
+    Produces ``CapturedTable`` grids instead of TSV. The text converter is not
+    changed: both read the same XML, independently.
+    """
+    tables: list[CapturedTable] = []
+    for index, wrap in enumerate(root.iter("table-wrap"), start=1):
+        caption_el = wrap.find("caption")
+        caption = _et_text(caption_el) if caption_el is not None else ""
+        label_el = wrap.find("label")
+        label = _et_text(label_el) if label_el is not None else ""
+        if label and caption and not caption.lower().startswith(label.lower()):
+            display = f"{label} {caption}".strip()
+        else:
+            display = caption or label
+        table_el = wrap.find(".//table")
+        if table_el is None:
+            continue
+        header_rows, rows = _table_to_grid(table_el)
+        if not header_rows and not rows:
+            continue
+        wrap_id = (wrap.get("id") or "").strip() or f"table_{index}"
+        tables.append(CapturedTable(
+            table_id=wrap_id,
+            caption=display,
+            header_rows=header_rows,
+            rows=rows,
+            display_kind="pdf_table",
+            capture_method="table_text",
+            capture_path="text",
+        ))
+    return tables
+
+
+def _table_rows(section: ET.Element) -> list[list[str]]:
+    """One list of cell strings per ``<tr>``, same cell walk as ``_table_to_text``."""
+    rows: list[list[str]] = []
+    for tr in section.iter("tr"):
+        cells = [_et_text(cell) for cell in tr if cell.tag in ("th", "td")]
+        if cells:
+            rows.append(cells)
+    return rows
+
+
+def _table_to_grid(table_el: ET.Element) -> tuple[list[list[str]], list[list[str]]]:
+    """Split a JATS ``<table>`` into header rows and body rows."""
+    thead = table_el.find("thead")
+    tbody = table_el.find("tbody")
+    tfoot = table_el.find("tfoot")
+    header_rows = _table_rows(thead) if thead is not None else []
+    body_rows = _table_rows(tbody) if tbody is not None else []
+    if tfoot is not None:
+        body_rows.extend(_table_rows(tfoot))
+    if header_rows or body_rows:
+        if not header_rows and body_rows:
+            return [body_rows[0]], body_rows[1:]
+        return header_rows, body_rows
+    all_rows = _table_rows(table_el)
+    if not all_rows:
+        return [], []
+    return [all_rows[0]], all_rows[1:]

@@ -43,7 +43,7 @@ async def localize(
     """Return candidate displays. Product rules live in the prompt, not in regex."""
     window = results_window(text)
     prompt = render_extraction_prompt(
-        "evidence_localize_v1",
+        "evidence_localize_v2",
         lens=lens.as_ruler() or "(empty lens)",
         results_window=window or "(no results window)",
     )
