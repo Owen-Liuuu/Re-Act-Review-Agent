@@ -102,4 +102,4 @@ def _backend_line(event: StepEvent) -> str:
         parts.append("reasoning_tokens: None")
     else:
         parts.append(f"reasoning_tokens: {event.backend_reasoning_tokens}")
-    return "  " + " 路 ".join(parts)
+    return "  " + " · ".join(parts)
