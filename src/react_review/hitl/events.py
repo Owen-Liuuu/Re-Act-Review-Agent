@@ -83,6 +83,10 @@ class StepEvent(BaseModel):
     decision: str = ""
     started_at: datetime = Field(default_factory=datetime.now)
     elapsed_ms: int = 0
+    backend_profile: str = ""
+    backend_model_id: str = ""
+    backend_reasoning: str = ""
+    backend_reasoning_tokens: int | None = None
 
     @property
     def slug(self) -> str:

@@ -17,7 +17,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from react_review.core.config import load_config
+from react_review.core.config import apply_profile_all, load_config
 from react_review.core.logging import setup_logging
 
 
@@ -233,6 +233,9 @@ def run_parser() -> argparse.ArgumentParser:
     ap.add_argument("--semantic-cache", type=Path, default=None,
                     help="file of recorded judgements to reuse and extend "
                          "(default: <out>/<run_id>/semantic_cache.json)")
+    ap.add_argument("--profile-all", default="", metavar="NAME",
+                    help="route every LLM step through this backend_profiles "
+                         "entry (for all-judge vs all-transcribe A/B)")
     return ap
 
 
@@ -271,6 +274,8 @@ def _run_main(argv: list[str] | None = None, *, dependencies=None) -> None:
         pass
 
     config = load_config(args.config)
+    if getattr(args, "profile_all", ""):
+        config = apply_profile_all(config, args.profile_all)
     setup_logging(log_file=config.paths.log_file)
     # The model and the paper supply are the only things this entry point
     # reaches outside itself for, and the only things a test may substitute.
@@ -331,7 +336,10 @@ def _run_main(argv: list[str] | None = None, *, dependencies=None) -> None:
     # Created before the FIRST model call of the run, not before the extraction.
     telemetry = RunTelemetry()
     stages = ProductionStages.of(contract)
-    backends = ProductionBackends(backend, telemetry, stages)
+    from react_review.llm.factory import create_vision_backend
+    backends = ProductionBackends(
+        backend, telemetry, stages, config=config,
+        vision_raw=create_vision_backend(config))
 
     project_root = Path(__file__).resolve().parents[2]
     seed = project_root / "configs" / "knowledge.seed.json"
@@ -341,15 +349,16 @@ def _run_main(argv: list[str] | None = None, *, dependencies=None) -> None:
         checklist = Checklist.from_yaml(
             args.checklist or project_root / "configs" / "checklists" / "default.yaml")
     # audit mode: KB is read-only — candidates become proposals, not KB writes.
-    resolver = FieldResolver(kb, backend=backends.parsing, write_back=False)
+    resolver = FieldResolver(kb, backend=backends.field_resolution, write_back=False)
     review_parser = ReviewParser(
-        backends.parsing, resolver, reporter=reporter,
+        backends.review_lens, resolver, reporter=reporter,
         keep_tables=_id_set(args.tables), drop_tables=_id_set(args.drop_tables),
         checklist=checklist,
         table_capture_prompt_profile=(
             contract.table_capture_prompt_profile or "table_capture_v3"),
         alt_backend=_alt_backend(config, telemetry, stages.parsing),
-        vision_backend=_vision_backend(config, telemetry, stages.parsing),
+        vision_backend=backends.forest_ocr_vision,
+        step_backends=backends,
     )
 
     # Every way this run can end goes through one object, so all four leave the

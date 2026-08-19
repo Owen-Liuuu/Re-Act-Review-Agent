@@ -242,6 +242,7 @@ class ReviewParser:
         checklist: Checklist | None = None,
         table_capture_prompt_profile: str = DEFAULT_TABLE_CAPTURE_PROFILE,
         vision_backend: LLMBackend | None = None,
+        step_backends=None,
     ) -> None:
         self._backend = backend
         self._resolver = resolver          # the parser holds NO domain knowledge itself
@@ -252,8 +253,10 @@ class ReviewParser:
         self._keep_tables = keep_tables
         self._drop_tables = drop_tables
         self._checklist = checklist
+        self._steps = step_backends
         self._capturer = TableCapturer(
-            backend, alt_backend=alt_backend,
+            self._slot("table_capture"),
+            alt_backend=alt_backend,
             prompt_profile=table_capture_prompt_profile)
         # Alias file only RE-KEYS a discovered cohort (benchmark compatibility);
         # it never introduces one, so a new domain stays domain-neutral.
@@ -262,6 +265,12 @@ class ReviewParser:
         self._alt_backend = alt_backend
         self._table_capture_prompt_profile = table_capture_prompt_profile
         self._vision = vision_backend
+
+    def _slot(self, name: str) -> LLMBackend:
+        if self._steps is None:
+            return self._backend
+        got = getattr(self._steps, name, None)
+        return got if got is not None else self._backend
 
     async def parse(
         self, pdf_path: Path | str, *, research_context: str = ""
@@ -301,6 +310,7 @@ class ReviewParser:
                 prompt_profile=self._table_capture_prompt_profile,
                 keep_tables=self._keep_tables, drop_tables=self._drop_tables,
                 vision_backend=self._vision,
+                step_backends=self._steps,
             ).run(full_text, pdf_path=pdf_path, text_window=text,
                   chars_total=len(full_text), chars_used=len(text),
                   truncated=truncated)
@@ -554,7 +564,7 @@ class ReviewParser:
             data = await self._call(_UNPIVOT.format(
                 table_id=table.table_id, caption=table.caption or "(no caption)",
                 columns=columns, row_axis=row_axis, rows=payload,
-            ))
+            ), slot="unpivot")
             for r in data.get("rows", []):
                 if not isinstance(r, dict):
                     continue
@@ -575,10 +585,11 @@ class ReviewParser:
                 out.append(r)
         return out
 
-    async def _call(self, prompt: str) -> dict[str, Any]:
+    async def _call(self, prompt: str, *, slot: str = "") -> dict[str, Any]:
+        backend = self._slot(slot) if slot else self._backend
         try:
-            raw = await self._backend.complete(prompt)
-            return parse_llm_response(raw, self._backend.model_id)
+            raw = await backend.complete(prompt)
+            return parse_llm_response(raw, backend.model_id)
         except Exception as exc:
             logger.warning("review_parse_stage_failed", error=str(exc)[:160])
             return {}
@@ -591,7 +602,7 @@ class ReviewParser:
         """
         if not refs_text.strip():
             return []
-        data = await self._call(_STAGE_REFS.format(refs=refs_text))
+        data = await self._call(_STAGE_REFS.format(refs=refs_text), slot="references")
         studies: list[ParsedStudy] = []
         for r in data.get("studies", []):
             if not isinstance(r, dict):

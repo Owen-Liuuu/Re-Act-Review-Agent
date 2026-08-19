@@ -40,6 +40,17 @@ def _image_data_url(blob: bytes) -> str:
     return f"data:{mime};base64,{base64.standard_b64encode(blob).decode('ascii')}"
 
 
+def _reasoning_tokens(usage: dict | None) -> int | None:
+    """Read reasoning token count without mixing it into the answer text."""
+    if not isinstance(usage, dict):
+        return None
+    details = usage.get("completion_tokens_details")
+    if isinstance(details, dict) and isinstance(details.get("reasoning_tokens"), int):
+        return details["reasoning_tokens"]
+    value = usage.get("reasoning_tokens")
+    return value if isinstance(value, int) else None
+
+
 class OpenAIBackend(LLMBackend):
     """LLM backend for any OpenAI-compatible endpoint.
 
@@ -61,6 +72,8 @@ class OpenAIBackend(LLMBackend):
             raise LLMError("OpenAI backend requires an api_key in config.")
         self._base_url = (settings.base_url or _DEFAULT_BASE).rstrip("/")
         self._model = settings.model or "gpt-4o-mini"
+        self.last_usage: dict | None = None
+        self.last_reasoning_tokens: int | None = None
 
     @property
     def model_id(self) -> str:
@@ -103,6 +116,8 @@ class OpenAIBackend(LLMBackend):
         # Provider-specific extras (e.g. GLM {"thinking": {"type": "disabled"}}).
         if self._settings.extra_body:
             payload.update(self._settings.extra_body)
+        from react_review.llm.reasoning import current_reasoning_patch
+        payload.update(current_reasoning_patch())
         return payload
 
     async def complete(self, prompt: str, *, seed: int = 42) -> str:
@@ -151,6 +166,8 @@ class OpenAIBackend(LLMBackend):
 
     async def _post_chat(self, payload: dict) -> str:
         """POST chat/completions with the shared 429 / network retry loop."""
+        self.last_usage = None
+        self.last_reasoning_tokens = None
         url = f"{self._base_url}/chat/completions"
         headers = {
             "Authorization": f"Bearer {self._settings.api_key}",
@@ -214,7 +231,11 @@ class OpenAIBackend(LLMBackend):
             if not choices:
                 raise LLMError(f"OpenAI returned no choices: {data}")
 
-            text = choices[0].get("message", {}).get("content", "")
+            self.last_usage = data.get("usage") if isinstance(data.get("usage"), dict) else None
+            self.last_reasoning_tokens = _reasoning_tokens(self.last_usage)
+            message = choices[0].get("message") or {}
+            # F5: reasoning_content stays out of the answer body.
+            text = message.get("content") or ""
             finish_reason = choices[0].get("finish_reason", "")
             logger.info(
                 "openai_response",

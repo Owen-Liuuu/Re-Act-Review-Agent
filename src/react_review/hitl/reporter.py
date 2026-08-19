@@ -20,6 +20,7 @@ from react_review.hitl.events import StepEvent, StepStage, SubjectKind
 from react_review.hitl.gate import AutoContinue, CheckpointGate, Decision
 from react_review.hitl.journal import NullJournal, RunJournal
 from react_review.hitl.policy import Mode
+from react_review.llm.reasoning import take_backend_trace
 
 
 class StepReporter:
@@ -67,6 +68,14 @@ class StepReporter:
             warnings=warnings or [], offers=offers or [], selectable=selectable,
             elapsed_ms=int((time.monotonic() - started) * 1000) if started else 0,
         )
+        trace = take_backend_trace()
+        if trace:
+            event.backend_profile = str(trace.get("profile") or "")
+            event.backend_model_id = str(trace.get("model_id") or "")
+            event.backend_reasoning = str(trace.get("reasoning") or "")
+            tokens = trace.get("reasoning_tokens")
+            event.backend_reasoning_tokens = (
+                tokens if isinstance(tokens, int) else None)
         self.last_event = event
         self.journal.emit(event, sidecars=sidecars)      # disk first — survives Ctrl-C
         decision = await self.gate.check(event, force_gate=force_gate)

@@ -47,6 +47,7 @@ class ReviewExtraction:
         drop_tables: set[str] | None = None,
         forest_ocr=None,
         vision_backend: LLMBackend | None = None,
+        step_backends=None,
     ) -> None:
         self._backend = backend
         self._reporter = reporter or StepReporter()
@@ -54,9 +55,22 @@ class ReviewExtraction:
         self._drop = drop_tables
         self._forest_ocr = forest_ocr
         self._vision = vision_backend
+        self._steps = step_backends
         self._capturer = TableCapturer(
-            backend, alt_backend=alt_backend, prompt_profile=prompt_profile)
+            self._slot("table_capture"), alt_backend=alt_backend,
+            prompt_profile=prompt_profile)
         self._alt = alt_backend
+
+    def _slot(self, name: str) -> LLMBackend:
+        if name == "forest_ocr_vision":
+            if self._steps is None:
+                return self._vision
+            got = getattr(self._steps, name, None)
+            return got if got is not None else self._vision
+        if self._steps is None:
+            return self._backend
+        got = getattr(self._steps, name, None)
+        return got if got is not None else self._backend
 
     async def run(
         self,
@@ -74,7 +88,7 @@ class ReviewExtraction:
 
         started = time.monotonic()
         seed = 42
-        lens_backend = self._backend
+        lens_backend = self._slot("review_lens")
         while True:
             lens = await read_lens(lens_backend, full_text, seed=seed)
             self._reporter.progress("review_lens", started=started)
@@ -105,7 +119,7 @@ class ReviewExtraction:
             break
 
         started = time.monotonic()
-        hits = await localize(self._backend, lens, full_text)
+        hits = await localize(self._slot("evidence_localize"), lens, full_text)
         self._reporter.progress("evidence_localize", started=started)
         hits = await self._gate_hits(hits, subject, kind, full_text, started=started)
 
@@ -160,7 +174,7 @@ class ReviewExtraction:
             dropped_reason=table_set.dropped_reason,
         )
         started = time.monotonic()
-        labels = await label_origins(self._backend, lens, combined.tables)
+        labels = await label_origins(self._slot("claim_origin"), lens, combined.tables)
         self._reporter.progress("claim_origin", 1, 1, started=started)
         combined.origin_labels = labels
         dropped = dropped_notes(labels)
@@ -233,7 +247,9 @@ class ReviewExtraction:
         tool = self._forest_ocr
         if tool is None:
             from react_review.tools.forest_ocr import ForestOcrTool
-            tool = ForestOcrTool(self._backend, vision_backend=self._vision)
+            tool = ForestOcrTool(
+                self._slot("forest_ocr_text"),
+                vision_backend=self._slot("forest_ocr_vision"))
         tables: list[CapturedTable] = []
         for ordinal, hit in enumerate(hits):
             started = time.monotonic()

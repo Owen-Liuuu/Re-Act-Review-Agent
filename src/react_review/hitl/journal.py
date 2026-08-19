@@ -18,6 +18,17 @@ from pathlib import Path
 from react_review.hitl.events import StepEvent
 
 
+def _event_payload(event: StepEvent) -> dict:
+    """Dump a step; omit unused backend-trace keys so unconfigured journals stay identical."""
+    data = event.model_dump(mode="json")
+    for key in ("backend_profile", "backend_model_id", "backend_reasoning"):
+        if not data.get(key):
+            data.pop(key, None)
+    if data.get("backend_reasoning_tokens") is None:
+        data.pop("backend_reasoning_tokens", None)
+    return data
+
+
 class RunJournal:
     """Append-only record of a run's steps."""
 
@@ -40,7 +51,7 @@ class RunJournal:
         self._steps.mkdir(parents=True, exist_ok=True)
         path = self._steps / f"{event.slug}.json"
         path.write_text(
-            json.dumps(event.model_dump(mode="json"), indent=2, ensure_ascii=False),
+            json.dumps(_event_payload(event), indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
         for name, body in (sidecars or {}).items():
@@ -58,7 +69,7 @@ class RunJournal:
         path = self._steps / f"{event.slug}.json"
         if path.is_file():
             path.write_text(
-                json.dumps(event.model_dump(mode="json"), indent=2, ensure_ascii=False),
+                json.dumps(_event_payload(event), indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
 
