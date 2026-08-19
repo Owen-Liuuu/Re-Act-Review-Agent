@@ -28,6 +28,23 @@ from react_review.schemas.telemetry import (
 )
 
 
+# Which of the four telemetry buckets a routed step counts toward.
+_SLOT_BUCKET = {
+    "review_lens": "parsing",
+    "evidence_localize": "parsing",
+    "table_capture": "parsing",
+    "forest_ocr_vision": "parsing",
+    "forest_ocr_text": "parsing",
+    "claim_origin": "parsing",
+    "unpivot": "parsing",
+    "references": "parsing",
+    "field_resolution": "parsing",
+    "extract_locate": "single",
+    "extract_transcribe": "single",
+    "semantic_compare": "semantic",
+}
+
+
 @dataclass
 class ProductionStages:
     """Which stage label each backend view carries.
@@ -53,27 +70,105 @@ class ProductionStages:
 
 @dataclass
 class ProductionBackends:
-    """One backend, seen once per stage.
+    """One default backend, plus per-step slots that may wrap a different gear.
 
     Parsing is its own view because it is not extraction: the review parser and
     the field resolver call the model before a single source paper is opened,
     and folding those into the extraction bucket would attribute the cost of
     reading the REVIEW to the cost of reading the papers.
+
+    Unconfigured (no ``backend_profiles`` / ``routing``) every slot wraps
+    ``raw`` — the four telemetry views stay the same objects' counting story.
     """
 
     raw: Any
     telemetry: RunTelemetry
     stages: ProductionStages
+    config: Any = None
+    vision_raw: Any = None
     parsing: Any = None
     single: Any = None
     batch: Any = None
     semantic: Any = None
+    review_lens: Any = None
+    evidence_localize: Any = None
+    table_capture: Any = None
+    forest_ocr_vision: Any = None
+    forest_ocr_text: Any = None
+    claim_origin: Any = None
+    unpivot: Any = None
+    references: Any = None
+    field_resolution: Any = None
+    extract_locate: Any = None
+    extract_transcribe: Any = None
+    semantic_compare: Any = None
 
     def __post_init__(self) -> None:
         self.parsing = MeteredBackend(self.raw, self.telemetry, self.stages.parsing)
-        self.single = MeteredBackend(self.raw, self.telemetry, self.stages.single)
-        self.batch = MeteredBackend(self.raw, self.telemetry, self.stages.batch)
-        self.semantic = MeteredBackend(self.raw, self.telemetry, self.stages.semantic)
+        extract_raw = self._raw_for("extract_transcribe")
+        self.single = MeteredBackend(
+            extract_raw, self.telemetry, self.stages.single,
+            **self._meter_kw("extract_transcribe"))
+        self.batch = MeteredBackend(
+            extract_raw, self.telemetry, self.stages.batch,
+            **self._meter_kw("extract_transcribe"))
+        semantic_raw = self._raw_for("semantic_compare")
+        self.semantic = MeteredBackend(
+            semantic_raw, self.telemetry, self.stages.semantic,
+            **self._meter_kw("semantic_compare"))
+        for name, bucket in _SLOT_BUCKET.items():
+            if name == "forest_ocr_vision":
+                inner = self._vision_for()
+                wrapped = (MeteredBackend(
+                    inner, self.telemetry, getattr(self.stages, bucket),
+                    **self._meter_kw(name)) if inner is not None else None)
+            elif name == "extract_transcribe":
+                wrapped = self.single
+            elif name == "semantic_compare":
+                wrapped = self.semantic
+            else:
+                wrapped = MeteredBackend(
+                    self._raw_for(name), self.telemetry,
+                    getattr(self.stages, bucket), **self._meter_kw(name))
+            setattr(self, name, wrapped)
+
+    def _routing(self) -> dict[str, str]:
+        config = self.config
+        if config is None:
+            return {}
+        return dict(getattr(config, "routing", None) or {})
+
+    def _raw_for(self, step: str):
+        name = self._routing().get(step)
+        if not name or self.config is None:
+            return self.raw
+        cache = getattr(self, "_profile_raws", None)
+        if cache is None:
+            cache = {}
+            self._profile_raws = cache
+        if name not in cache:
+            from react_review.core.config import settings_from_profile
+            from react_review.llm.factory import create_backend_from_settings
+            cache[name] = create_backend_from_settings(
+                settings_from_profile(self.config, name))
+        return cache[name]
+
+    def _vision_for(self):
+        name = self._routing().get("forest_ocr_vision")
+        if name and self.config is not None:
+            return self._raw_for("forest_ocr_vision")
+        return self.vision_raw
+
+    def _meter_kw(self, step: str) -> dict:
+        name = self._routing().get(step, "")
+        if not name or self.config is None:
+            return {}
+        profile = self.config.backend_profiles[name]
+        return {
+            "profile": name,
+            "reasoning": profile.reasoning,
+            "provider": profile.provider,
+        }
 
 
 def aggregation_runtime(contract):

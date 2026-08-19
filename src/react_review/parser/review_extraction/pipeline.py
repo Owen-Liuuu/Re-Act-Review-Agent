@@ -39,6 +39,7 @@ class ReviewExtraction:
         drop_tables: set[str] | None = None,
         forest_ocr=None,
         vision_backend: LLMBackend | None = None,
+        step_backends=None,
     ) -> None:
         self._backend = backend
         self._reporter = reporter or StepReporter()
@@ -46,8 +47,21 @@ class ReviewExtraction:
         self._drop = drop_tables
         self._forest_ocr = forest_ocr
         self._vision = vision_backend
+        self._steps = step_backends
         self._capturer = TableCapturer(
-            backend, alt_backend=alt_backend, prompt_profile=prompt_profile)
+            self._slot("table_capture"), alt_backend=alt_backend,
+            prompt_profile=prompt_profile)
+
+    def _slot(self, name: str) -> LLMBackend:
+        if name == "forest_ocr_vision":
+            if self._steps is None:
+                return self._vision
+            got = getattr(self._steps, name, None)
+            return got if got is not None else self._vision
+        if self._steps is None:
+            return self._backend
+        got = getattr(self._steps, name, None)
+        return got if got is not None else self._backend
 
     async def run(
         self,
@@ -60,7 +74,7 @@ class ReviewExtraction:
         subject = path
         kind = SubjectKind.REVIEW_PDF if path else SubjectKind.NONE
 
-        lens = await read_lens(self._backend, full_text)
+        lens = await read_lens(self._slot("review_lens"), full_text)
         await self._reporter.step_or_stop(
             StepStage.REVIEW_LENS,
             title="Review lens compressed",
@@ -70,7 +84,7 @@ class ReviewExtraction:
             warnings=list(lens.difficulties),
         )
 
-        hits = await localize(self._backend, lens, full_text)
+        hits = await localize(self._slot("evidence_localize"), lens, full_text)
         hits = await self._gate_hits(hits, subject, kind, full_text)
 
         tables_sel = [
@@ -99,7 +113,7 @@ class ReviewExtraction:
             dropped=list(table_set.dropped),
             dropped_reason=table_set.dropped_reason,
         )
-        labels = await label_origins(self._backend, lens, combined.tables)
+        labels = await label_origins(self._slot("claim_origin"), lens, combined.tables)
         combined.origin_labels = labels
         dropped = dropped_notes(labels)
         await self._reporter.step_or_stop(
@@ -156,7 +170,9 @@ class ReviewExtraction:
         tool = self._forest_ocr
         if tool is None:
             from react_review.tools.forest_ocr import ForestOcrTool
-            tool = ForestOcrTool(self._backend, vision_backend=self._vision)
+            tool = ForestOcrTool(
+                self._slot("forest_ocr_text"),
+                vision_backend=self._slot("forest_ocr_vision"))
         tables: list[CapturedTable] = []
         for ordinal, hit in enumerate(hits):
             try:

@@ -51,6 +51,9 @@ def render_event(event: StepEvent, *, width: int = 78, stream=None) -> str:
                                 width, stream)]
     if event.subject:
         lines.append(f"  file: {event.subject}")
+    backend = _backend_line(event)
+    if backend:
+        lines.append(backend)
     for block in event.render_blocks:
         lines.append("")
         lines.append(block)
@@ -83,3 +86,20 @@ def render_selectable(event: StepEvent) -> str:
         label = item.get("label") or item.get("id") or item.get("table_id") or f"item {i}"
         lines.append(f"    [{i}] {label}")
     return "\n".join(lines)
+
+
+def _backend_line(event: StepEvent) -> str:
+    if not event.backend_profile and event.backend_reasoning_tokens is None:
+        return ""
+    parts = []
+    if event.backend_profile:
+        parts.append(f"profile: {event.backend_profile}")
+    if event.backend_model_id:
+        parts.append(f"model_id: {event.backend_model_id}")
+    if event.backend_reasoning:
+        parts.append(f"reasoning: {event.backend_reasoning}")
+    if event.backend_reasoning_tokens is None:
+        parts.append("reasoning_tokens: None")
+    else:
+        parts.append(f"reasoning_tokens: {event.backend_reasoning_tokens}")
+    return "  " + " 路 ".join(parts)
