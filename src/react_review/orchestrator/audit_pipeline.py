@@ -38,6 +38,7 @@ from react_review.schemas.resolution import FieldResolutionRecord
 from react_review.schemas.table import CapturedTableSet
 from react_review.steps.data_extraction.schemas import DocumentScope
 from react_review.store.evidence_package import EvidencePackageStore
+from react_review.tools.batch_group import group_claims
 
 if TYPE_CHECKING:  # avoid an agents <-> orchestrator import cycle at runtime
     from react_review.agents.collector import Collector
@@ -127,7 +128,9 @@ class AuditPipeline:
         batch_started = time.monotonic()
 
         for i, (study_id, claims) in enumerate(groups, start=1):
+            study_started = time.monotonic()
             reference = reference_for(study_id)
+            n_groups = len(list(group_claims(claims)))
             # Opened once for the whole study: every claim about this paper is
             # then answered from the same retrieval, and the cost of an audit
             # scales with papers rather than with cells.
@@ -190,16 +193,19 @@ class AuditPipeline:
                 "warnings": warnings,
             })
             # Shown in full, not gated — see StepStage.COLLECT_STUDY.
+            # Papers stay serial so each study block is one inspectable unit.
             await self._reporter.step_or_stop(
                 StepStage.COLLECT_STUDY,
                 title=self._collect_title(study_id, collected, source),
                 subject=subject,
                 subject_kind=SubjectKind.SOURCE_PDF,
                 payload={"study_id": study_id,
+                         "n_groups": n_groups,
                          "claims": [i.model_dump(mode="json") for i in claims],
                          "evidence": [s.model_dump(mode="json") for s in collected]},
                 render_blocks=[self._render_study(study_id, claims, collected)],
                 warnings=warnings,
+                started=study_started,
             )
             if i % 10 == 0 or i == n_papers:
                 self._reporter.progress(
@@ -216,20 +222,24 @@ class AuditPipeline:
             warnings=[w for p in per_study for w in p["warnings"]],
         )
 
+        audit_started = time.monotonic()
         report = await self._auditor.run(review_items, source_items, run_id=run_id,
                                          research_context=research_context)
         await self._reporter.step_or_stop(
             StepStage.AUDIT_SUMMARY, title="Audit result",
             payload=report.model_dump(mode="json"),
             render_blocks=[report.summary],
+            started=audit_started,
         )
 
+        judge_started = time.monotonic()
         final = self._judge.adjudicate(
             report, source_items, review_items, checklist=checklist)
         await self._reporter.step_or_stop(
             StepStage.JUDGE_FLAGS, title="Flagged for human review",
             payload=final.model_dump(mode="json"),
             render_blocks=[self._render_flags(final)],
+            started=judge_started,
         )
 
         package = EvidencePackage(

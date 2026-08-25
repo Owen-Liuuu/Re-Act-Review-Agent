@@ -117,6 +117,25 @@ def test_a_transport_failure_is_not_reported_as_a_formatting_one():
     assert record.attempts[0].failure == TRANSPORT
 
 
+def test_http_402_aborts_without_retrying():
+    from react_review.core.exceptions import LLMError, PermanentProviderError
+
+    backend = _Backend(LLMError("OpenAI API error (HTTP 402): Insufficient Balance"))
+    with pytest.raises(PermanentProviderError, match="HTTP 402"):
+        _read(ExtractSourceBatchTool(backend, max_attempts=3))
+    assert backend.calls == 1
+
+
+def test_http_429_is_still_retried():
+    from react_review.core.exceptions import LLMError, PermanentProviderError
+
+    backend = _Backend(LLMError("OpenAI API error (HTTP 429): Too Many Requests"))
+    record = _read(ExtractSourceBatchTool(backend, max_attempts=3))
+    assert backend.calls == 3
+    assert record.failure == TRANSPORT
+    assert not isinstance(record, PermanentProviderError)
+
+
 def test_json_without_the_top_level_shape_is_retried():
     tool = ExtractSourceBatchTool(_Backend({"nope": 1}, GOOD))
     record = _read(tool)

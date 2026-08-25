@@ -365,3 +365,66 @@ async def test_lens_retry_alt_without_fallback_does_not_silently_accept():
     assert "retry_alt" not in gate.seen[0].offers
     assert len(gate.seen) == 1
 
+
+class OriginBoomQueue(RecordingQueue):
+    async def complete(self, prompt: str, *, seed: int = 42) -> str:
+        if "column paths:" in prompt:
+            raise RuntimeError("origin boom for test")
+        return await super().complete(prompt, seed=seed)
+
+
+class OriginUnparseableQueue(RecordingQueue):
+    async def complete(self, prompt: str, *, seed: int = 42) -> str:
+        if "column paths:" in prompt:
+            return json.dumps({"labels": "not a list"})
+        return await super().complete(prompt, seed=seed)
+
+
+def _origin_reporter(tmp_path):
+    from react_review.hitl import CheckpointPolicy, ConsoleCheckpoint, Mode, RunJournal
+
+    journal = RunJournal(tmp_path / "run")
+    gate = ConsoleCheckpoint(CheckpointPolicy(default=Mode.SHOW))
+    return StepReporter("tamper", gate=gate, journal=journal), journal
+
+
+def _claim_origin_artifact(journal) -> dict:
+    steps = journal.run_dir / "steps"
+    paths = sorted(steps.glob("*_claim_origin.json"))
+    assert paths, "claim_origin journal artifact missing"
+    return json.loads(paths[-1].read_text(encoding="utf-8"))
+
+
+@pytest.mark.asyncio
+async def test_origin_boom_warns_in_journal_and_terminal(tmp_path, capsys):
+    reporter, journal = _origin_reporter(tmp_path)
+    backend = OriginBoomQueue(_backend()._responses)
+    result = await ReviewExtraction(
+        backend, reporter=reporter, forest_ocr=FakeForest(),
+    ).run(DOC, text_window=DOC)
+    assert result.origin_labels == []
+    artifact = _claim_origin_artifact(journal)
+    blob = " ".join(artifact["warnings"])
+    assert "table_1" in blob or "fig_3_3_1" in blob
+    assert "origin boom for test" in blob
+    printed = capsys.readouterr().out
+    assert "origin boom for test" in printed
+    assert "warnings:" in printed
+
+
+@pytest.mark.asyncio
+async def test_origin_unparseable_warns_in_journal_and_terminal(tmp_path, capsys):
+    reporter, journal = _origin_reporter(tmp_path)
+    backend = OriginUnparseableQueue(_backend()._responses)
+    result = await ReviewExtraction(
+        backend, reporter=reporter, forest_ocr=FakeForest(),
+    ).run(DOC, text_window=DOC)
+    assert result.origin_labels == []
+    artifact = _claim_origin_artifact(journal)
+    blob = " ".join(artifact["warnings"])
+    assert "unparseable" in blob
+    assert "table_1" in blob or "fig_3_3_1" in blob
+    printed = capsys.readouterr().out
+    assert "unparseable" in printed
+
+

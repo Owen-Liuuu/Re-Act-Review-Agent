@@ -21,9 +21,9 @@ from react_review.hitl.events import StepEvent
 from react_review.hitl.gate import Decision
 from react_review.hitl.policy import CheckpointPolicy, Mode
 from react_review.hitl.render import (
-    render_event,
     render_progress,
     render_prompt,
+    render_screen,
     render_selectable,
     safe_print,
 )
@@ -48,6 +48,8 @@ class ConsoleCheckpoint:
         self._allow_skip = allow_skip
         self._skip_all = False
         self._drop_undo: list[tuple[int, dict, list[str]]] = []
+        self._held: list[StepEvent] = []
+        self._held_force_gate = False
 
     def progress(
         self,
@@ -61,19 +63,35 @@ class ConsoleCheckpoint:
         safe_print(render_progress(
             label, index, total, caption=caption, elapsed_s=elapsed_s))
 
-    async def check(self, event: StepEvent, *, force_gate: bool = False) -> Decision:
+    async def check(self, event: StepEvent, *, force_gate: bool = False,
+                    hold_display: bool = False) -> Decision:
         mode = Mode.GATE if force_gate else self._policy.mode_for(event.stage)
         if mode is Mode.SILENT:
+            event.interaction = "silent"
             event.decision = Decision.CONTINUE.value
             return Decision.CONTINUE
 
-        safe_print(render_event(event))
+        if hold_display:
+            if force_gate:
+                self._held_force_gate = True
+            self._held.append(event)
+            event.interaction = "show"
+            event.decision = Decision.CONTINUE.value
+            return Decision.CONTINUE
 
-        if mode is Mode.SHOW or self._skip_all:
+        events = self._held + [event]
+        self._held = []
+        pause = bool(force_gate or self._held_force_gate or mode is Mode.GATE)
+        self._held_force_gate = False
+        safe_print(render_screen(events))
+
+        if self._skip_all or not pause:
+            event.interaction = "show"
             event.decision = Decision.CONTINUE.value
             return Decision.CONTINUE
 
         decision = await self._ask(event)
+        event.interaction = "gate"
         event.decision = decision.value
         return decision
 

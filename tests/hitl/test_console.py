@@ -252,7 +252,7 @@ def test_key_stages_gates_nine_decision_points():
     silent = {s for s in StepStage if policy.mode_for(s) is Mode.SILENT}
     assert StepStage.FIELD_RESOLUTION in show
     assert StepStage.CHECKLIST_REVIEW in show
-    assert StepStage.CHECKLIST_STUDY_COVERAGE in show
+    assert StepStage.CHECKLIST_STUDY_COVERAGE in silent
     assert StepStage.COHORT_REGISTRY in show
     assert StepStage.COLLECT_STUDY in show
     assert StepStage.REVIEW_PDF_LOADED in silent
@@ -327,3 +327,57 @@ def test_retry_offers_hide_model_2_when_unwired():
     with pytest.raises(RuntimeError, match="no alt_backend"):
         require_alt_backend(None, stage="review_table_capture")
     assert require_alt_backend("llm2", stage="review_lens") == "llm2"
+
+
+# --- how the decision was reached, not just what it was ---
+
+@pytest.mark.asyncio
+async def test_interaction_separates_a_confirmed_step_from_one_that_never_stopped():
+    """`decision` alone cannot support "a person reviewed every step".
+
+    A gated stage a human answered, a stage printed without holding, and a
+    stage written only to the journal all record `decision: continue`. The
+    claim the project makes about human oversight is only checkable if the
+    artifact also says which of the three happened.
+    """
+    policy = CheckpointPolicy.key_stages()
+    assert policy.mode_for(StepStage.AUDIT_SUMMARY) is Mode.GATE
+    assert policy.mode_for(StepStage.COHORT_REGISTRY) is Mode.SHOW
+    assert policy.mode_for(StepStage.REVIEW_PDF_LOADED) is Mode.SILENT
+
+    gated = _event(StepStage.AUDIT_SUMMARY)
+    shown = _event(StepStage.COHORT_REGISTRY)
+    silent = _event(StepStage.REVIEW_PDF_LOADED)
+
+    await _gate(["c"], policy=policy).check(gated)
+    await _gate([], policy=policy).check(shown)
+    await _gate([], policy=policy).check(silent)
+
+    # All three continued — that is exactly why `decision` is not enough.
+    assert gated.decision == shown.decision == silent.decision == "continue"
+    assert (gated.interaction, shown.interaction, silent.interaction) == (
+        "gate", "show", "silent")
+
+
+@pytest.mark.asyncio
+async def test_a_conditional_gate_is_recorded_as_a_gate_not_as_its_usual_mode():
+    """A stage that normally shows but was forced to hold must say it held.
+
+    Truncated PDF text and a review with no placeable cohort both re-gate a
+    SHOW stage. If the journal still called those `show`, the two cases the
+    exception exists for would be the two it fails to record.
+    """
+    event = _event(StepStage.COHORT_REGISTRY)
+    await _gate(["c"]).check(event, force_gate=True)
+    assert event.interaction == "gate"
+
+
+@pytest.mark.asyncio
+async def test_a_run_with_no_human_is_not_reported_as_reviewed():
+    """AutoContinue is the CI default; it must not look like a confirmation."""
+    from react_review.hitl.gate import AutoContinue
+
+    event = _event()
+    await AutoContinue().check(event)
+    assert event.decision == "continue"
+    assert event.interaction == "auto"

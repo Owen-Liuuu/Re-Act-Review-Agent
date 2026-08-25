@@ -1,6 +1,7 @@
 """Application configuration: YAML loading + Pydantic validation."""
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,12 @@ BACKEND_STEPS = (
 
 #: Providers that actually honour a ``reasoning`` knob. Others must not pretend.
 REASONING_PROVIDERS = frozenset({"openai", "glm", "zhipu", "deepseek"})
+
+# A read timeout must scale with the largest response the caller permits.  The
+# observed providers sustain 36-39 output tokens/second; 20 is the conservative
+# transport floor and the fixed allowance covers queueing and prompt prefill.
+LLM_MIN_OUTPUT_TOKENS_PER_SECOND = 20.0
+LLM_READ_TIMEOUT_OVERHEAD_SECONDS = 60.0
 
 
 class LLMSettings(BaseModel):
@@ -70,6 +77,14 @@ class LLMSettings(BaseModel):
     # ``retry_base_delay * 2 ** N`` (so 2.0 → 2s / 4s / 8s / 16s / 32s).
     retry_base_delay: float = 2.0
 
+    @property
+    def read_timeout_seconds(self) -> int:
+        """Derived read deadline for one generation, rounded up to a second."""
+        return math.ceil(
+            max(1, self.max_tokens) / LLM_MIN_OUTPUT_TOKENS_PER_SECOND
+            + LLM_READ_TIMEOUT_OVERHEAD_SECONDS
+        )
+
 
 class PubMedSettings(BaseModel):
     """Settings for PubMed E-utilities API."""
@@ -108,6 +123,9 @@ class PathSettings(BaseModel):
     data_dir: Path = Path("./data")
     output_dir: Path = Path("./output")
     log_file: Path = Path("./logs/react_review.log")
+    # Basename under the run directory (next to journal.ndjson). Human
+    # checkpoint transcript, not the structlog file above.
+    checkpoint_log: str = "checkpoints.log"
 
 
 class BackendProfile(BaseModel):

@@ -57,7 +57,6 @@ class LLMBackend(ABC):
         self._max_concurrency: int = max(1, max_concurrency)
         self._max_retries: int = max(0, max_retries)
         self._retry_base_delay: float = max(0.0, retry_base_delay)
-
     @property
     def max_concurrency(self) -> int:
         """The configured concurrency cap for this backend instance."""
@@ -165,12 +164,13 @@ class LLMBackend(ABC):
         delay: float,
         detail: str = "",
         exhausted: bool = False,
+        retry_limit: int | None = None,
     ) -> None:
         """Log a network-error backoff. Mid-retry is debug; exhaustion is the warning."""
         payload = dict(
             model=self.model_id,
             attempt=attempt + 1,
-            max_retries=self._max_retries,
+            max_retries=(self._max_retries if retry_limit is None else retry_limit),
             delay_s=round(delay, 2),
             detail=(detail or "")[:160],
         )

@@ -189,7 +189,14 @@ def _run(workspace, tmp_path, backend, *, run_id="offline1", gate=None,
          argv_extra=()):
     pdf, studies = workspace
     out = tmp_path / "runs"
+    # Isolated from config.local.yaml: that file may route steps to a live
+    # profile, and this suite substitutes the model. Empty routing keeps every
+    # slot on the injected backend.
+    config = tmp_path / "offline.yaml"
+    config.write_text("llm:\n  provider: mock\n  model: scripted\n",
+                      encoding="utf-8")
     _run_main([
+        "--config", str(config),
         "--pdf", str(pdf), "--studies", str(studies), "--out", str(out),
         "--run-id", run_id, "--non-interactive", "--checkpoints", "none",
         "--semantic", "off", "--no-checklist", *argv_extra,
@@ -316,6 +323,36 @@ def test_a_model_that_fails_throughout_ends_the_run_as_an_error(
     assert "ModelUnavailable" in body["stop_reason"]
     # Nothing was published as a finished audit.
     assert not (out / "broken1" / "package.json").is_file()
+
+
+def test_http_402_during_extraction_stops_the_run(workspace, tmp_path):
+    from react_review.core.exceptions import LLMError
+
+    class _Paywall(ScriptedBackend):
+        async def complete(self, prompt: str, *, seed: int = 42) -> str:
+            kind = self._kind(prompt)
+            if kind in {"batch_extraction", "single_extraction"}:
+                self.asked.append(kind)
+                raise LLMError(
+                    "OpenAI API error (HTTP 402): Insufficient Balance")
+            return await super().complete(prompt, seed=seed)
+
+    backend = _Paywall()
+    out = tmp_path / "runs"
+    with pytest.raises(SystemExit) as exit_code:
+        _run(workspace, tmp_path, backend, run_id="paywall1")
+    assert exit_code.value.code == 3
+    extracted = [k for k in backend.asked
+                 if k in {"batch_extraction", "single_extraction"}]
+    assert extracted, "extraction never ran"
+    assert len(extracted) <= 2
+    body = json.loads((out / "paywall1" / "package.partial.json")
+                      .read_text(encoding="utf-8-sig"))
+    assert body["status"] == "error"
+    assert "PermanentProviderError" in body["stop_reason"]
+    assert "HTTP 402" in body["stop_reason"]
+    assert "not stated" not in body["stop_reason"].lower()
+    assert not (out / "paywall1" / "package.json").is_file()
 
 
 def test_a_review_with_no_table_still_completes_when_the_model_answered(

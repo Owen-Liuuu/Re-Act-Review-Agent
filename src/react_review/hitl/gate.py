@@ -50,14 +50,17 @@ def require_alt_backend(alt_backend, *, stage: str):
 class CheckpointGate(Protocol):
     """Decide whether a run may proceed past ``event``."""
 
-    async def check(self, event: StepEvent, *, force_gate: bool = False) -> Decision:
+    async def check(self, event: StepEvent, *, force_gate: bool = False,
+                    hold_display: bool = False) -> Decision:
         ...
 
 
 class AutoContinue:
     """Never blocks — the library/CI default. Records the decision on the event."""
 
-    async def check(self, event: StepEvent, *, force_gate: bool = False) -> Decision:
+    async def check(self, event: StepEvent, *, force_gate: bool = False,
+                    hold_display: bool = False) -> Decision:
+        event.interaction = "auto"
         event.decision = Decision.CONTINUE.value
         return Decision.CONTINUE
 
@@ -69,8 +72,10 @@ class ScriptedCheckpoint:
         self._queue = list(decisions or [])
         self.seen: list[StepEvent] = []
 
-    async def check(self, event: StepEvent, *, force_gate: bool = False) -> Decision:
+    async def check(self, event: StepEvent, *, force_gate: bool = False,
+                    hold_display: bool = False) -> Decision:
         self.seen.append(event)
         decision = self._queue.pop(0) if self._queue else Decision.CONTINUE
+        event.interaction = "auto"
         event.decision = decision.value
         return decision

@@ -6,6 +6,7 @@ import json
 import structlog
 
 from react_review.llm.base import LLMBackend, parse_llm_response
+from react_review.observe import trace
 from react_review.parser.review_extraction.prompts import render_extraction_prompt
 from react_review.parser.review_extraction.schemas import OriginLabel, ReviewLens
 from react_review.schemas.table import CapturedTable
@@ -144,6 +145,7 @@ def _pooled_rows(table: CapturedTable) -> str:
 
 async def label_table(
     backend: LLMBackend, lens: ReviewLens, table: CapturedTable,
+    *, notes: list[str] | None = None,
 ) -> list[OriginLabel]:
     prompt = render_extraction_prompt(
         "claim_origin_v1",
@@ -157,10 +159,23 @@ async def label_table(
     )
     try:
         raw = parse_llm_response(await backend.complete(prompt), backend.model_id)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        trace(
+            notes, "claim_origin_call_failed",
+            error_type=type(exc).__name__,
+            message=f"claim origin call failed for {table.table_id}: {exc}"[:200],
+            table_id=table.table_id, error=str(exc)[:160],
+        )
         return []
     bodies = raw.get("labels") if isinstance(raw, dict) else None
     if not isinstance(bodies, list):
+        got = type(raw).__name__
+        trace(
+            notes, "claim_origin_unparseable_response",
+            error_type=got,
+            message=f"claim origin unparseable response for {table.table_id}: got {got}",
+            table_id=table.table_id, got=got,
+        )
         return []
     out: list[OriginLabel] = []
     for body in bodies:
@@ -172,10 +187,19 @@ async def label_table(
 
 async def label_origins(
     backend: LLMBackend, lens: ReviewLens, tables: list[CapturedTable],
+    *, notes: list[str] | None = None,
 ) -> list[OriginLabel]:
     labels: list[OriginLabel] = []
     for table in tables:
-        labels.extend(await label_table(backend, lens, table))
+        got = await label_table(backend, lens, table, notes=notes)
+        labels.extend(got)
+        if not got:
+            trace(
+                notes, "claim_origin_empty",
+                error_type="empty",
+                message=f"no origin labels for {table.table_id}",
+                table_id=table.table_id,
+            )
     return labels
 
 

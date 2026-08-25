@@ -119,9 +119,13 @@ class ReviewExtraction:
             break
 
         started = time.monotonic()
-        hits = await localize(self._slot("evidence_localize"), lens, full_text)
+        localize_notes: list[str] = []
+        hits = await localize(
+            self._slot("evidence_localize"), lens, full_text, notes=localize_notes)
         self._reporter.progress("evidence_localize", started=started)
-        hits = await self._gate_hits(hits, subject, kind, full_text, started=started)
+        hits = await self._gate_hits(
+            hits, subject, kind, full_text, started=started,
+            extra_warnings=localize_notes)
 
         window = capture_window(full_text) or text_window or full_text
         tables_sel = [
@@ -174,7 +178,9 @@ class ReviewExtraction:
             dropped_reason=table_set.dropped_reason,
         )
         started = time.monotonic()
-        labels = await label_origins(self._slot("claim_origin"), lens, combined.tables)
+        origin_notes: list[str] = []
+        labels = await label_origins(
+            self._slot("claim_origin"), lens, combined.tables, notes=origin_notes)
         self._reporter.progress("claim_origin", 1, 1, started=started)
         combined.origin_labels = labels
         dropped = dropped_notes(labels)
@@ -187,7 +193,7 @@ class ReviewExtraction:
                 "dropped_non_source": dropped,
             },
             render_blocks=[_render_origins(labels, dropped)],
-            warnings=dropped,
+            warnings=[*origin_notes, *dropped],
             started=started,
         )
 
@@ -199,10 +205,11 @@ class ReviewExtraction:
 
     async def _gate_hits(
         self, hits: list[DisplayHit], subject: str, kind: SubjectKind, text: str,
-        *, started: float | None = None,
+        *, started: float | None = None, extra_warnings: list[str] | None = None,
     ) -> list[DisplayHit]:
         hint = missed_forest_hint(text, hits)
         warnings = [hint] if hint else []
+        warnings.extend(extra_warnings or [])
         if not hits:
             warnings.append("no displays were listed from the results window")
         await self._reporter.step_or_stop(

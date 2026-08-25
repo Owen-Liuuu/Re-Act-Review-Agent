@@ -65,8 +65,6 @@ class MeteredBackend(LLMBackend):
             provider, reasoning=self._reasoning, model=model, base_url=base_url)
 
     def _publish_trace(self) -> None:
-        if not self._profile and self._reasoning is None:
-            return
         tokens = getattr(self._backend, "last_reasoning_tokens", None)
         set_backend_trace({
             "profile": self._profile,
@@ -85,15 +83,16 @@ class MeteredBackend(LLMBackend):
                 prompt=prompt, output="", failed=True,
                 seconds=time.perf_counter() - started, stage=self._stage)
             raise
+        else:
+            self._telemetry.record_call(
+                prompt=prompt, output=output or "",
+                seconds=time.perf_counter() - started,
+                usage=getattr(self._backend, "last_usage", None),
+                stage=self._stage)
+            return output
         finally:
             reset_reasoning_patch(token)
-        self._telemetry.record_call(
-            prompt=prompt, output=output or "",
-            seconds=time.perf_counter() - started,
-            usage=getattr(self._backend, "last_usage", None),
-            stage=self._stage)
-        self._publish_trace()
-        return output
+            self._publish_trace()
 
     async def complete_vision(
         self, prompt: str, images: list[bytes], *, seed: int = 42,
@@ -108,12 +107,13 @@ class MeteredBackend(LLMBackend):
                 prompt=prompt, output="", failed=True,
                 seconds=time.perf_counter() - started, stage=self._stage)
             raise
+        else:
+            self._telemetry.record_call(
+                prompt=prompt, output=output or "",
+                seconds=time.perf_counter() - started,
+                usage=getattr(self._backend, "last_usage", None),
+                stage=self._stage)
+            return output
         finally:
             reset_reasoning_patch(token)
-        self._telemetry.record_call(
-            prompt=prompt, output=output or "",
-            seconds=time.perf_counter() - started,
-            usage=getattr(self._backend, "last_usage", None),
-            stage=self._stage)
-        self._publish_trace()
-        return output
+            self._publish_trace()

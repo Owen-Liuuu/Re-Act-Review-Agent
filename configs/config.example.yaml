@@ -17,10 +17,10 @@ llm:
   provider: mock
   model: gpt-4o
   temperature: 0.1
-  max_tokens: 4096
+  max_tokens: 8192
   api_key: ""                     # leave empty for mock; set via env in real runs
   base_url: ""
-  max_concurrency: 3              # per-backend in-flight cap (asyncio.Semaphore)
+  max_concurrency: 4              # measured group cap; per-backend asyncio.Semaphore
   max_retries: 5                  # HTTP 429 / transient-network retry attempts
   retry_base_delay: 2.0           # exponential backoff base (seconds)
 
@@ -63,6 +63,25 @@ crossref:
 thresholds:
   title_similarity: 0.85
   author_match_ratio: 0.8
+
+# Transcription gear: copy the same api_key as `llm`. Only these four steps —
+# they copy text. Leave evidence_localize / claim_origin / field_resolution /
+# semantic_compare / extract_* on the default (reasoning) model.
+backend_profiles:
+  transcribe:
+    provider: openai
+    model: deepseek-v4-flash
+    base_url: "https://api.deepseek.com"
+    api_key: ""                   # same key as llm
+    reasoning: off
+    max_tokens: 8192              # explicit transport cap; do not inherit implicitly
+
+routing:
+  table_capture:   transcribe
+  forest_ocr_text: transcribe
+  claim_origin:    transcribe
+  unpivot:         transcribe
+  references:      transcribe
 
 paths:
   data_dir: ./data

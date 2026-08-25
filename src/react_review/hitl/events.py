@@ -81,6 +81,14 @@ class StepEvent(BaseModel):
     dropped: list[str] = Field(default_factory=list)
     blocking: bool = True
     decision: str = ""
+    # HOW that decision was reached. Without it the journal cannot distinguish a
+    # step a person confirmed from one that never stopped: both record
+    # ``decision: continue``, and "every step was reviewed" becomes unprovable.
+    #   gate   — the run paused and a person answered
+    #   show   — printed in full, continued on its own
+    #   silent — journal only, never printed
+    #   auto   — no human present (library/CI default, or scripted tests)
+    interaction: str = ""
     started_at: datetime = Field(default_factory=datetime.now)
     elapsed_ms: int = 0
     backend_profile: str = ""

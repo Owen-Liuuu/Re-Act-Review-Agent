@@ -691,3 +691,21 @@ def test_coverage_plan_uses_doi_pmid_not_retrieval_results():
     assert ReviewParser._ident_status(none) == "no DOI · no PMID"
     assert ReviewParser._ident_status(doi) == "DOI 10.xxxx/y · no PMID"
 
+
+def test_long_format_clips_value_so_wrap_cannot_hit_column_zero():
+    from react_review.schemas.evidence import ReviewDataItem
+
+    value = "Retrospective PSM cohort"
+    item = ReviewDataItem(
+        review_data_id="c1", study_id="capovilla_2023", group="mie",
+        field_type="design", value=value)
+    rendered = ReviewParser._render_items([item])
+    assert value not in rendered
+    assert "…" in rendered
+    assert "\nM cohort" not in rendered
+    assert item.value == value
+    clipped = ReviewParser._clip_display(value)
+    assert clipped.endswith("…")
+    assert len(clipped) == 24
+
+

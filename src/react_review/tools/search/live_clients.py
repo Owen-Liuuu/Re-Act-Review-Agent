@@ -14,9 +14,9 @@ import re
 import time
 
 import httpx
-import structlog
 
 from react_review.normalize.doi import normalize_doi
+from react_review.observe import note
 from react_review.tools.search.models import CandidateWork, ReferenceQuery
 
 
@@ -44,7 +44,10 @@ def _from_crossref_item(it: dict, source: str) -> CandidateWork | None:
             doi=normalize_doi(it.get("DOI")), title=titles[0], authors=authors,
             year=int(year) if year else None, journal=journals[0],
             pmid=pmid, source=source)
-    except Exception:                                      # noqa: BLE001
+    except Exception as exc:                                      # noqa: BLE001
+        note("live_clients_parse_failed", error_type=type(exc).__name__,
+             message=f"{source} item unreadable: {exc}"[:200],
+             source=source, error=str(exc)[:120])
         return None
 
 
@@ -64,7 +67,10 @@ def _from_openalex_work(w: dict, source: str) -> CandidateWork | None:
             pmcid=ids.get("pmcid", "") or "",
             pmid=_pmid_of(ids.get("pmid")),
             source=source)
-    except Exception:                                      # noqa: BLE001
+    except Exception as exc:                                      # noqa: BLE001
+        note("live_clients_parse_failed", error_type=type(exc).__name__,
+             message=f"{source} item unreadable: {exc}"[:200],
+             source=source, error=str(exc)[:120])
         return None
 
 
@@ -79,11 +85,11 @@ def _from_europepmc_result(r: dict, source: str) -> CandidateWork | None:
             authors=authors, year=int(year) if year else None,
             journal=r.get("journalTitle") or "", pmcid=r.get("pmcid") or "",
             pmid=pmid, source=source)
-    except Exception:                                      # noqa: BLE001
+    except Exception as exc:                                      # noqa: BLE001
+        note("live_clients_parse_failed", error_type=type(exc).__name__,
+             message=f"{source} item unreadable: {exc}"[:200],
+             source=source, error=str(exc)[:120])
         return None
-
-
-logger = structlog.get_logger(__name__)
 
 
 class _RateLimiter:
@@ -174,7 +180,9 @@ class CrossRefResolver:
                 items = data.get("message", {}).get("items", [])
                 return [c for it in items if (c := _from_crossref_item(it, self.name))]
         except Exception as exc:                                   # noqa: BLE001
-            logger.warning("crossref_identifier_failed", error=str(exc)[:120])
+            note("crossref_identifier_failed", error_type=type(exc).__name__,
+                 message=f"crossref identifier failed: {exc}"[:200],
+                 error=str(exc)[:120])
             return []
         return []
 
@@ -193,7 +201,9 @@ class CrossRefResolver:
                                    timeout=self._timeout, limiter=self._limiter)
             items = data.get("message", {}).get("items", [])
         except Exception as exc:                                   # noqa: BLE001
-            logger.warning("crossref_resolve_failed", error=str(exc)[:120])
+            note("crossref_resolve_failed", error_type=type(exc).__name__,
+                 message=f"crossref resolve failed: {exc}"[:200],
+                 error=str(exc)[:120])
             return []
         return [c for it in items if (c := _from_crossref_item(it, self.name))]
 
@@ -231,7 +241,9 @@ class OpenAlexResolver:
                 timeout=self._timeout, limiter=self._limiter, retries=1)
             results = data.get("results", [])
         except Exception as exc:                                   # noqa: BLE001
-            logger.warning("openalex_identifier_failed", error=str(exc)[:120])
+            note("openalex_identifier_failed", error_type=type(exc).__name__,
+                 message=f"openalex identifier failed: {exc}"[:200],
+                 error=str(exc)[:120])
             return []
         return [c for w in results if (c := _from_openalex_work(w, self.name))]
 
@@ -246,7 +258,9 @@ class OpenAlexResolver:
                                    retries=1)
             results = data.get("results", [])
         except Exception as exc:                                   # noqa: BLE001
-            logger.warning("openalex_resolve_failed", error=str(exc)[:120])
+            note("openalex_resolve_failed", error_type=type(exc).__name__,
+                 message=f"openalex resolve failed: {exc}"[:200],
+                 error=str(exc)[:120])
             return []
         return [c for w in results if (c := _from_openalex_work(w, self.name))]
 
@@ -279,7 +293,9 @@ class EuropePMCResolver:
                 timeout=self._timeout, limiter=self._limiter)
             results = (data.get("resultList") or {}).get("result", [])
         except Exception as exc:                                   # noqa: BLE001
-            logger.warning("europepmc_identifier_failed", error=str(exc)[:120])
+            note("europepmc_identifier_failed", error_type=type(exc).__name__,
+                 message=f"europepmc identifier failed: {exc}"[:200],
+                 error=str(exc)[:120])
             return []
         return [c for r in results if (c := _from_europepmc_result(r, self.name))]
 
@@ -291,6 +307,8 @@ class EuropePMCResolver:
                                    timeout=self._timeout, limiter=self._limiter)
             results = (data.get("resultList") or {}).get("result", [])
         except Exception as exc:                                   # noqa: BLE001
-            logger.warning("europepmc_resolve_failed", error=str(exc)[:120])
+            note("europepmc_resolve_failed", error_type=type(exc).__name__,
+                 message=f"europepmc resolve failed: {exc}"[:200],
+                 error=str(exc)[:120])
             return []
         return [c for r in results if (c := _from_europepmc_result(r, self.name))]

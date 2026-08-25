@@ -295,3 +295,43 @@ def test_collect_title_failure_paths_do_not_blank_or_crash():
     assert no_scope == "ahmad_2022 · pmc · 2 chars     (hit:PMC esearch by DOI)"
     assert "unknown" not in no_scope
 
+
+
+@pytest.mark.asyncio
+async def test_collect_study_step_records_elapsed_ms(tmp_path):
+    import asyncio
+
+    from react_review.agents.collector import CollectResult, CollectStudyResult
+
+    class _SlowStudyCollector:
+        async def collect_study(self, claims, reference, *, research_context="",
+                                source=None):
+            delay = 0.25 if claims[0].study_id == "ahmad_2022" else 0.05
+            await asyncio.sleep(delay)
+            results = [
+                CollectResult(
+                    source_item=SourceEvidenceItem(
+                        study_id=item.study_id, group=item.group,
+                        field_type=item.field_type, source_value=item.value,
+                        source_unit=item.unit,
+                        collection_outcome=CollectionOutcome.FOUND,
+                    ),
+                    record=AgentRun(agent="collector"),
+                    decision=ReflectionDecision.ACCEPT,
+                )
+                for item in claims
+            ]
+            return CollectStudyResult(claim_results=results)
+
+    reg = ToolRegistry()
+    reg.register(CompareValuesTool(ToleranceTable()))
+    gate = ScriptedCheckpoint([])
+    reporter = StepReporter("run1", gate=gate, journal=RunJournal(tmp_path / "run1"))
+    pipe = AuditPipeline(
+        _SlowStudyCollector(), AuditOrchestrator(reg), Judge(), reporter=reporter)
+    await pipe.run(_items(), lambda sid: ReferenceEntry(title=sid), run_id="run1")
+    events = [e for e in gate.seen if e.stage is StepStage.COLLECT_STUDY]
+    assert len(events) == 2
+    assert events[0].elapsed_ms >= 200
+    assert events[1].elapsed_ms < events[0].elapsed_ms / 2
+    assert all(event.payload["n_groups"] >= 1 for event in events)

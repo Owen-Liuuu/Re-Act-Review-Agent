@@ -367,6 +367,7 @@ class ReviewParser:
                       ["no cohort labels were found — every value will be treated "
                        "as a single combined cohort"]),
             force_gate=(not registry.labels or bool(unknown)),
+            hold_display=True,
         )
 
         # 4. Resolve the UNIQUE field questions before applying any answer to a
@@ -399,6 +400,7 @@ class ReviewParser:
                 *self._knowledge_warnings(knowledge_imports),
                 *self._resolution_warnings(field_resolutions),
             ],
+            hold_display=self._checklist is not None,
         )
 
         items = self._postprocess(raw_rows, row_resolutions, registry)
@@ -1040,6 +1042,14 @@ class ReviewParser:
         return warnings
 
     @staticmethod
+    def _clip_display(value: object, limit: int = 24) -> str:
+        """Shorten a long-format value so the terminal cannot wrap it to column 0."""
+        text = repr(value)
+        if len(text) <= limit:
+            return text
+        return text[: limit - 1] + "…"
+
+    @staticmethod
     def _render_items(items: list[ReviewDataItem], limit: int = 25) -> str:
         if not items:
             return "  (no rows produced)"
@@ -1050,7 +1060,7 @@ class ReviewParser:
             claim_id = i.review_data_id or "-"
             lines.append(
                 f"    [{claim_id:<6}] {i.study_id:<24} {cohort:<12} "
-                f"{concept:<18} {i.value!r}")
+                f"{concept:<18} {ReviewParser._clip_display(i.value)}")
         if len(items) > limit:
             lines.append(f"    … {len(items) - limit} more")
         return "\n".join(lines)

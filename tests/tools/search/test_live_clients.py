@@ -9,6 +9,11 @@ from react_review.tools.search import (
     OpenAlexResolver,
     ReferenceQuery,
 )
+from react_review.tools.search.live_clients import (
+    _from_crossref_item,
+    _from_europepmc_result,
+    _from_openalex_work,
+)
 
 
 class _FakeResp:
@@ -120,4 +125,63 @@ async def test_crossref_identifier_query_uses_doi_path(monkeypatch):
     cands = await CrossRefResolver().resolve_identifier(
         ReferenceQuery(title="ignored", doi="10.1/X"))
     assert cands and cands[0].doi == "10.1/x"
+
+
+def test_crossref_unreadable_item_returns_none_and_warns():
+    from react_review.observe import records, reset
+
+    reset()
+    assert _from_crossref_item(
+        {"title": ["x"], "issued": {"date-parts": [[[2022]]]}}, "crossref") is None
+    blob = " ".join(str(r["message"]) for r in records())
+    assert "crossref" in blob
+    assert any(r["event"] == "live_clients_parse_failed" for r in records())
+
+
+def test_openalex_unreadable_item_returns_none_and_warns():
+    from react_review.observe import records, reset
+
+    reset()
+    assert _from_openalex_work({"authorships": "not-a-list", "title": "x"},
+                               "openalex") is None
+    blob = " ".join(str(r["message"]) for r in records())
+    assert "openalex" in blob
+    assert any(r["event"] == "live_clients_parse_failed" for r in records())
+
+
+def test_europepmc_unreadable_item_returns_none_and_warns():
+    from react_review.observe import records, reset
+
+    reset()
+    assert _from_europepmc_result({"title": "x", "pubYear": "not-a-year"},
+                                  "europepmc") is None
+    blob = " ".join(str(r["message"]) for r in records())
+    assert "europepmc" in blob
+    assert any(r["event"] == "live_clients_parse_failed" for r in records())
+
+
+@pytest.mark.asyncio
+async def test_openalex_repeat_failure_warns_once_then_counts(monkeypatch):
+    from react_review.observe import records, reset
+
+    class _Boom:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url, params=None):
+            raise RuntimeError("429 too many requests")
+
+    monkeypatch.setattr("react_review.tools.search.live_clients.httpx.AsyncClient",
+                        lambda **kw: _Boom())
+    reset()
+    assert await OpenAlexResolver().resolve(ReferenceQuery(title="x")) == []
+    assert await OpenAlexResolver().resolve(ReferenceQuery(title="y")) == []
+    hits = [r for r in records() if r["event"] == "openalex_resolve_failed"]
+    assert len(hits) == 2
+    assert hits[0]["count"] == 1
+    assert hits[1]["count"] == 2
+
 

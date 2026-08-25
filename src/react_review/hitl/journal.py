@@ -19,13 +19,10 @@ from react_review.hitl.events import StepEvent
 
 
 def _event_payload(event: StepEvent) -> dict:
-    """Dump a step; omit unused backend-trace keys so unconfigured journals stay identical."""
+    """Dump a step. Always keep model_id and reasoning tokens; omit only an unused profile name."""
     data = event.model_dump(mode="json")
-    for key in ("backend_profile", "backend_model_id", "backend_reasoning"):
-        if not data.get(key):
-            data.pop(key, None)
-    if data.get("backend_reasoning_tokens") is None:
-        data.pop("backend_reasoning_tokens", None)
+    if not data.get("backend_profile"):
+        data.pop("backend_profile", None)
     return data
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 import structlog
 
 from react_review.llm.base import LLMBackend, parse_llm_response
+from react_review.observe import trace
 from react_review.parser.review_extraction.prompts import render_extraction_prompt
 from react_review.parser.review_extraction.schemas import DisplayHit, ReviewLens
 from react_review.parser.review_extraction.windows import results_window
@@ -39,6 +40,7 @@ def _hit(raw: object, index: int) -> DisplayHit | None:
 
 async def localize(
     backend: LLMBackend, lens: ReviewLens, text: str,
+    *, notes: list[str] | None = None,
 ) -> list[DisplayHit]:
     """Return candidate displays. Product rules live in the prompt, not in regex."""
     window = results_window(text)
@@ -49,10 +51,23 @@ async def localize(
     )
     try:
         raw = parse_llm_response(await backend.complete(prompt), backend.model_id)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        trace(
+            notes, "evidence_localize_call_failed",
+            error_type=type(exc).__name__,
+            message=f"evidence localize call failed: {exc}"[:200],
+            error=str(exc)[:160],
+        )
         return []
     displays = raw.get("displays") if isinstance(raw, dict) else None
     if not isinstance(displays, list):
+        got = type(raw).__name__
+        trace(
+            notes, "evidence_localize_unparseable_response",
+            error_type=got,
+            message=f"evidence localize unparseable response: got {got}",
+            got=got,
+        )
         return []
     hits: list[DisplayHit] = []
     for i, body in enumerate(displays, start=1):

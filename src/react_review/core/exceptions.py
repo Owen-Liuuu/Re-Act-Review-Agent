@@ -18,6 +18,57 @@ class LLMError(LitInspectorError):
     """Raised when an LLM call or response parsing fails."""
 
 
+#: Auth / billing refusals. Retrying cannot succeed; the HTTP layer already
+#: does not retry them. The extraction loop must not either.
+PERMANENT_HTTP = frozenset({401, 402, 403})
+
+
+def http_status_from_error(exc: BaseException) -> int | None:
+    """Parse ``HTTP 4xx`` out of an ``LLMError`` (or its message)."""
+    import re
+    match = re.search(r"HTTP (\d{3})", str(exc))
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+class PermanentProviderError(LLMError):
+    """The provider refused the request; another attempt cannot succeed.
+
+    Distinct from a paper that omits a value, and from a transient 429/500.
+    The run must stop rather than walk every remaining claim into the same wall.
+    """
+
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        status: int = 0,
+        not_found_reason: str = "",
+    ) -> None:
+        self.status = status
+        self.not_found_reason = not_found_reason or message
+        super().__init__(message)
+
+
+def raise_if_permanent(exc: BaseException) -> None:
+    """Re-raise ``exc`` as :class:`PermanentProviderError` when it is 401/402/403."""
+    if isinstance(exc, PermanentProviderError):
+        raise exc
+    status = http_status_from_error(exc)
+    if status not in PERMANENT_HTTP:
+        return
+    reason = f"the extraction call failed: {exc}"[:300]
+    raise PermanentProviderError(
+        "the provider refused the request "
+        f"(HTTP {status}); the run stopped rather than repeating a call "
+        "that cannot succeed. "
+        f"Original error: {exc}"[:400],
+        status=status,
+        not_found_reason=reason,
+    ) from exc
+
+
 class SearchValidationError(LitInspectorError):
     """Raised during step 1: search strategy validation."""
 

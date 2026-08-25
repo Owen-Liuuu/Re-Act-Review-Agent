@@ -251,7 +251,8 @@ def _run_main(argv: list[str] | None = None, *, dependencies=None) -> None:
     import uuid
 
     from react_review.checklist import Checklist
-    from react_review.core.exceptions import ModelUnavailable, RunStopped
+    from react_review.core.exceptions import (
+        ModelUnavailable, PermanentProviderError, RunStopped)
     from react_review.dkb import FieldResolver, load_runtime_knowledge
     from react_review.hitl import (
         AutoContinue,
@@ -361,6 +362,29 @@ def _run_main(argv: list[str] | None = None, *, dependencies=None) -> None:
         step_backends=backends,
     )
 
+    from react_review.hitl.render import checkpoint_log_header
+    models = {"llm": config.llm.model}
+    if config.llm2 is not None:
+        models["llm2"] = config.llm2.model
+    if config.vision is not None:
+        models["vision"] = config.vision.model
+    for name in sorted(config.backend_profiles):
+        models[name] = config.backend_profiles[name].model
+    reporter.checkpoint_header = checkpoint_log_header(
+        run_id=run_id,
+        review=args.pdf.name,
+        models=models,
+        prompts={
+            "extraction": contract.extraction_profile,
+            "table_capture": (
+                contract.table_capture_prompt_profile or "table_capture_v3"),
+            "semantic": contract.semantic_prompt_profile,
+        },
+        config_summary=(
+            f"checkpoints={args.checkpoints} "
+            f"extraction={args.extraction} semantic={args.semantic}"),
+    )
+
     # Every way this run can end goes through one object, so all four leave the
     # same three things behind: an artifact saying how it ended, telemetry for
     # the whole execution, and a saved cache.
@@ -388,6 +412,14 @@ def _run_main(argv: list[str] | None = None, *, dependencies=None) -> None:
     except RunStopped as exc:
         session.finalise_stopped(stage=exc.stage, reason=exc.reason)
         raise SystemExit(2)
+    except PermanentProviderError as exc:
+        session.finalise_error(exc, stage="collect")
+        calls = getattr(telemetry, "backend_requests", 0)
+        _safe_print(
+            f"{exc} "
+            f"the run stopped after {calls} provider call(s) rather than "
+            "repeating a call that cannot succeed")
+        raise SystemExit(3)
     except ModelUnavailable as exc:
         # Its own exit code: a script must be able to tell "the provider was
         # down" from "the audit found problems" and from "a human stopped it".

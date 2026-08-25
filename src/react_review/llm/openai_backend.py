@@ -72,6 +72,7 @@ class OpenAIBackend(LLMBackend):
             raise LLMError("OpenAI backend requires an api_key in config.")
         self._base_url = (settings.base_url or _DEFAULT_BASE).rstrip("/")
         self._model = settings.model or "gpt-4o-mini"
+        self.read_timeout_seconds = settings.read_timeout_seconds
         self.last_usage: dict | None = None
         self.last_reasoning_tokens: int | None = None
 
@@ -173,46 +174,70 @@ class OpenAIBackend(LLMBackend):
             "Authorization": f"Bearer {self._settings.api_key}",
             "Content-Type": "application/json",
         }
-        # Unified retry loop. Both HTTP 429 (rate limited) AND
-        # ``httpx.RequestError`` (connection reset / read timeout /
-        # remote protocol error) are treated as transient and retried
-        # with backoff — the latter is common collateral damage while a
-        # provider is being rate-limited, and was previously a hard
-        # failure that lost the whole extraction.
+        # Retry budgets are independent by failure class. A read timeout means
+        # the provider failed to finish one whole generation before its
+        # token-derived deadline; starting that same generation over cannot
+        # make it fit. Connect/protocol failures get one reconnect, while 429
+        # retains the configured provider-side backoff budget.
         try:
             async with httpx.AsyncClient(
-                timeout=httpx.Timeout(300.0, connect=30.0)
+                timeout=httpx.Timeout(self.read_timeout_seconds, connect=30.0)
             ) as client:
                 data = None
                 last_failure = "no attempts made"
-                for attempt in range(self._max_retries + 1):
+                total_attempts = 0
+                network_retries = 0
+                rate_retries = 0
+                while True:
+                    total_attempts += 1
                     try:
                         async with self._sem:
                             resp = await client.post(
                                 url, headers=headers, json=payload
                             )
+                    except httpx.ReadTimeout as exc:
+                        logger.warning(
+                            "llm_read_timeout",
+                            model=self.model_id,
+                            attempts=total_attempts,
+                            threshold_s=self.read_timeout_seconds,
+                            detail=repr(exc)[:160],
+                        )
+                        raise LLMError(
+                            "OpenAI read timeout: "
+                            f"tried {total_attempts} time(s); "
+                            f"deadline {self.read_timeout_seconds}s; {exc!r}"
+                        ) from exc
                     except httpx.RequestError as exc:
                         last_failure = f"network error: {exc!r}"
-                        if attempt >= self._max_retries:
+                        retry_limit = int(isinstance(
+                            exc, (httpx.ConnectError, httpx.ProtocolError)))
+                        if network_retries >= retry_limit:
                             self._log_transient_retry(
-                                attempt=attempt, delay=0, detail=repr(exc),
-                                exhausted=True)
+                                attempt=network_retries, delay=0,
+                                detail=repr(exc), exhausted=True,
+                                retry_limit=retry_limit)
                             break
-                        delay = self._compute_retry_delay(None, attempt)
+                        delay = self._compute_retry_delay(None, network_retries)
                         self._log_transient_retry(
-                            attempt=attempt, delay=delay, detail=repr(exc)
+                            attempt=network_retries, delay=delay,
+                            detail=repr(exc), retry_limit=retry_limit,
                         )
+                        network_retries += 1
                         await asyncio.sleep(delay)
                         continue
 
                     if resp.status_code == 429:
                         last_failure = f"HTTP 429: {resp.text[:300]}"
-                        if attempt >= self._max_retries:
+                        if rate_retries >= self._max_retries:
                             self._log_rate_limited(
-                                resp, attempt=attempt, delay=0, exhausted=True)
+                                resp, attempt=rate_retries, delay=0,
+                                exhausted=True)
                             break
-                        delay = self._compute_retry_delay(resp, attempt)
-                        self._log_rate_limited(resp, attempt=attempt, delay=delay)
+                        delay = self._compute_retry_delay(resp, rate_retries)
+                        self._log_rate_limited(
+                            resp, attempt=rate_retries, delay=delay)
+                        rate_retries += 1
                         await asyncio.sleep(delay)
                         continue
 
@@ -223,7 +248,7 @@ class OpenAIBackend(LLMBackend):
 
                 if data is None:
                     raise LLMError(
-                        f"OpenAI API error after {self._max_retries + 1} "
+                        f"OpenAI API error after {total_attempts} "
                         f"attempts: {last_failure}"
                     )
 
@@ -243,6 +268,12 @@ class OpenAIBackend(LLMBackend):
                 finish_reason=finish_reason,
             )
             if finish_reason == "length":
+                if not str(text).strip():
+                    raise LLMError(
+                        "truncated: reasoning used the whole budget "
+                        f"(reasoning_tokens={self.last_reasoning_tokens} "
+                        f"of max_tokens={self._settings.max_tokens})"
+                    )
                 logger.warning(
                     "openai_truncated",
                     msg="Response hit max_tokens — raise max_tokens in config.",

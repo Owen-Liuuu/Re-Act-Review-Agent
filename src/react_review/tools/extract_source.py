@@ -496,6 +496,8 @@ class SourceValueResult(BaseModel):
     evidence_check: str = "ok"  # ok | protocol_error
     evidence_reason: str = ""
     error: str = ""
+    # Provider refused (HTTP 401/402/403). Retrying cannot succeed.
+    permanent_failure: bool = False
 
 
 class ExtractSourceValueTool(Tool):
@@ -615,10 +617,13 @@ class ExtractSourceValueTool(Tool):
             # The text is CARRIED, not just logged: without it the Collector can
             # only record "not found", and a transport error becomes
             # indistinguishable from a paper that genuinely omits the value.
+            from react_review.core.exceptions import raise_if_permanent
+            raise_if_permanent(exc)
             logger.warning("extract_source_value_failed", error=str(exc)[:160])
+            detail = str(exc)[:300]
             return SourceValueResult(
-                found=False, error=str(exc)[:300],
-                not_found_reason=f"the extraction call failed: {type(exc).__name__}")
+                found=False, error=detail,
+                not_found_reason=f"the extraction call failed: {detail}")
 
         result = _finalize_result(data, payload)
         # The population belongs to the EVIDENCE, so it is read from the quote

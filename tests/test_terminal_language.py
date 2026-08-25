@@ -15,6 +15,7 @@ _CJK = re.compile(r"[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]")
 _SRC = repo_root() / "src" / "react_review"
 _SCAN = [
     _SRC / "hitl",
+    _SRC / "llm",
     _SRC / "orchestrator" / "audit_pipeline.py",
     _SRC / "parser" / "review_parser.py",
     _SRC / "parser" / "review_extraction" / "pipeline.py",

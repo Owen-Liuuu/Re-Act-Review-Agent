@@ -168,3 +168,31 @@ async def test_eat_fixture_does_not_invent_escc_forests():
     assert not selected(hits, kind="forest_plot")
     assert "esophageal" not in backend.prompts[0].lower()
     assert "EAT thickness in T1DM" in backend.prompts[0]
+
+
+class BoomBackend(LLMBackend):
+    @property
+    def model_id(self) -> str:
+        return "boom"
+
+    async def complete(self, prompt: str, *, seed: int = 42) -> str:
+        raise RuntimeError("localize boom for test")
+
+
+@pytest.mark.asyncio
+async def test_localize_call_failure_returns_empty_and_warns():
+    notes: list[str] = []
+    hits = await localize(BoomBackend(), LENS_ESCC, DOC05, notes=notes)
+    assert hits == []
+    blob = " ".join(notes)
+    assert "localize boom for test" in blob
+
+
+@pytest.mark.asyncio
+async def test_localize_unparseable_displays_returns_empty_and_warns():
+    notes: list[str] = []
+    hits = await localize(
+        QueueBackend([{"displays": "not a list"}]), LENS_ESCC, DOC05, notes=notes)
+    assert hits == []
+    blob = " ".join(notes)
+    assert "unparseable" in blob

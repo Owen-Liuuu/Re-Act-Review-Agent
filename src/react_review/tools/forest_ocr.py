@@ -18,6 +18,7 @@ import structlog
 from react_review.contracts import ContractError, read_json_object, repo_root
 from react_review.core.exceptions import LLMError
 from react_review.llm.base import LLMBackend, parse_llm_response
+from react_review.observe import note
 from react_review.parser.table_capture import _parse_tables
 from react_review.schemas.table import CapturedTable
 from react_review.tools.base import Tool, ToolStage
@@ -395,11 +396,17 @@ def _figure_text(pdf_path: str, caption: str, page_hint: str) -> str:
         return ""
     try:
         import fitz
-    except ImportError:
+    except ImportError as exc:
+        note("forest_ocr_dependency_missing", error_type="ImportError",
+             message="PyMuPDF (fitz) is not installed; forest text/images were skipped",
+             error=str(exc)[:160])
         return ""
     try:
         doc = fitz.open(pdf_path)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        note("forest_ocr_pdf_open_failed", error_type=type(exc).__name__,
+             message=f"could not open PDF for figure text: {exc}"[:200],
+             error=str(exc)[:160])
         return ""
     try:
         pages: list[str] = []
@@ -430,11 +437,17 @@ def _locate_figure_images(pdf_path: str) -> list[_LocatedImage]:
         return []
     try:
         import fitz
-    except ImportError:
+    except ImportError as exc:
+        note("forest_ocr_dependency_missing", error_type="ImportError",
+             message="PyMuPDF (fitz) is not installed; forest text/images were skipped",
+             error=str(exc)[:160])
         return []
     try:
         doc = fitz.open(pdf_path)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        note("forest_ocr_pdf_open_failed", error_type=type(exc).__name__,
+             message=f"could not open PDF to locate figures: {exc}"[:200],
+             error=str(exc)[:160])
         return []
     try:
         return _locate_in_doc(doc)
@@ -452,7 +465,10 @@ def _locate_in_doc(doc: Any) -> list[_LocatedImage]:
                 continue
             try:
                 rects = list(page.get_image_rects(xref) or [])
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                note("forest_ocr_image_rects_failed", error_type=type(exc).__name__,
+                     message=f"could not read image rects: {exc}"[:200],
+                     error=str(exc)[:160])
                 rects = []
             if not rects:
                 continue
@@ -488,7 +504,10 @@ def _clip_nearby(page: Any, y0: float, y1: float) -> str:
         import fitz
         clip = fitz.Rect(0, max(0.0, y0 - 15), page.rect.width, min(page.rect.height, y1 + 40))
         return page.get_text("text", clip=clip) or ""
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        note("forest_ocr_clip_failed", error_type=type(exc).__name__,
+             message=f"could not clip nearby figure text: {exc}"[:200],
+             error=str(exc)[:160])
         return ""
 
 
@@ -524,11 +543,17 @@ def _paired_forest_images(pdf_path: str) -> list[_ForestPair]:
         return []
     try:
         import fitz
-    except ImportError:
+    except ImportError as exc:
+        note("forest_ocr_dependency_missing", error_type="ImportError",
+             message="PyMuPDF (fitz) is not installed; forest text/images were skipped",
+             error=str(exc)[:160])
         return []
     try:
         doc = fitz.open(pdf_path)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        note("forest_ocr_pdf_open_failed", error_type=type(exc).__name__,
+             message=f"could not open PDF to pair forest images: {exc}"[:200],
+             error=str(exc)[:160])
         return []
     try:
         images = _locate_in_doc(doc)
@@ -614,18 +639,27 @@ def _resolve_figure(
 def _read_png(pdf_path: str, xref: int) -> bytes:
     try:
         import fitz
-    except ImportError:
+    except ImportError as exc:
+        note("forest_ocr_dependency_missing", error_type="ImportError",
+             message="PyMuPDF (fitz) is not installed; forest text/images were skipped",
+             error=str(exc)[:160])
         return b""
     try:
         doc = fitz.open(pdf_path)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        note("forest_ocr_pdf_open_failed", error_type=type(exc).__name__,
+             message=f"could not open PDF to read figure PNG: {exc}"[:200],
+             error=str(exc)[:160])
         return b""
     try:
         pix = fitz.Pixmap(doc, xref)
         if pix.n - pix.alpha >= 4:
             pix = fitz.Pixmap(fitz.csRGB, pix)
         return pix.tobytes("png")
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        note("forest_ocr_png_failed", error_type=type(exc).__name__,
+             message=f"could not rasterise figure xref {xref}: {exc}"[:200],
+             error=str(exc)[:160])
         return b""
     finally:
         doc.close()

@@ -38,7 +38,9 @@ class CheckpointPolicy(BaseModel):
 
         Read-only stages SHOW (print + journal, no key). REVIEW_PDF_LOADED and
         FOREST_OCR are SILENT because their content is folded into a later
-        checkpoint; the journal still writes them. Truncation / empty-or-unknown
+        checkpoint; the journal still writes them. CHECKLIST_STUDY_COVERAGE is
+        SILENT for the same reason — it is folded into the reference-coverage
+        screen — and the artifact is still written. Truncation / empty-or-unknown
         cohorts re-gate via ``force_gate``, not this table.
         """
         by_stage = {s: Mode.GATE for s in _ALL_STAGES}
@@ -46,7 +48,7 @@ class CheckpointPolicy(BaseModel):
         by_stage[StepStage.COHORT_REGISTRY] = Mode.SHOW
         by_stage[StepStage.FIELD_RESOLUTION] = Mode.SHOW
         by_stage[StepStage.CHECKLIST_REVIEW] = Mode.SHOW
-        by_stage[StepStage.CHECKLIST_STUDY_COVERAGE] = Mode.SHOW
+        by_stage[StepStage.CHECKLIST_STUDY_COVERAGE] = Mode.SILENT
         by_stage[StepStage.REVIEW_PDF_LOADED] = Mode.SILENT
         by_stage[StepStage.FOREST_OCR] = Mode.SILENT
         return cls(by_stage=by_stage, default=Mode.GATE)

@@ -35,6 +35,18 @@ def test_unconfigured_profiles_are_empty():
     assert config.routing == {}
 
 
+def test_example_config_routes_only_the_transcribe_steps():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "configs" / "config.example.yaml")
+    assert set(config.routing) == {
+        "table_capture", "forest_ocr_text", "claim_origin", "unpivot",
+        "references"}
+    assert set(config.routing.values()) == {"transcribe"}
+    assert config.backend_profiles["transcribe"].model == "deepseek-v4-flash"
+    assert config.backend_profiles["transcribe"].reasoning == "off"
+
+
 def test_routing_unknown_step_is_a_hard_error(tmp_path):
     with pytest.raises(ConfigError, match="unknown step"):
         load_config(_yaml(tmp_path, {
@@ -207,14 +219,45 @@ async def test_judge_gear_records_reasoning_tokens():
 
 
 @pytest.mark.asyncio
-async def test_unconfigured_journal_omits_backend_trace_keys(tmp_path):
+async def test_unconfigured_journal_omits_only_backend_profile(tmp_path):
     journal = RunJournal(tmp_path)
     reporter = StepReporter("r", journal=journal)
     await reporter.step(StepStage.REVIEW_PDF_LOADED, title="Review PDF loaded")
     data = json.loads(
         (tmp_path / "steps" / "001_review_pdf_loaded.json").read_text(encoding="utf-8"))
     assert "backend_profile" not in data
-    assert "backend_reasoning_tokens" not in data
+    assert "backend_model_id" in data
+    assert "backend_reasoning_tokens" in data
+
+
+@pytest.mark.asyncio
+async def test_unconfigured_call_still_journals_model_id(tmp_path):
+    journal = RunJournal(tmp_path)
+    reporter = StepReporter("r", journal=journal)
+    await MeteredBackend(_Probe("deepseek-v4-pro"), RunTelemetry()).complete("hi")
+    await reporter.step(StepStage.TABLE_CAPTURE, title="Displays captured")
+    data = json.loads(
+        (tmp_path / "steps" / "001_review_table_capture.json").read_text(encoding="utf-8"))
+    assert "backend_profile" not in data
+    assert data["backend_model_id"] == "deepseek-v4-pro"
+    assert "backend_reasoning_tokens" in data
+
+
+@pytest.mark.asyncio
+async def test_vision_call_journals_its_model_id(tmp_path):
+    class _Vision(_Probe):
+        async def complete_vision(self, prompt, images, *, seed=42):
+            return "seen"
+
+    journal = RunJournal(tmp_path)
+    reporter = StepReporter("r", journal=journal)
+    vision = MeteredBackend(_Vision("glm-4.6v-flashx"), RunTelemetry())
+    await vision.complete_vision("read", [b"png"])
+    await reporter.step(StepStage.TABLE_CAPTURE, title="Forest figure")
+    data = json.loads(
+        (tmp_path / "steps" / "001_review_table_capture.json").read_text(encoding="utf-8"))
+    assert data["backend_model_id"] == "glm-4.6v-flashx"
+    assert "backend_profile" not in data
 
 
 class _Counter(LLMBackend):

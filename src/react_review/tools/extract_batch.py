@@ -347,6 +347,8 @@ class ExtractSourceBatchTool:
         except ExtractionCacheMiss:
             raise
         except Exception as exc:                     # transport, decode, provider
+            from react_review.core.exceptions import raise_if_permanent
+            raise_if_permanent(exc)
             logger.warning("extract_source_batch_failed", error=str(exc)[:160])
             return None, TRANSPORT, f"{type(exc).__name__}: {exc}"[:300], False
 
