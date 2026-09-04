@@ -50,7 +50,7 @@ def _explicit_live_profile() -> str:
     profile = os.getenv("TABLE_CAPTURE_PROMPT_PROFILE", "").strip()
     assert profile in PROMPT_TEMPLATES, (
         "set TABLE_CAPTURE_PROMPT_PROFILE explicitly to table_capture_v1, "
-        "table_capture_v2, or table_capture_v3"
+        "table_capture_v2, table_capture_v3, or table_capture_v4"
     )
     return profile
 

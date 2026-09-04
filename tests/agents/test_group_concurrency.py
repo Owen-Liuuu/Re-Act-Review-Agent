@@ -95,6 +95,6 @@ def test_one_group_raising_does_not_cancel_the_other():
     assert by_field["age"].source_item.source_value == "31"
     assert by_field["bmi"].source_item.source_value is None
     assert by_field["bmi"].source_item.collection_outcome is (
-        CollectionOutcome.MISSING_SOURCE)
+        CollectionOutcome.EXTRACTION_FAILED)
     assert any(r.code == "extraction_error" or "boom" in (r.message or "")
                for r in by_field["bmi"].source_item.reasons)

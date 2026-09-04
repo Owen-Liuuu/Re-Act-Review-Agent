@@ -1,0 +1,21 @@
+# Single container. Persist runs + uploads on one volume.
+# Keys: set in a local .env (gitignored). Never bake them into the image.
+#
+# Data stays on this host. Deploy the node in Hong Kong; do not ship PDFs
+# to a third-party SaaS.
+
+services:
+  react-review:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      REACT_REVIEW_MOCK_MODE: "false"
+    volumes:
+      - react-review-data:/data
+    restart: unless-stopped
+
+volumes:
+  react-review-data:

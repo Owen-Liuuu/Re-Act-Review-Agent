@@ -15,6 +15,7 @@ stopped — or interrupted — keeps the evidence it had already collected.
 """
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from collections import Counter
@@ -98,6 +99,18 @@ class AuditPipeline:
         # Default reporter never blocks and never writes — library/CI behaviour.
         self._reporter = reporter or StepReporter()
 
+    def _papers_overlap(self) -> bool:
+        """Papers run concurrently only under ``--checkpoints none``.
+
+        A missing policy is the library/CI default (AutoContinue, scripted
+        tests): those stay serial so existing call-order assertions hold.
+        ``key`` (show) and ``all`` (gate) stay serial because HITL still shows
+        one study block at a time.
+        """
+        policy = getattr(self._reporter.gate, "_policy", None)
+        is_none = getattr(policy, "is_none", None)
+        return bool(callable(is_none) and is_none())
+
     async def run(
         self,
         review_items: list[ReviewDataItem],
@@ -127,41 +140,55 @@ class AuditPipeline:
         n_papers = len(groups)
         batch_started = time.monotonic()
 
-        for i, (study_id, claims) in enumerate(groups, start=1):
-            study_started = time.monotonic()
-            reference = reference_for(study_id)
-            n_groups = len(list(group_claims(claims)))
+        async def collect_one(study_id, claims, study_started):
             # Opened once for the whole study: every claim about this paper is
             # then answered from the same retrieval, and the cost of an audit
             # scales with papers rather than with cells.
+            reference = reference_for(study_id)
+            n_groups = len(list(group_claims(claims)))
             opener = getattr(self._collector, "open_study", None)
             source = await opener(reference) if opener is not None else None
             collect_study = getattr(self._collector, "collect_study", None)
+            paper_items = []
+            paper_records = []
+            paper_batches = []
             if collect_study is not None:
                 # One pass per paper. The claims come back in the order they
                 # went in, so nothing here has to know they were grouped.
                 produced = await collect_study(
                     claims, reference, research_context=research_context,
                     **({"source": source} if source is not None else {}))
-                source_items.extend(produced.source_items)
-                records.extend(produced.records)
-                for record in produced.batch_records:
-                    # Deduplicated by execution id: one reading is one record
-                    # however many claims name it, and a run that resumed could
-                    # otherwise write the same reading twice.
-                    persistent = record.persistent()
-                    if persistent.execution_id not in seen_readings:
-                        seen_readings.add(persistent.execution_id)
-                        batch_records.append(persistent)
+                paper_items.extend(produced.source_items)
+                paper_records.extend(produced.records)
+                paper_batches.extend(produced.batch_records)
             else:
                 for item in claims:
                     result = await self._collector.collect(
                         item, reference, research_context=research_context,
                         **({"source": source} if source is not None else {})
                     )
-                    source_items.append(result.source_item)
-                    records.append(result.record)
+                    paper_items.append(result.source_item)
+                    paper_records.append(result.record)
+            return {
+                "study_id": study_id, "claims": claims, "reference": reference,
+                "source": source, "n_groups": n_groups,
+                "study_started": study_started,
+                "source_items": paper_items, "records": paper_records,
+                "batch_records": paper_batches,
+            }
 
+        async def commit(i, bundle):
+            nonlocal batch_started
+            source_items.extend(bundle["source_items"])
+            records.extend(bundle["records"])
+            for record in bundle["batch_records"]:
+                # Deduplicated by execution id: one reading is one record
+                # however many claims name it, and a run that resumed could
+                # otherwise write the same reading twice.
+                persistent = record.persistent()
+                if persistent.execution_id not in seen_readings:
+                    seen_readings.add(persistent.execution_id)
+                    batch_records.append(persistent)
             # Progress survives a crash or a Ctrl-C: written after every paper.
             if self._store is not None:
                 self._store.save_partial(EvidencePackage(
@@ -178,9 +205,11 @@ class AuditPipeline:
                     checklist=checklist,
                     status="in_progress",
                 ))
-
-            collected = source_items[-len(claims):]
-            subject = self._subject_for(collected, reference)
+            claims = bundle["claims"]
+            collected = bundle["source_items"]
+            study_id = bundle["study_id"]
+            source = bundle["source"]
+            subject = self._subject_for(collected, bundle["reference"])
             warnings = self._warn_for(collected)
             per_study.append({
                 "study_id": study_id, "subject": subject,
@@ -193,24 +222,48 @@ class AuditPipeline:
                 "warnings": warnings,
             })
             # Shown in full, not gated — see StepStage.COLLECT_STUDY.
-            # Papers stay serial so each study block is one inspectable unit.
+            # Numbered by launch order: commit awaits papers in start order
+            # even when they finished out of order.
             await self._reporter.step_or_stop(
                 StepStage.COLLECT_STUDY,
                 title=self._collect_title(study_id, collected, source),
                 subject=subject,
                 subject_kind=SubjectKind.SOURCE_PDF,
                 payload={"study_id": study_id,
-                         "n_groups": n_groups,
-                         "claims": [i.model_dump(mode="json") for i in claims],
+                         "n_groups": bundle["n_groups"],
+                         "claims": [c.model_dump(mode="json") for c in claims],
                          "evidence": [s.model_dump(mode="json") for s in collected]},
                 render_blocks=[self._render_study(study_id, claims, collected)],
                 warnings=warnings,
-                started=study_started,
+                started=bundle["study_started"],
             )
             if i % 10 == 0 or i == n_papers:
                 self._reporter.progress(
                     "paper", i, n_papers, caption=study_id, started=batch_started)
                 batch_started = time.monotonic()
+
+        if self._papers_overlap():
+            tasks = []
+            for i, (study_id, claims) in enumerate(groups, start=1):
+                study_started = time.monotonic()
+                self._reporter.progress(
+                    "paper", i, n_papers, caption=study_id, started=study_started)
+                tasks.append(asyncio.create_task(
+                    collect_one(study_id, claims, study_started)))
+            try:
+                for i, task in enumerate(tasks, start=1):
+                    await commit(i, await task)
+            finally:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+        else:
+            for i, (study_id, claims) in enumerate(groups, start=1):
+                study_started = time.monotonic()
+                self._reporter.progress(
+                    "paper", i, n_papers, caption=study_id, started=study_started)
+                # Papers stay serial so each study block is one inspectable unit.
+                await commit(i, await collect_one(study_id, claims, study_started))
 
         # ONE checkpoint for the whole collection, however many papers there were.
         await self._reporter.step_or_stop(
@@ -324,19 +377,12 @@ class AuditPipeline:
         if not retriever and source is not None:
             retriever = str((getattr(source, "provenance", None) or {}).get(
                 "retriever_kind") or "")
-        if retriever == "pmc":
-            return "hit:PMC esearch by DOI"
-        if retriever == "unpaywall":
-            return "hit:Unpaywall"
-        if retriever.startswith("openalex"):
-            return "hit:OpenAlex"
         if retriever == "pubmed_abstract":
             return ("fallback: DOI miss → title search" if not doi
                     else "fallback: DOI miss → PubMed abstract")
-        if retriever == "local_pdf":
-            return "hit:local PDF"
+        from react_review.retrieval.labels import origin_label
         if retriever:
-            return f"hit:{retriever}"
+            return origin_label(retriever)
         return ""
 
     @classmethod

@@ -1,0 +1,16 @@
+{
+  "run_id": "web_run",
+  "index": 2,
+  "screen": 2,
+  "stage": "review_lens",
+  "title": "Review lens compressed",
+  "subject": "review.pdf",
+  "render_blocks": [
+    "  review focus:\n    Elderly patients; MIE versus OE"
+  ],
+  "warnings": [],
+  "offers": [],
+  "blocking": true,
+  "decision": "continue",
+  "interaction": "web"
+}

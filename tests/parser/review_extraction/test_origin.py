@@ -86,6 +86,7 @@ def test_fields_for_cell_drops_review_computed_columns():
     odds = fields_for_cell(parsed, FOREST, {"column_header": "Odds ratio", "row": 0})
     pooled = fields_for_cell(parsed, FOREST, {"column_header": "Events", "row": 1})
     assert events["value_source"] == "source_paper"
+    assert events["outcome"] == ""
     assert not drop_non_source(events["value_source"])
     assert drop_non_source(odds["value_source"])
     assert drop_non_source(pooled["value_source"])
@@ -196,4 +197,30 @@ def test_column_wide_origin_conflict_keeps_the_first_label():
     hit = match_origin(labels, "fig_3_3_1", "Events")
     assert hit is not None
     assert hit.value_source == "source_paper"
+
+
+def test_fields_for_cell_uses_table_outcome_not_caption_or_origin():
+    """A figure locator in the caption must not become the claim's outcome."""
+    table = CapturedTable(
+        table_id="figure_3",
+        caption="The forest plot is presented in Figure 3.",
+        outcome="Pulmonary complications",
+        header_rows=[["Study or Subgroup", "Events"]],
+        rows=[["Capovilla 2023", "19"]],
+        row_axis_columns=["Study or Subgroup"],
+        display_kind="forest_plot",
+    )
+    labels = [
+        OriginLabel(table_id="figure_3", column_path="Events",
+                    value_source="source_paper",
+                    outcome="Overall postoperative complications"),
+    ]
+    fields = fields_for_cell(labels, table, {"column_header": "Events", "row": 0})
+    assert fields["outcome"] == "Pulmonary complications"
+
+    table.outcome = ""
+    empty = fields_for_cell(labels, table, {"column_header": "Events", "row": 0})
+    assert empty["outcome"] == ""
+    assert "Figure" not in empty["outcome"]
+
 

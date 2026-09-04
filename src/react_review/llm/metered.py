@@ -76,6 +76,7 @@ class MeteredBackend(LLMBackend):
     async def complete(self, prompt: str, *, seed: int = 42) -> str:
         started = time.perf_counter()
         token = set_reasoning_patch(self._reasoning_patch())
+        before_429 = int(getattr(self._backend, "http_429_count", 0) or 0)
         try:
             output = await self._backend.complete(prompt, seed=seed)
         except Exception:
@@ -91,6 +92,7 @@ class MeteredBackend(LLMBackend):
                 stage=self._stage)
             return output
         finally:
+            self._publish_429(before_429)
             reset_reasoning_patch(token)
             self._publish_trace()
 
@@ -99,6 +101,7 @@ class MeteredBackend(LLMBackend):
     ) -> str:
         started = time.perf_counter()
         token = set_reasoning_patch(self._reasoning_patch())
+        before_429 = int(getattr(self._backend, "http_429_count", 0) or 0)
         try:
             output = await self._backend.complete_vision(
                 prompt, images, seed=seed)
@@ -115,5 +118,12 @@ class MeteredBackend(LLMBackend):
                 stage=self._stage)
             return output
         finally:
+            self._publish_429(before_429)
             reset_reasoning_patch(token)
             self._publish_trace()
+
+    def _publish_429(self, before: int) -> None:
+        after = int(getattr(self._backend, "http_429_count", 0) or 0)
+        delta = after - before
+        if delta:
+            self._telemetry.record_http_429(delta)

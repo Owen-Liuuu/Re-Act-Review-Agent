@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>C 案卷 · Report</title>
+  <link rel="stylesheet" href="../bar.css">
+  <link rel="stylesheet" href="theme.css">
+</head>
+<body>
+  <div class="draft-bar">
+    <a href="../index.html">思路</a><span class="sep">|</span>
+    <a href="../a/report.html">A 刊体</a>
+    <a href="../b/report.html">B 夜班</a>
+    <a href="../d/report.html">D 白班</a>
+    <b>C 案卷</b>
+    <span class="sep">|</span>
+    <a href="home.html">Desk</a>
+    <a href="gate.html">Gate</a>
+    <a class="on" href="report.html">Report</a>
+  </div>
+  <header class="top">
+    <a class="wordmark" href="home.html">ReAct-Review</a>
+    <span class="k">Exhibit</span>
+    <nav><a href="home.html">Desk</a><a href="gate.html">Run</a></nav>
+  </header>
+  <div class="case">
+    <aside class="rail">
+      <div class="k">Verdict</div>
+      <div class="verdict">PARTIAL</div>
+      <p style="font-size:13px;color:var(--muted);margin:12px 0 20px">Not fully supported by the papers it cites.</p>
+      <div class="stat"><span>Match</span><span class="n" style="color:var(--good)">2</span></div>
+      <div class="stat"><span>Mismatch</span><span class="n">0</span></div>
+      <div class="stat"><span>Unit</span><span class="n">0</span></div>
+      <div class="stat"><span>N/C</span><span class="n">54</span></div>
+      <div class="stat"><span>Flagged</span><span class="n" style="color:var(--red)">62</span></div>
+      <p class="mono" style="margin-top:18px;color:var(--faint)">contract16-d<br>56 claims · 3 papers</p>
+    </aside>
+    <div class="body">
+      <h2>Flags, by reason</h2>
+      <div class="acc">
+        <details><summary><span class="chip bad">Missing in source</span><span class="c">33</span></summary>
+          <p style="color:var(--muted)">B_02 capovilla age · C_03 li_2025 N MIE · 31 further items in package.</p></details>
+        <details><summary><span class="chip muted">Source not identified</span><span class="c">20</span></summary>
+          <p style="color:var(--muted)">A_01–A_20 li_2015 — no DOI, no confident match.</p></details>
+        <details><summary><span class="chip warn">Partially verified</span><span class="c">2</span></summary>
+          <p style="color:var(--muted)">B_01 review broader · C_01 review adds PSM.</p></details>
+      </div>
+      <h2 style="margin-top:32px">Evidence</h2>
+      <div class="filters">
+        <button class="on" type="button">All</button>
+        <button type="button">Flagged</button>
+        <button type="button">Match</button>
+      </div>
+      <p class="k">capovilla_2023 · 16 / 16 flagged</p>
+      <table class="ev">
+        <thead><tr><th>ID</th><th>Group</th><th>Field</th><th>Review</th><th>Source</th><th>Verdict</th><th></th></tr></thead>
+        <tbody>
+          <tr>
+            <td>B_01</td><td>—</td><td>study_design</td>
+            <td>Multicenter retrospective matched</td>
+            <td>matched-cohort study</td>
+            <td><span class="chip good">Match</span></td>
+            <td><button class="toggle" type="button" data-open="d1">Evidence</button></td>
+          </tr>
+          <tr class="ev-detail" id="d1">
+            <td colspan="7">Title quote. pmc 10213659. Semantic: review_broader 0.90. Controls passed.</td>
+          </tr>
+          <tr>
+            <td>B_02</td><td>all</td><td>age</td>
+            <td>≥75 years</td><td>None</td>
+            <td><span class="chip muted">Not comparable</span></td>
+            <td><button class="toggle" type="button" data-open="d2">Evidence</button></td>
+          </tr>
+          <tr class="ev-detail" id="d2" hidden>
+            <td colspan="7">Age given for subgroups only. Flag: missing in source.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <script>
+    document.querySelectorAll(".toggle").forEach(function (btn) {
+      btn.onclick = function () {
+        var row = document.getElementById(btn.getAttribute("data-open"));
+        row.hidden = !row.hidden;
+      };
+    });
+  </script>
+</body>
+</html>

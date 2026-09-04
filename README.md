@@ -97,6 +97,17 @@ a different report location. The HTML includes the source file/URI, verbatim
 quote, deterministic derivation, semantic relation and controls, and every
 human-review flag carried by the saved Evidence Package.
 
+## Uploads, caches, and retention
+
+Full-text PDFs are stored locally only; they are never redistributed.
+
+- Web uploads land in `output/uploads/<run-id>/` (review PDF, source PDFs,
+  `included_studies.csv`). Each folder contains `RETENTION.txt`.
+- Extraction and semantic caches live in `output/runs/<run-id>/`. A run that
+  used `--studies` / uploaded sources marks those caches `shareable: false`.
+- There is no automatic cleanup. Delete both `output/uploads/<run-id>/` and
+  `output/runs/<run-id>/` when the audit should leave the disk.
+
 ## Reuse provenance
 
 The following prototype modules carried over as high-value reusable assets:

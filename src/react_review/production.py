@@ -41,6 +41,7 @@ _SLOT_BUCKET = {
     "field_resolution": "parsing",
     "extract_locate": "single",
     "extract_transcribe": "single",
+    "source_row_map": "single",
     "semantic_compare": "semantic",
 }
 
@@ -101,6 +102,7 @@ class ProductionBackends:
     field_resolution: Any = None
     extract_locate: Any = None
     extract_transcribe: Any = None
+    source_row_map: Any = None
     semantic_compare: Any = None
 
     def __post_init__(self) -> None:
@@ -228,9 +230,10 @@ def build_collector(registry, *, contract, knowledge=None, cohorts=None,
     """
     from react_review.agents.split_collector import SplitAwareCollector
     from react_review.tools.extract_source import bind_claim_outcome_and_dedup
+    from react_review.tools.retry_reason import bind_retry_attribution
     from react_review.tools.search.resolve_reference import bind_identifier_resolve
 
-    return bind_identifier_resolve(bind_claim_outcome_and_dedup(SplitAwareCollector(
+    return bind_identifier_resolve(bind_retry_attribution(bind_claim_outcome_and_dedup(SplitAwareCollector(
         registry, knowledge=knowledge, cohorts=cohorts, contract=contract,
         aggregation_runtime=(runtime if runtime is not None
                              else aggregation_runtime(contract)),
@@ -238,7 +241,7 @@ def build_collector(registry, *, contract, knowledge=None, cohorts=None,
             adequacy_evaluator if adequacy_evaluator is not None
             else evidence_adequacy_runtime(contract)),
         knowledge_fingerprint=knowledge_fingerprint, telemetry=telemetry,
-        extraction_profile=contract.extraction_profile)))
+        extraction_profile=contract.extraction_profile))))
 
 
 def snapshot_cache_totals(telemetry: RunTelemetry, *, extraction=None,
@@ -263,15 +266,15 @@ def snapshot_cache_totals(telemetry: RunTelemetry, *, extraction=None,
 
 @dataclass
 class ProductionDependencies:
-    """The three things a production run reaches OUTSIDE itself for.
+    """The things a production run reaches OUTSIDE itself for.
 
-    The model, the papers, and the person. `_run_main` builds everything else —
-    the contract, the telemetry, the parser, the resolver, the collector, the
-    session — and a test that replaced any of those would be testing its own
-    wiring, which is how a signature and its only call site drifted apart twice
-    while the suite stayed green. Substituting these three is enough to run the
-    whole entry point offline, and leaves the parsing, the field resolution and
-    the extraction to the code that does them in production.
+    The model, the papers, the person, and the run's own credentials. `_run_main`
+    builds everything else — the contract, the telemetry, the parser, the
+    resolver, the collector, the session — and a test that replaced any of those
+    would be testing its own wiring, which is how a signature and its only call
+    site drifted apart twice while the suite stayed green. Substituting these
+    is enough to run the whole entry point offline, and leaves the parsing, the
+    field resolution and the extraction to the code that does them in production.
 
     The gate is here because it is the human operator rather than a component of
     the pipeline, and because it is the only way to reach the stop path from
@@ -279,14 +282,18 @@ class ProductionDependencies:
     decision, so without this the entry point's stop branch could only ever be
     tested on a session a test constructed for itself.
 
-    Not a place to grow beyond that. A `parser` field here would turn the one
-    test that exercises review parsing end to end into a lifecycle test that
-    never parses anything.
+    ``config`` is the fourth because the web UI must pass a user's API key and
+    model choice into one run without writing them into ``config.local.yaml``.
+    It is still something the run reaches outside itself for — credentials —
+    not a pipeline stage. A `parser` field here would turn the one test that
+    exercises review parsing end to end into a lifecycle test that never
+    parses anything.
     """
 
     backend: Any = None
     retriever: Any = None
     gate: Any = None
+    config: Any = None
 
     def llm(self, config):
         if self.backend is not None:

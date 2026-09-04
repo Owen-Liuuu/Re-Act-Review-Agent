@@ -157,6 +157,9 @@ async def test_pipeline_selects_table1_and_forest_skips_table2():
     assert capture.offers == ["retry"]
     assert "retry_alt" not in capture.offers
     assert "model: queue" in lens.render_blocks[0]
+    forest = next(t for t in result.tables.tables if t.table_id == "fig_3_3_1")
+    assert forest.outcome == "overall complications"
+    assert "Figure" not in forest.outcome
 
 
 @pytest.mark.asyncio

@@ -59,3 +59,17 @@ def requires_frozen_evaluator() -> None:
 
     if (repo_root() / "configs/aggregation/evaluators/PENDING.json").exists():
         pytest.skip("the evaluator is declared unfrozen in PENDING.json")
+
+
+def requires_frozen_adequacy() -> None:
+    """Skip runtime identity checks until 1.1.0 is a clean HEAD commit.
+
+    ``evidence_adequacy_runtime`` refuses a working copy whose evaluator files
+    are untracked or dirty. That is the gate working. Tests that need a
+    release-eligible identity wait for the freeze rather than weakening it.
+    """
+    from react_review.audit.evidence_adequacy import EvidenceAdequacyEvaluator
+
+    who = EvidenceAdequacyEvaluator.resolve().identity
+    if not who.release_eligible:
+        pytest.skip("evidence_adequacy 1.1.0 is not a clean HEAD commit yet")

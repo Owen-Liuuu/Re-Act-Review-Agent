@@ -62,6 +62,21 @@ def _default_tolerance() -> ToleranceTable:
     return ToleranceTable()
 
 
+def build_reference_reconciler(config: AppConfig) -> ReferenceReconciler:
+    """CrossRef / OpenAlex / Europe PMC stack shared by the catalogue and the CLI."""
+    if config.mock_mode:
+        return ReferenceReconciler([StaticResolver("mock", [])])
+    mailto = (
+        config.unpaywall.email or config.pubmed.email or config.crossref.mailto
+    )
+    return ReferenceReconciler([
+        CrossRefResolver(base_url=config.crossref.base_url, mailto=mailto,
+                         timeout=config.crossref.timeout),
+        OpenAlexResolver(mailto=mailto, timeout=config.crossref.timeout),
+        EuropePMCResolver(timeout=config.crossref.timeout),
+    ])
+
+
 def build_catalogue(
     config: AppConfig,
     *,
@@ -88,7 +103,7 @@ def build_catalogue(
             _StubCounter("Europe PMC"),
             _StubCounter("OpenAlex"),
         ]
-        reconciler = ReferenceReconciler([StaticResolver("mock", [])])  # offline: no network
+        reconciler = build_reference_reconciler(config)
     else:
         from react_review.steps.search_validation.pubmed_impl import PubMedSearchProvider
         from react_review.steps.search_validation.multi_db_count import (
@@ -111,12 +126,7 @@ def build_catalogue(
             EuropePMCCountProvider(),
             OpenAlexCountProvider(mailto=openalex_mailto),
         ]
-        reconciler = ReferenceReconciler([
-            CrossRefResolver(base_url=config.crossref.base_url, mailto=openalex_mailto,
-                             timeout=config.crossref.timeout),
-            OpenAlexResolver(mailto=openalex_mailto, timeout=config.crossref.timeout),
-            EuropePMCResolver(timeout=config.crossref.timeout),
-        ])
+        reconciler = build_reference_reconciler(config)
         verifier = CrossRefVerifier(settings=config.crossref, thresholds=config.thresholds)
         retriever = FullTextRetriever(
             pubmed_settings=config.pubmed,

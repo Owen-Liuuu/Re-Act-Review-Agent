@@ -1,10 +1,15 @@
 """Step 0 — compress front matter into a ReviewLens. Later steps never see the abstract."""
 from __future__ import annotations
 
+import structlog
+
+from react_review.core.exceptions import raise_if_permanent
 from react_review.llm.base import LLMBackend, parse_llm_response
 from react_review.parser.review_extraction.prompts import render_extraction_prompt
 from react_review.parser.review_extraction.schemas import ReviewLens
 from react_review.parser.review_extraction.windows import clip_words, front_matter
+
+logger = structlog.get_logger(__name__)
 
 _LIMITS = {
     "lens_one_line": 40,
@@ -43,7 +48,9 @@ async def read_lens(backend: LLMBackend, text: str, *, seed: int = 42) -> Review
     try:
         raw = parse_llm_response(
             await backend.complete(prompt, seed=seed), backend.model_id)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("review_lens_failed")
+        raise_if_permanent(exc)
         return ReviewLens(difficulties=["lens model call failed"])
     if not isinstance(raw, dict):
         return ReviewLens(difficulties=["lens response was not an object"])

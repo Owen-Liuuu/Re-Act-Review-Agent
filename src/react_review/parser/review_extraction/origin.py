@@ -89,14 +89,15 @@ def fields_for_cell(
     except (KeyError, TypeError, ValueError):
         row_index = None
     label = match_origin(parsed, table.table_id, header, row_index)
-    outcome = ""
     source = ""
     if label is not None:
         source = label.value_source
-        outcome = label.outcome
     return {
         "value_source": source,
-        "outcome": outcome or table.outcome or table.caption,
+        # Display identity from localize+lens, never the caption / figure
+        # locator. Origin's per-column outcome is not used: when the caption
+        # was empty it guessed the first ruler outcome for every forest.
+        "outcome": table.outcome or "",
         "display_kind": table.display_kind,
     }
 

@@ -221,7 +221,7 @@ def test_saved_package_report_shows_full_audit_trail(tmp_path):
     html = report_path.read_text(encoding="utf-8")
 
     assert store.package_path("saved").is_file()
-    assert "D:/papers/trial.pdf" in html and "local_pdf" in html
+    assert "D:/papers/trial.pdf" in html and "uploaded (matched by DOI)" in html
     assert "15 participants in each arm" in html
     assert "derived_sum" in html and "15 + 15 = 30" in html
     assert "arm A" in html and "15 in arm B" in html

@@ -52,6 +52,28 @@ def _identity(item) -> tuple:
     return ("claim", claim_id) if claim_id else ("legacy", *_locator(item))
 
 
+def _study_origin(results, src) -> str:
+    """Upload vs online vs missing, for the paper heading."""
+    from react_review.retrieval.labels import origin_label
+
+    labels: list[str] = []
+    for result in results:
+        item = src.get(_identity(result))
+        if item is None:
+            continue
+        kind = getattr(item, "retriever_kind", "") or ""
+        outcome = str(getattr(getattr(item, "collection_outcome", None), "value",
+                              getattr(item, "collection_outcome", "")) or "")
+        if outcome in {"source_access_failed", "unresolved_source"} and not kind:
+            labels.append("not retrieved")
+        else:
+            labels.append(origin_label(kind))
+    unique = list(dict.fromkeys(labels))
+    if not unique:
+        return "not retrieved"
+    return unique[0] if len(unique) == 1 else ", ".join(unique)
+
+
 def _provenance_html(item) -> str:
     """WHICH document this evidence was read from — the point of recording it."""
     if item is None:
@@ -59,7 +81,9 @@ def _provenance_html(item) -> str:
     where = item.source_file or item.source_uri or item.source_doi
     if not where:
         return ""
-    kind = f" · {escape(item.retriever_kind)}" if item.retriever_kind else ""
+    from react_review.retrieval.labels import origin_label
+    origin = origin_label(item.retriever_kind)
+    kind = f" · {escape(origin)}" if origin and origin != "not retrieved" else ""
     return f'<div class="src">read from: <code>{escape(where)}</code>{kind}</div>'
 
 
@@ -264,7 +288,8 @@ def render_html_report(pkg: EvidencePackage) -> str:
                 f'<td class="num">{_err(r.rel_error_pct)}</td>'
                 f'<td class="ev">{ev or "—"}</td></tr>')
         cnt = (f'<span class="cnt">{len(results)} claims'
-               + (f' · <b class="flag">{flagged} flagged</b>' if flagged else ' · all clear') + '</span>')
+               + (f' · <b class="flag">{flagged} flagged</b>' if flagged else ' · all clear')
+               + f' · {escape(_study_origin(results, src))}' + '</span>')
         studies_html += (
             f'<section class="study"><div class="stitle"><h3>{escape(study_id)}</h3>{cnt}</div>'
             '<div class="scroll"><table><thead><tr>'

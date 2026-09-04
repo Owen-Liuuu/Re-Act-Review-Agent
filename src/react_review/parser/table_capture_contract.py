@@ -19,8 +19,8 @@ TABLE_CAPTURE_V1 = Path("configs/prompt_contracts/table_capture_v1.json")
 TABLE_CAPTURE_V2 = Path("configs/prompt_contracts/table_capture_v2.json")
 TABLE_CAPTURE_V3 = Path("configs/prompt_contracts/table_capture_v3.json")
 TABLE_CAPTURE_V4 = Path("configs/prompt_contracts/table_capture_v4.json")
-# Frozen v1/v2 stay callable. New production runs use v3 (selected displays only).
-DEFAULT_TABLE_CAPTURE_PROFILE = "table_capture_v3"
+# Frozen v1/v2/v3 stay callable. New production runs use v4 (de-exemplarized v3).
+DEFAULT_TABLE_CAPTURE_PROFILE = "table_capture_v4"
 LEGACY_TABLE_CAPTURE_PROFILES = frozenset({"table_capture_v1", "table_capture_v2"})
 RENDERER_IDENTITY = "react_review.table_capture.render.v1"
 PROMPT_VERSIONS = {

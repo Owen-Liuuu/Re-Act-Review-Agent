@@ -98,22 +98,56 @@ def build_reference_resolver_from_parsed(studies: "list[ParsedStudy]"):
             pmid=(s.pmid or None),
             year=citation_year(s.citation),
             journal=citation_journal(s.citation),
+            doi_origin=s.doi_origin or "",
+            pmid_origin=s.pmid_origin or "",
         )
     return resolver
 
 
-def build_reference_resolver(sid_to_study: dict[str, IncludedStudy]):
-    """A study_id -> ReferenceEntry resolver for the AuditPipeline."""
+def build_reference_resolver(
+    sid_to_study: dict[str, IncludedStudy],
+    parsed_studies: "list[ParsedStudy] | None" = None,
+):
+    """A study_id -> ReferenceEntry resolver for the AuditPipeline.
+
+    Uploaded studies keep the CSV DOI (that is how the local file is keyed).
+    Studies the CSV does not name fall through to the review's own citation,
+    so the online retriever has a real title rather than a slug to search for.
+    """
+    parsed_resolve = (
+        build_reference_resolver_from_parsed(parsed_studies)
+        if parsed_studies is not None else None)
+
     def resolver(study_id: str) -> ReferenceEntry:
         s = sid_to_study.get(study_id)
         if s is None:
+            if parsed_resolve is not None:
+                return parsed_resolve(study_id)
             return ReferenceEntry(title=study_id)
-        return ReferenceEntry(
+        ref = ReferenceEntry(
             title=s.review_citation or study_id,
             doi=s.doi or None,
             year=citation_year(s.review_citation),
             journal=citation_journal(s.review_citation),
         )
+        if parsed_resolve is None:
+            return ref
+        parsed = parsed_resolve(study_id)
+        updates: dict = {}
+        if not (ref.doi or "").strip() and parsed.doi:
+            updates["doi"] = parsed.doi
+            updates["doi_origin"] = parsed.doi_origin
+        if parsed.pmid and not (ref.pmid or "").strip():
+            updates["pmid"] = parsed.pmid
+            updates["pmid_origin"] = parsed.pmid_origin
+        if is_resolvable(parsed) and (
+                not s.review_citation or len(parsed.title or "") > len(ref.title) + 10):
+            updates["title"] = parsed.title
+            if parsed.year:
+                updates["year"] = parsed.year
+            if parsed.journal:
+                updates["journal"] = parsed.journal
+        return ref.model_copy(update=updates) if updates else ref
     return resolver
 
 

@@ -97,9 +97,8 @@ class FullTextRetriever(PaperRetriever):
         self._unpaywall_email = unpaywall_email or pubmed_settings.email
         self._unpaywall_enabled = unpaywall_enabled
         self._timeout = httpx.Timeout(25.0, connect=10.0)
-        # Structured tables from the last PMC XML parse. Not stored on
-        # PaperDocument: that schema is inside the evidence-adequacy hash
-        # boundary. Callers copy this onto FetchResult.
+        # Structured tables from the last PMC XML parse. Copied onto
+        # PaperDocument.tables (evidence_adequacy 1.1.0) and FetchResult.
         self.captured_tables: list[CapturedTable] = []
 
     async def retrieve(self, reference: ReferenceEntry) -> PaperDocument | None:
@@ -173,6 +172,7 @@ class FullTextRetriever(PaperRetriever):
                 paper_id=reference.doi or f"pmc:{pmc_id}",
                 reference=reference,
                 full_text=core_text[:_MAX_FULLTEXT_CHARS],
+                tables=list(self.captured_tables),
                 document_scope=DocumentScope.FULL_TEXT,
                 sections=self._split_sections(full_text),
                 metadata={"source": "pmc", "pmc_id": pmc_id},
@@ -952,30 +952,117 @@ def _pmc_xml_to_tables(root: ET.Element) -> list[CapturedTable]:
     return tables
 
 
+def _span_count(cell: ET.Element, name: str) -> int:
+    raw = cell.get(name)
+    if not raw:
+        return 1
+    try:
+        n = int(raw)
+    except ValueError:
+        return 1
+    return n if n > 0 else 1
+
+
+def _section_tr_elements(section: ET.Element) -> list[ET.Element]:
+    return [child for child in section if child.tag == "tr"]
+
+
+def _table_tr_elements(table_el: ET.Element) -> tuple[list[ET.Element], int]:
+    """Document-order ``<tr>`` nodes and how many of them are thead.
+
+    thead/tbody/tfoot are walked as one grid so a header rowspan that
+    lands in the body keeps its column. Direct ``<tr>`` children cover
+    tables that omit those wrappers.
+    """
+    thead = table_el.find("thead")
+    tbody = table_el.find("tbody")
+    tfoot = table_el.find("tfoot")
+    header = _section_tr_elements(thead) if thead is not None else []
+    body = _section_tr_elements(tbody) if tbody is not None else []
+    if tfoot is not None:
+        body.extend(_section_tr_elements(tfoot))
+    if header or body:
+        return header + body, len(header)
+    direct = _section_tr_elements(table_el)
+    if not direct:
+        return [], 0
+    return direct, 1
+
+
+def _expand_trs(trs: list[ET.Element]) -> list[list[str]]:
+    """HTML table grid: ``colspan`` / ``rowspan`` occupy cells, text repeats."""
+    occupied: dict[tuple[int, int], str] = {}
+    for r, tr in enumerate(trs):
+        c = 0
+        for cell in tr:
+            if cell.tag not in ("th", "td"):
+                continue
+            while (r, c) in occupied:
+                c += 1
+            colspan = _span_count(cell, "colspan")
+            rowspan = _span_count(cell, "rowspan")
+            text = _et_text(cell)
+            for dr in range(rowspan):
+                for dc in range(colspan):
+                    occupied.setdefault((r + dr, c + dc), text)
+            c += colspan
+    if not occupied:
+        return []
+    n_rows = max(r for r, _c in occupied) + 1
+    n_cols = max(c for _r, c in occupied) + 1
+    return [
+        [occupied.get((r, c), "") for c in range(n_cols)]
+        for r in range(n_rows)
+    ]
+
+
 def _table_rows(section: ET.Element) -> list[list[str]]:
-    """One list of cell strings per ``<tr>``, same cell walk as ``_table_to_text``."""
-    rows: list[list[str]] = []
-    for tr in section.iter("tr"):
-        cells = [_et_text(cell) for cell in tr if cell.tag in ("th", "td")]
-        if cells:
-            rows.append(cells)
+    """Rectangular grid of a thead/tbody/table section, spans expanded.
+
+    Not the TSV walk. ``_table_to_text`` still lists cells in document
+    order and must stay that way: it feeds ``full_text``.
+    """
+    return _expand_trs(_section_tr_elements(section))
+
+
+def _fill_header_blanks_from_below(header_rows: list[list[str]]) -> list[list[str]]:
+    """Empty parent-header slots take the leaf label in the same column.
+
+    After span expansion those blanks mean "this column is named on a
+    lower header row", not "colspan from the left". ``column_paths``
+    still left-fills blanks the way review tables do; copying the leaf
+    up first stops ``Characteristic`` from covering ``Total``.
+    """
+    if len(header_rows) < 2:
+        return header_rows
+    width = max(len(row) for row in header_rows)
+    rows = [list(row) + [""] * (width - len(row)) for row in header_rows]
+    for j in range(width):
+        for i, row in enumerate(rows):
+            if row[j].strip():
+                continue
+            for below in rows[i + 1:]:
+                if below[j].strip():
+                    row[j] = below[j]
+                    break
     return rows
 
 
 def _table_to_grid(table_el: ET.Element) -> tuple[list[list[str]], list[list[str]]]:
-    """Split a JATS ``<table>`` into header rows and body rows."""
-    thead = table_el.find("thead")
-    tbody = table_el.find("tbody")
-    tfoot = table_el.find("tfoot")
-    header_rows = _table_rows(thead) if thead is not None else []
-    body_rows = _table_rows(tbody) if tbody is not None else []
-    if tfoot is not None:
-        body_rows.extend(_table_rows(tfoot))
-    if header_rows or body_rows:
-        if not header_rows and body_rows:
-            return [body_rows[0]], body_rows[1:]
-        return header_rows, body_rows
-    all_rows = _table_rows(table_el)
-    if not all_rows:
+    """Split a JATS ``<table>`` into header rows and body rows.
+
+    Expands ``colspan`` / ``rowspan`` so every row has the same width.
+    ``_table_to_text`` is a separate walk and is not used here.
+    """
+    trs, n_header = _table_tr_elements(table_el)
+    grid = _expand_trs(trs)
+    if not grid:
         return [], []
-    return [all_rows[0]], all_rows[1:]
+    if n_header <= 0:
+        return [grid[0]], grid[1:]
+    header_rows = _fill_header_blanks_from_below(grid[:n_header])
+    body_rows = grid[n_header:]
+    width = max(len(row) for row in header_rows + body_rows)
+    header_rows = [row + [""] * (width - len(row)) for row in header_rows]
+    body_rows = [row + [""] * (width - len(row)) for row in body_rows]
+    return header_rows, body_rows

@@ -1,0 +1,3 @@
+{"index": 1, "stage": "review_pdf_loaded", "title": "Review PDF loaded", "subject": "review.pdf", "warnings": 0, "artifact": "001_review_pdf_loaded.json"}
+{"index": 2, "stage": "review_lens", "title": "Review lens compressed", "subject": "review.pdf", "warnings": 0, "artifact": "002_review_lens.json"}
+{"index": 4, "stage": "review_table_capture", "title": "Displays captured", "subject": "review.pdf", "warnings": 1, "artifact": "004_review_table_capture.json"}

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>B 夜班 · Gate</title>
+  <link rel="stylesheet" href="../bar.css">
+  <link rel="stylesheet" href="theme.css">
+</head>
+<body>
+  <div class="draft-bar">
+    <a href="../index.html">思路</a><span class="sep">|</span>
+    <a href="../a/gate.html">A 刊体</a>
+    <b>B 夜班</b>
+    <a href="../d/gate.html">D 白班</a>
+    <a href="../c/gate.html">C 案卷</a>
+    <span class="sep">|</span>
+    <a href="home.html">Desk</a>
+    <a class="on" href="gate.html">Gate</a>
+    <a href="report.html">Report</a>
+  </div>
+  <header class="top">
+    <a class="wordmark" href="home.html">ReAct-Review</a>
+    <span class="statline"><span class="led amber"></span> 8f3a91c2b0e1 · WAITING · STEP 04</span>
+    <nav><a href="home.html">DESK</a><a href="#">LOG</a></nav>
+  </header>
+  <nav class="progress">
+    <a class="done" href="#">01 pdf</a>
+    <a class="done" href="#">02 lens</a>
+    <a class="done" href="#">03 localize</a>
+    <a class="on" href="#">04 displays</a>
+    <a href="#">05 forest</a>
+    <a href="#">06+</a>
+  </nav>
+  <div class="work">
+    <section class="main">
+      <div class="k">Gate hold</div>
+      <h1 style="margin:6px 0 8px">Displays captured</h1>
+      <p class="statline">review.pdf · keep only faithful tables</p>
+      <div class="panel">
+        <header>
+          <label><input type="checkbox" checked> table_1 · Baseline characteristics</label>
+          <span class="chip">12×8</span>
+        </header>
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr><th>Study</th><th>Design</th><th>N MIE</th><th>N OE</th><th>Age</th></tr></thead>
+            <tbody>
+              <tr><td>Li 2015</td><td>Retrospective PSM</td><td>58</td><td>58</td><td>&gt;70</td></tr>
+              <tr><td>Capovilla 2023</td><td>Multicenter matched</td><td>58</td><td>102 / 58*</td><td>≥75</td></tr>
+              <tr><td>Li 2025</td><td>Retrospective PSM</td><td>92</td><td>55</td><td>&gt;70</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="rowitem"><label><input type="checkbox" checked> fig_2 Overall complications</label><span class="chip ok">checksum ok</span></div>
+      <div class="rowitem"><label><input type="checkbox" checked> fig_3 Pulmonary complications</label><span class="chip ok">checksum ok</span></div>
+      <div class="rowitem"><label><input type="checkbox"> fig_4 30-day mortality</label><span class="chip warn">checksum fail</span></div>
+    </section>
+    <aside class="side">
+      <div class="k">Inspector</div>
+      <p style="color:var(--muted);font-size:13px">Compare against the PDF. Unchecked rows drop.</p>
+      <div class="warn">table_1 extraction confidence 0.42 — verify cells before CONTINUE.</div>
+      <p class="statline">KEEP 3 / 4<br>RETRY available<br>MODEL 2 available</p>
+    </aside>
+  </div>
+  <form class="dock" onsubmit="return false">
+    <button class="btn" type="submit">CONTINUE</button>
+    <button class="btn ghost" type="button">RETRY</button>
+    <button class="btn ghost" type="button">RETRY M2</button>
+    <button class="btn danger" type="button">STOP</button>
+    <span class="note">no full-page refresh · gate holds until POST</span>
+  </form>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "run_id": "web_run",
+  "index": 1,
+  "screen": 0,
+  "stage": "review_pdf_loaded",
+  "title": "Review PDF loaded",
+  "subject": "review.pdf",
+  "render_blocks": ["  100 characters extracted"],
+  "warnings": [],
+  "offers": [],
+  "blocking": true,
+  "decision": "continue",
+  "interaction": "silent"
+}

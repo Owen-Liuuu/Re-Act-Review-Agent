@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "profile_id": "targeted_v7",
+  "written_on": "2026-08-26",
+  "purpose": "Live default: targeted_v7 extraction so a claim's outcome is interpolated into the source prompt. Everything else is what legacy.json did (comparator tolerances, no population contract, no scope check, CLI-only context). Frozen legacy.json stays at legacy_v3 for Phase 6/7 replay. targeted_v7 is also the de-exemplarized targeted prompt; outcome interpolation and example neutralization are bound on one profile.",
+  "extraction_profile": "targeted_v7",
+  "semantic_prompt_profile": "semantic_v1",
+  "tolerances": null,
+  "population_contract": null,
+  "context_policy": "cli_only",
+  "scope_policy": "off",
+  "required_scope_axes": {}
+}

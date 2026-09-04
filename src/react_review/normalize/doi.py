@@ -52,3 +52,15 @@ def printed_pmid(citation: str) -> str:
     """The PubMed ID printed on this citation line, or empty."""
     match = _PMID_IN_TEXT.search(citation or "")
     return match.group(1) if match else ""
+
+
+def normalize_pmid(raw: str | None) -> str:
+    """Keep a PubMed ID only when it looks like one.
+
+    CrossRef ``alternative-id`` often repeats the DOI's article number
+    (``3753``). Those are not PMIDs; a real PMID is 5–8 digits.
+    """
+    text = str(raw or "").strip()
+    if text.lower().startswith("https://pubmed.ncbi.nlm.nih.gov/"):
+        text = text.rsplit("/", 1)[-1].strip()
+    return text if text.isdigit() and 5 <= len(text) <= 8 else ""

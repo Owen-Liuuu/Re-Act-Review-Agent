@@ -1,0 +1,22 @@
+{
+  "run_id": "web_waiting",
+  "index": 4,
+  "screen": 4,
+  "stage": "review_table_capture",
+  "title": "Displays captured",
+  "subject": "review.pdf",
+  "payload": {
+    "tables": [
+      {"id": "table_1", "label": "[on] table_1  Table 1"}
+    ]
+  },
+  "render_blocks": [
+    "  table_1  Table 1  [3 rows]"
+  ],
+  "warnings": ["check the rows"],
+  "offers": ["retry"],
+  "selectable": "tables",
+  "blocking": true,
+  "decision": "",
+  "interaction": ""
+}

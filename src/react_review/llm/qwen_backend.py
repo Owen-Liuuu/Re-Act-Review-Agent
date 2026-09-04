@@ -16,7 +16,7 @@ from react_review.llm.base import LLMBackend
 
 logger = structlog.get_logger(__name__)
 
-_DASHSCOPE_BASE = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+_DASHSCOPE_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
 
 class QwenBackend(LLMBackend):
@@ -36,13 +36,7 @@ class QwenBackend(LLMBackend):
         if not settings.api_key:
             raise LLMError("Qwen backend requires an api_key in config.")
         configured_base = (settings.base_url or "").rstrip("/")
-        if configured_base and configured_base != _DASHSCOPE_BASE:
-            logger.warning(
-                "qwen_base_url_overridden",
-                configured_base=configured_base,
-                forced_base_url=_DASHSCOPE_BASE,
-            )
-        self._base_url = _DASHSCOPE_BASE
+        self._base_url = configured_base or _DASHSCOPE_BASE
         self._model = settings.model or "qwen-plus"
 
     @property
@@ -105,6 +99,7 @@ class QwenBackend(LLMBackend):
                         continue
 
                     if resp.status_code == 429:
+                        self.record_http_429()
                         last_failure = f"HTTP 429: {resp.text[:300]}"
                         if attempt >= self._max_retries:
                             self._log_rate_limited(

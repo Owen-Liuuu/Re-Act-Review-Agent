@@ -6,9 +6,11 @@ import json
 import pytest
 
 from react_review.llm.base import LLMBackend
-from react_review.parser.review_extraction.localize import _hit, localize, selected
+from react_review.parser.review_extraction.localize import (
+    _hit, localize, match_lens_outcome, selected, stamp_display_outcomes,
+)
 from react_review.parser.review_extraction.prompts import ExtractionPromptContract
-from react_review.parser.review_extraction.schemas import ReviewLens
+from react_review.parser.review_extraction.schemas import DisplayHit, ReviewLens
 from react_review.parser.review_extraction.windows import capture_window, results_window
 
 
@@ -196,3 +198,45 @@ async def test_localize_unparseable_displays_returns_empty_and_warns():
     assert hits == []
     blob = " ".join(notes)
     assert "unparseable" in blob
+
+
+def test_stamp_uses_this_review_lens_not_figure_locators():
+    """Empty captions still pick the lens label named in localize's reason."""
+    outcomes = [
+        "Overall postoperative complications",
+        "Pulmonary complications",
+        "30-day and in-hospital mortality",
+        "Anastomotic leak",
+    ]
+    hits = [
+        DisplayHit(
+            display_id="figure_2", kind="forest_plot", caption="",
+            reason=("Per-study forest plot for overall postoperative "
+                    "complications, a ruler outcome")),
+        DisplayHit(
+            display_id="figure_3", kind="forest_plot", caption="",
+            reason="Per-study forest plot for pulmonary complications, a ruler outcome"),
+        DisplayHit(
+            display_id="figure_4", kind="forest_plot", caption="",
+            reason="Per-study forest plot for 30-day mortality, a ruler outcome"),
+        DisplayHit(
+            display_id="figure_5", kind="forest_plot", caption="",
+            reason="Per-study forest plot for anastomotic leak, a ruler outcome"),
+        DisplayHit(
+            display_id="table_1", kind="pdf_table",
+            caption="Table 1. Characteristics of included studies.",
+            reason="Attributes per-study characteristics to named included studies"),
+    ]
+    stamp_display_outcomes(hits, outcomes)
+    by_id = {hit.display_id: hit.outcome for hit in hits}
+    assert by_id["figure_2"] == "Overall postoperative complications"
+    assert by_id["figure_3"] == "Pulmonary complications"
+    assert by_id["figure_4"] == "30-day and in-hospital mortality"
+    assert by_id["figure_5"] == "Anastomotic leak"
+    assert by_id["table_1"] == ""
+    assert match_lens_outcome(
+        "The forest plot is presented in Figure 3.", outcomes) == ""
+    cardiology = ["major adverse cardiac events", "all-cause mortality"]
+    stamp_display_outcomes(hits[:1], cardiology)
+    assert hits[0].outcome == ""
+

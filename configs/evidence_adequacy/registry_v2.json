@@ -1,0 +1,20 @@
+{
+  "registry_id": "evidence_adequacy_policies_v2",
+  "version": 2,
+  "supersedes": "registry_v1.json",
+  "written_on": "2026-08-25",
+  "purpose": "Authorised policy/evaluator pairs for claim-level evidence adequacy. A pair may publish only when its policy and evaluator hashes match a clean Git commit. Adding an evaluator is a new registry version because this file is pinned.",
+  "policies": {
+    "evidence_adequacy_v1": {
+      "status": "active",
+      "formal_results": true,
+      "file": "configs/evidence_adequacy/policy_v1.json",
+      "sha256": "9DA56A30430B6B2B78C4A051DA9DB620A559A6802E3DDBA606551C5ECCD42FC4",
+      "evaluators": [
+        "1.0.0",
+        "1.1.0"
+      ]
+    }
+  },
+  "why_v2": "PaperDocument.tables and collector wiring change the 1.0.0 source hash. 1.0.0 stays listed so the pair remains historically named; current sources only match 1.1.0."
+}

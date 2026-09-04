@@ -37,7 +37,7 @@ def _resolver() -> FieldResolver:
 
 
 def _parser(backend, resolver=None, **kwargs):
-    """Existing unpivot tests pin frozen v1 so DEFAULT=v3 does not change their queue."""
+    """Existing unpivot tests pin frozen v1 so DEFAULT=v4 does not change their queue."""
     kwargs.setdefault("table_capture_prompt_profile", "table_capture_v1")
     return ReviewParser(backend, resolver or _resolver(), **kwargs)
 
@@ -412,7 +412,7 @@ async def test_table_join_key_keeps_printed_words_and_pairs_citations(monkeypatc
     assert "retrieval plan:" in block
     assert "li_2015" in block and "no DOI · no PMID" in block
     assert "plan:title + author + year search" in block
-    assert "li_2025" in block and "DOI 10.1007/s00423-025-03877-4" in block
+    assert "li_2025" in block and "DOI 10.1007/s00423-025-03877-4 (printed in the citation)" in block
     assert "plan:lookup by DOI" in block
 
 
@@ -474,6 +474,88 @@ def test_empty_cohort_label_takes_arm_from_column_header():
     total = by_header["Total"]
     assert total.group == "all"
     assert total.cohort_status == "combined"
+
+
+def test_header_geometry_fills_the_registry_when_labels_are_empty():
+    """P1: arms live in the column names; cohort_label / cohort_labels_seen are blank."""
+    from react_review.normalize.cohorts import build_cohort_registry
+    from react_review.parser.cohort_headers import arm_labels_from_headers
+
+    headers = [
+        "N MIE", "N OE",
+        "Minimally Invasive Esophagectomy (MIE) Events",
+        "Open Esophagectomy (OE) Events",
+    ]
+    registry = build_cohort_registry(
+        [""] * 4 + arm_labels_from_headers(headers))
+    assert {c.key for c in registry.labels} == {"mie", "oe"}
+    assert registry.unassigned == []
+
+    parser = _parser(QueueBackend([]))
+    rows = [
+        {"column_header": "Minimally Invasive Esophagectomy (MIE) Events",
+         "value": "23", "cohort_label": "",
+         "row_key": {"Study": "Capovilla 2023"}, "table_id": "fig_2",
+         "row": 0, "col": 1, "display_kind": "forest_plot"},
+        {"column_header": "Open Esophagectomy (OE) Events",
+         "value": "64", "cohort_label": "",
+         "row_key": {"Study": "Capovilla 2023"}, "table_id": "fig_2",
+         "row": 0, "col": 3, "display_kind": "forest_plot"},
+        {"column_header": "N MIE", "value": "58", "cohort_label": "",
+         "row_key": {"Study": "Capovilla G et al."}, "row_year": "2023",
+         "table_id": "table_1", "row": 1, "col": 5},
+    ]
+    items = parser._postprocess(rows, {}, registry)
+    assert {i.group for i in items} == {"mie", "oe"}
+    assert all(i.group != "all" for i in items)
+
+
+def test_age_cell_stays_a_claim_and_marks_sibling_population_scope():
+    """P2: Age is both an audit claim and the row's population restriction."""
+    from react_review.dkb import ResolvedField
+
+    parser = _parser(QueueBackend([]))
+    rows = [
+        {"column_header": "Age", "value": "≥75 years", "cohort_label": "",
+         "row_key": {"Study": "Capovilla G et al."}, "row_year": "2023",
+         "table_id": "table_1", "row": 1, "col": 4},
+        {"column_header": "N MIE", "value": "58", "cohort_label": "",
+         "row_key": {"Study": "Capovilla G et al."}, "row_year": "2023",
+         "table_id": "table_1", "row": 1, "col": 5},
+        {"column_header": "Minimally Invasive Esophagectomy (MIE) Events",
+         "value": "23", "cohort_label": "",
+         "row_key": {"Study": "Capovilla 2023"}, "table_id": "fig_2",
+         "row": 0, "col": 1, "display_kind": "forest_plot"},
+    ]
+    resolutions = {
+        0: ResolvedField(resolution_key="age", raw_field_name="Age",
+                         field_type="age", status="authoritative"),
+        1: ResolvedField(resolution_key="n", raw_field_name="N MIE",
+                         field_type="subgroup_n", status="authoritative"),
+        2: ResolvedField(
+            resolution_key="ev",
+            raw_field_name="Minimally Invasive Esophagectomy (MIE) Events",
+            field_type="events", status="authoritative"),
+    }
+    from react_review.normalize.cohorts import build_cohort_registry
+    from react_review.parser.cohort_headers import arm_labels_from_headers
+    registry = build_cohort_registry(arm_labels_from_headers(
+        [r["column_header"] for r in rows]))
+    items = parser._postprocess(rows, resolutions, registry)
+    by_header = {i.raw_field_name: i for i in items}
+    age = by_header["Age"]
+    assert age.field_type == "age"
+    assert age.value == "≥75 years"
+    assert age.population_scope is not None
+    assert age.population_scope.basis_phrase == "≥75 years"
+    assert age.population_scope_source == "Age"
+    n_mie = by_header["N MIE"]
+    assert n_mie.population_scope is not None
+    assert n_mie.population_scope.basis_phrase == "≥75 years"
+    forest = by_header["Minimally Invasive Esophagectomy (MIE) Events"]
+    assert forest.population_scope is not None
+    assert forest.population_scope.basis_phrase == "≥75 years"
+
 
 
 def test_table_and_forest_row_labels_share_one_study_id():
@@ -685,11 +767,20 @@ def test_coverage_plan_uses_doi_pmid_not_retrieval_results():
     doi = ParsedStudy(study_id="li_2025", doi="10.xxxx/y")
     pmid = ParsedStudy(study_id="x", pmid="12345")
     none = ParsedStudy(study_id="li_2015")
+    printed = ParsedStudy(
+        study_id="li_2025", doi="10.1007/s00423-025-03877-4",
+        doi_origin="printed")
+    inferred = ParsedStudy(
+        study_id="li_2015", pmid="25249141", pmid_origin="resolved")
     assert ReviewParser._planned_lookup(doi) == "lookup by DOI"
     assert ReviewParser._planned_lookup(pmid) == "lookup by PMID"
     assert ReviewParser._planned_lookup(none) == "title + author + year search"
     assert ReviewParser._ident_status(none) == "no DOI · no PMID"
     assert ReviewParser._ident_status(doi) == "DOI 10.xxxx/y · no PMID"
+    assert ReviewParser._ident_status(printed) == (
+        "DOI 10.1007/s00423-025-03877-4 (printed in the citation) · no PMID")
+    assert ReviewParser._ident_status(inferred) == (
+        "no DOI · PMID 25249141 (resolved via title search)")
 
 
 def test_long_format_clips_value_so_wrap_cannot_hit_column_zero():
@@ -707,5 +798,57 @@ def test_long_format_clips_value_so_wrap_cannot_hit_column_zero():
     clipped = ReviewParser._clip_display(value)
     assert clipped.endswith("…")
     assert len(clipped) == 24
+
+
+@pytest.mark.asyncio
+async def test_backfill_keeps_eligible_pmid_and_not_low_confidence_doi():
+    from react_review.parser.review_parser import ParsedStudy
+    from react_review.tools.search import (
+        CandidateWork, ReferenceReconciler, ResolveReferenceTool, StaticResolver,
+    )
+
+    li = CandidateWork(
+        doi="10.1007/s00464-014-3750-0",
+        title="Minimally invasive esophagectomy for esophageal cancer",
+        year=2015, journal="Surgical Endoscopy", pmid="25249141",
+        source="crossref")
+    tool = ResolveReferenceTool(ReferenceReconciler([StaticResolver("crossref", [li])]))
+    parser = _parser(QueueBackend([]), resolve_reference=tool)
+    citation = (
+        "Li J, Shen Y, Tan L, et al. Is minimally invasive esophagectomy "
+        "beneficial to elderly patients with esophageal cancer? "
+        "Surg Endosc. 2015;29(4):925-930.")
+    out = await parser._backfill_resolved_identifiers([
+        ParsedStudy(study_id="li_2015", citation=citation)])
+    assert out[0].pmid == "25249141"
+    assert out[0].pmid_origin == "resolved"
+    assert out[0].doi == ""
+    assert "resolved via title search" in ReviewParser._ident_status(out[0])
+    assert ReviewParser._planned_lookup(out[0]) == "lookup by PMID"
+
+
+@pytest.mark.asyncio
+async def test_backfill_does_not_stamp_the_capovilla_dote_supplement():
+    from react_review.parser.review_parser import ParsedStudy
+    from react_review.tools.search import (
+        CandidateWork, ReferenceReconciler, ResolveReferenceTool, StaticResolver,
+    )
+
+    dote = CandidateWork(
+        doi="10.1093/dote/doad052.248",
+        title="Minimally invasive esophagectomy after neoadjuvant therapy",
+        year=2023, journal="Diseases of the Esophagus", pmid="37555248",
+        source="crossref")
+    tool = ResolveReferenceTool(ReferenceReconciler([StaticResolver("crossref", [dote])]))
+    parser = _parser(QueueBackend([]), resolve_reference=tool)
+    citation = (
+        "Capovilla G, Uzun E, Scarton A, et al. Minimally invasive Ivor Lewis "
+        "esophagectomy in the elderly patient. Front Oncol. 2023;13:1104109.")
+    out = await parser._backfill_resolved_identifiers([
+        ParsedStudy(study_id="capovilla_2023", citation=citation)])
+    assert out[0].doi == ""
+    assert out[0].pmid == ""
+    assert out[0].doi_origin == ""
+    assert "10.1093/dote/doad052.248" not in (out[0].doi or "")
 
 

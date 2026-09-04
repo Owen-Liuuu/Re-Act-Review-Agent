@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import os
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,7 @@ BACKEND_STEPS = (
     "field_resolution",
     "extract_locate",
     "extract_transcribe",
+    "source_row_map",
     "semantic_compare",
 )
 
@@ -227,11 +229,121 @@ def load_config(path: Path) -> AppConfig:
     try:
         with open(path, encoding="utf-8") as f:
             data: dict[str, Any] = yaml.safe_load(f) or {}
-        return AppConfig(**data)
+        return apply_env_secrets(AppConfig(**data))
     except ConfigError:
         raise
     except Exception as exc:
         raise ConfigError(f"Failed to load config from {path}: {exc}") from exc
+
+
+def apply_env_secrets(config: AppConfig) -> AppConfig:
+    """Fill empty secret slots from REACT_REVIEW_* environment variables.
+
+    The YAML file may be committed without keys. A container injects keys at
+    runtime. Values are never logged here.
+    """
+    data = config.model_dump()
+    mapping = (
+        (("llm", "api_key"), "REACT_REVIEW_LLM_API_KEY"),
+        (("llm", "base_url"), "REACT_REVIEW_LLM_BASE_URL"),
+        (("llm2", "api_key"), "REACT_REVIEW_LLM2_API_KEY"),
+        (("vision", "api_key"), "REACT_REVIEW_VISION_API_KEY"),
+        (("pubmed", "api_key"), "REACT_REVIEW_PUBMED_API_KEY"),
+        (("pubmed", "email"), "REACT_REVIEW_EMAIL"),
+        (("unpaywall", "email"), "REACT_REVIEW_EMAIL"),
+        (("crossref", "mailto"), "REACT_REVIEW_EMAIL"),
+    )
+    for (section, field), env in mapping:
+        value = os.environ.get(env, "").strip()
+        node = data.get(section)
+        if value and isinstance(node, dict):
+            node[field] = value
+    mock = os.environ.get("REACT_REVIEW_MOCK_MODE", "").strip().lower()
+    if mock in {"0", "1", "true", "false", "yes", "no"}:
+        data["mock_mode"] = mock in {"1", "true", "yes"}
+    transcribe = (data.get("backend_profiles") or {}).get("transcribe")
+    if isinstance(transcribe, dict) and not transcribe.get("api_key"):
+        transcribe["api_key"] = (
+            os.environ.get("REACT_REVIEW_TRANSCRIBE_API_KEY", "").strip()
+            or os.environ.get("REACT_REVIEW_LLM_API_KEY", "").strip()
+            or (data.get("llm") or {}).get("api_key") or "")
+    return AppConfig(**data)
+
+
+def keys_required(config: AppConfig) -> bool:
+    """Cloud images without a baked llm key must collect three native keys.
+
+    ``mock_mode`` (example config / tests) and a host ``llm.api_key`` (local
+    YAML or ``REACT_REVIEW_LLM_API_KEY``) allow Account to stay empty.
+    """
+    if config.mock_mode:
+        return False
+    return not (config.llm.api_key or "").strip()
+
+
+def apply_run_gears(
+    config: AppConfig,
+    *,
+    complex,  # ResolvedGear
+    simple,   # ResolvedGear
+    visual,   # ResolvedGear
+    complex_key: str = "",
+    simple_key: str = "",
+    visual_key: str = "",
+) -> AppConfig:
+    """Clone ``config`` with the three homepage gears. Does not write YAML.
+
+    Empty keys keep the host secrets (local serve). Any customer key means
+    all three are required; Simple does not inherit Complex.
+    """
+    from react_review.llm.catalog import SIMPLE_STEPS, reject_openrouter_key
+
+    c_key = (complex_key or "").strip()
+    s_key = (simple_key or "").strip()
+    v_key = (visual_key or "").strip()
+    filled = [k for k in (c_key, s_key, v_key) if k]
+    if 0 < len(filled) < 3:
+        raise ConfigError(
+            "all three API keys are required (complex, simple, visual)")
+    for key in (c_key, s_key, v_key):
+        if key:
+            reject_openrouter_key(key)
+
+    data = config.model_dump()
+    data["llm"] = {
+        **(data.get("llm") or {}),
+        "provider": complex.provider,
+        "model": complex.model,
+        "base_url": complex.base_url,
+    }
+    profiles = dict(data.get("backend_profiles") or {})
+    transcribe = dict(profiles.get("transcribe") or {})
+    transcribe.update({
+        "provider": simple.provider,
+        "model": simple.model,
+        "base_url": simple.base_url,
+    })
+    if simple.provider.lower() not in REASONING_PROVIDERS:
+        transcribe["reasoning"] = None
+    vision_raw = data.get("vision")
+    vision = dict(vision_raw) if isinstance(vision_raw, dict) else {}
+    vision.update({
+        "provider": visual.provider,
+        "model": visual.model,
+        "base_url": visual.base_url,
+    })
+    if filled:
+        data["llm"]["api_key"] = c_key
+        transcribe["api_key"] = s_key
+        vision["api_key"] = v_key
+    profiles["transcribe"] = transcribe
+    data["backend_profiles"] = profiles
+    data["vision"] = vision
+    routing = dict(data.get("routing") or {})
+    for step in SIMPLE_STEPS:
+        routing[step] = "transcribe"
+    data["routing"] = routing
+    return AppConfig(**data)
 
 
 def apply_profile_all(config: AppConfig, name: str | None) -> AppConfig:

@@ -180,6 +180,14 @@ class RunTelemetry(BaseModel):
     stages: dict[str, StageTelemetry] | None = None
     #: Present only for a run that batched. Same rule, same reason.
     batch: BatchStats | None = None
+    #: Why extract_source_value was asked again. Omitted when the run never
+    #: retried, so a legacy artifact does not gain four zero keys. The four
+    #: reasons always appear together when any retry was classified — there is
+    #: no ``unknown`` bucket.
+    retry_reason: dict[str, int] | None = None
+    #: HTTP 429 responses seen by a backend, including those that recovered.
+    #: Omitted when zero so a run that never hit a rate limit keeps its shape.
+    http_429: int = 0
 
     @model_serializer(mode="wrap")
     def _omit_unused_sections(self, handler):
@@ -187,6 +195,11 @@ class RunTelemetry(BaseModel):
         for name in ("stages", "batch"):
             if not body.get(name):
                 body.pop(name, None)
+        reasons = body.get("retry_reason")
+        if not reasons or not any(reasons.values()):
+            body.pop("retry_reason", None)
+        if not body.get("http_429"):
+            body.pop("http_429", None)
         return body
 
     def has_measurements(self) -> bool:
@@ -200,7 +213,8 @@ class RunTelemetry(BaseModel):
         return bool(
             self.tool_attempts or self.backend_requests or self.cache_hits
             or self.cache_misses or self.repeated_attempts or self.call_seconds
-            or self.wall_seconds or self.stages or self.batch)
+            or self.wall_seconds or self.stages or self.batch
+            or self.retry_reason or self.http_429)
 
     def every_call_failed(self) -> bool:
         """Whether the model was reached and never once answered.
@@ -274,6 +288,22 @@ class RunTelemetry(BaseModel):
 
     def attempt(self, stage: str) -> None:
         self.tool_attempts[stage] = self.tool_attempts.get(stage, 0) + 1
+
+    def record_retry(self, reason: str) -> None:
+        """One reflection-layer retry, attributed to a classified reason."""
+        allowed = ("call_failed", "not_found", "low_confidence", "disagreement")
+        if reason not in allowed:
+            raise ValueError(
+                f"retry_reason {reason!r} is not a classified reason "
+                f"(known: {', '.join(allowed)})")
+        if self.retry_reason is None:
+            self.retry_reason = {name: 0 for name in allowed}
+        self.retry_reason[reason] += 1
+
+    def record_http_429(self, n: int = 1) -> None:
+        """One HTTP 429, whether the backend recovered or exhausted."""
+        if n:
+            self.http_429 += n
 
     def record_call(self, *, prompt: str, output: str, seconds: float,
                     usage: dict | None = None, failed: bool = False,

@@ -64,6 +64,9 @@ class DisplayHit(BaseModel):
     page_hint: str = ""
     evidence_chain: bool = False
     reason: str = ""
+    #: Which of this review's own outcome labels this display is about.
+    #: Filled from the lens after localize; empty when none uniquely fits.
+    outcome: str = ""
 
 
 class OriginLabel(BaseModel):

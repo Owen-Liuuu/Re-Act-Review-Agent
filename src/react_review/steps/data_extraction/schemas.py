@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, Field, model_serializer
 
@@ -30,6 +31,11 @@ class PaperDocument(BaseModel):
         paper_id: Unique identifier (DOI or generated).
         reference: The original reference entry.
         full_text: Complete text content of the paper.
+        tables: Structured PMC ``<table-wrap>`` grids (``CapturedTable``),
+            when the retriever parsed them. Typed as ``list[Any]`` because
+            importing ``CapturedTable`` here would circular-import through
+            ``schemas.__init__``. Empty on every non-PMC path. Coexists with
+            ``full_text``; the TSV dump in ``full_text`` is not removed.
         sections: Named sections (e.g. methods, results).
         metadata: Additional metadata from the source.
         document_scope: Explicit extent of the retrieved source document.
@@ -38,6 +44,7 @@ class PaperDocument(BaseModel):
     paper_id: str
     reference: ReferenceEntry
     full_text: str = ""
+    tables: list[Any] = Field(default_factory=list)
     sections: dict[str, str] = Field(default_factory=dict)
     metadata: dict[str, str] = Field(default_factory=dict)
     document_scope: DocumentScope = DocumentScope.UNKNOWN
@@ -48,6 +55,8 @@ class PaperDocument(BaseModel):
         body = handler(self)
         if self.document_scope is DocumentScope.UNKNOWN:
             body.pop("document_scope", None)
+        if not self.tables:
+            body.pop("tables", None)
         return body
 
 

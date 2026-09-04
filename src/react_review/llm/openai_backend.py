@@ -228,6 +228,7 @@ class OpenAIBackend(LLMBackend):
                         continue
 
                     if resp.status_code == 429:
+                        self.record_http_429()
                         last_failure = f"HTTP 429: {resp.text[:300]}"
                         if rate_retries >= self._max_retries:
                             self._log_rate_limited(

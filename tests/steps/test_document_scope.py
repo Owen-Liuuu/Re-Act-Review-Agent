@@ -8,7 +8,7 @@ import pytest
 from react_review.agents.collector import _provenance
 from react_review.core.config import AppConfig, PubMedSettings
 from react_review.orchestrator.audit_pipeline import AuditPipeline
-from react_review.retrieval.local_pdf import LocalPdfRetriever
+from react_review.retrieval.local_pdf import LocalPdfRetriever, local_pdf_path
 from react_review.schemas.agent import AgentRun, StepRecord
 from react_review.schemas.package import EvidencePackage
 from react_review.steps.data_extraction.schemas import DocumentScope, PaperDocument
@@ -62,6 +62,9 @@ async def test_metadata_fallback_exists_but_is_not_retrieved():
     assert document.document_scope is DocumentScope.METADATA_ONLY
     assert result.document is document
     assert result.retrieved is False
+    assert local_pdf_path(document) == ""
+    assert "path" not in document.metadata
+    assert "source_pdf_path" not in document.model_dump()
 
 
 @pytest.mark.asyncio
@@ -94,6 +97,8 @@ async def test_pmc_document_is_explicit_full_text(monkeypatch):
 
     assert document is not None
     assert document.document_scope is DocumentScope.FULL_TEXT
+    assert local_pdf_path(document) == ""
+    assert "path" not in document.metadata
 
 
 @pytest.mark.asyncio
@@ -184,6 +189,11 @@ async def test_local_pdf_retriever_declares_full_text(tmp_path, monkeypatch):
 
     assert document is not None
     assert document.document_scope is DocumentScope.FULL_TEXT
+    assert local_pdf_path(document) == str(pdf)
+    assert document.metadata["path"] == str(pdf)
+    assert document.full_text == "Locally extracted source text."
+    dumped = document.model_dump()
+    assert "source_pdf_path" not in dumped
 
 
 def test_scope_is_persisted_in_evidence_package_processing_record(tmp_path):

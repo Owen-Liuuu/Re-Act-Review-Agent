@@ -1,6 +1,8 @@
 """Step 1 — which tables/figures are on the evidence chain. Lens + results window only."""
 from __future__ import annotations
 
+import re
+
 import structlog
 
 from react_review.llm.base import LLMBackend, parse_llm_response
@@ -12,6 +14,13 @@ from react_review.parser.review_extraction.windows import results_window
 logger = structlog.get_logger(__name__)
 
 _KINDS = {"pdf_table", "forest_plot", "other"}
+#: Function words only. Outcome identity comes from the review's own lens
+#: labels at runtime — this set must not grow disease vocabulary.
+_STOP = frozenset({
+    "a", "an", "the", "of", "and", "or", "for", "with", "vs", "versus",
+    "in", "on", "to", "by", "from", "after", "per", "study", "plot",
+    "forest", "figure", "table", "ruler", "outcome", "named", "included",
+})
 
 
 def _hit(raw: object, index: int) -> DisplayHit | None:
@@ -35,7 +44,56 @@ def _hit(raw: object, index: int) -> DisplayHit | None:
         page_hint=page_hint,
         evidence_chain=bool(evidence),
         reason=str(raw.get("reason") or "").strip(),
+        outcome=str(raw.get("outcome") or "").strip(),
     )
+
+
+def _content_tokens(text: str) -> set[str]:
+    return {
+        tok for tok in re.findall(r"[0-9a-z]+(?:-[0-9a-z]+)*", text.casefold())
+        if tok not in _STOP and (len(tok) >= 3 or any(ch.isdigit() for ch in tok))
+    }
+
+
+def match_lens_outcome(text: str, outcomes: list[str]) -> str:
+    """Return this review's own outcome label that ``text`` is about, or empty.
+
+    Candidates are the lens strings of the review being parsed. No disease
+    vocabulary lives here: a cardiology review yields cardiology names because
+    that is what the lens copied, not because this function knows them.
+    Empty when nothing uniquely fits, so a figure number cannot become the
+    claim identity.
+    """
+    blob = " ".join(str(text or "").split())
+    labels = [str(item or "").strip() for item in outcomes if str(item or "").strip()]
+    if not blob or not labels:
+        return ""
+    folded = blob.casefold()
+    exact = [name for name in labels if name.casefold() in folded]
+    if exact:
+        return max(exact, key=lambda name: (len(name), name))
+    text_toks = _content_tokens(blob)
+    if not text_toks:
+        return ""
+    scored: list[tuple[int, str]] = []
+    for name in labels:
+        overlap = len(_content_tokens(name) & text_toks)
+        if overlap:
+            scored.append((overlap, name))
+    if not scored:
+        return ""
+    scored.sort(key=lambda item: (-item[0], -len(item[1]), item[1]))
+    best_n, best = scored[0]
+    if any(n == best_n for n, label in scored[1:]):
+        return ""
+    return best
+
+
+def stamp_display_outcomes(hits: list[DisplayHit], outcomes: list[str]) -> None:
+    """Put a lens outcome on each hit. Localize did not name one → leave empty."""
+    for hit in hits:
+        blob = " ".join(part for part in (hit.caption, hit.reason, hit.outcome) if part)
+        hit.outcome = match_lens_outcome(blob, outcomes)
 
 
 async def localize(

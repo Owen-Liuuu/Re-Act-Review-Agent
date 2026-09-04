@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from react_review.csv_io import load_included_studies
-from react_review.retrieval.local_pdf import LocalPdfRetriever
+from react_review.retrieval.local_pdf import LocalPdfRetriever, local_pdf_path
 from react_review.schemas.evidence import ReviewDataItem
 from react_review.steps.paper_verification.schemas import ReferenceEntry
 from react_review.parser.review_parser import ParsedStudy
@@ -183,6 +183,25 @@ def test_resolver_pairs_verbatim_table_labels_and_attaches_the_printed_doi():
     assert not is_resolvable(missing)
 
 
+def test_resolver_from_parsed_copies_identifier_origin():
+    studies = [
+        ParsedStudy(
+            study_id="li_2015",
+            citation="Li J, et al. Surg Endosc. 2015;29(4):925-930.",
+            pmid="25249141", pmid_origin="resolved"),
+        ParsedStudy(
+            study_id="li_2025",
+            citation="Li K, et al. Langenbecks Arch Surg. 2025;410(1):311.",
+            doi="10.1007/s00423-025-03877-4", doi_origin="printed"),
+    ]
+    resolve = build_reference_resolver_from_parsed(studies)
+    inferred = resolve("li_2015")
+    printed = resolve("li_2025")
+    assert inferred.pmid == "25249141" and inferred.pmid_origin == "resolved"
+    assert printed.doi == "10.1007/s00423-025-03877-4"
+    assert printed.doi_origin == "printed"
+
+
 def test_a_citation_without_a_doi_is_still_worth_resolving():
     # Most reference lists print no DOIs; refusing those would discard the review.
     # Only a PLACEHOLDER (no citation at all) is unresolvable.
@@ -192,6 +211,26 @@ def test_a_citation_without_a_doi_is_still_worth_resolving():
     resolve = build_reference_resolver_from_parsed(studies)
     assert is_resolvable(resolve("aslan_2015"))
     assert not is_resolvable(resolve("never_cited_1999"))
+
+
+def test_resolver_falls_through_to_the_review_citation_when_the_csv_has_no_row():
+    """Unmatched uploads must not send the online chain hunting for a slug."""
+    from react_review.schemas.evidence import IncludedStudy
+
+    sid_map = {"li_2025": IncludedStudy(
+        study_id="li_2025", doi="10.1007/s00423-025-03877-4",
+        review_citation="Li K et al. (2025)", source_pdf="li.pdf")}
+    parsed = [ParsedStudy(
+        study_id="capovilla_2023",
+        citation="Capovilla G. Front Oncol. 2023;13:1104109.",
+        pmid="36726501")]
+    resolve = build_reference_resolver(sid_map, parsed)
+    uploaded = resolve("li_2025")
+    assert uploaded.doi == "10.1007/s00423-025-03877-4"
+    online = resolve("capovilla_2023")
+    assert online.pmid == "36726501"
+    assert "Capovilla" in online.title
+    assert is_resolvable(online)
 
 
 # --- LocalPdfRetriever ---
@@ -219,3 +258,5 @@ async def test_local_retriever_reads_real_pdf_if_present():
     assert doc is not None
     assert len(doc.full_text) > 1000
     assert doc.metadata["source"] == "local_pdf"
+    assert local_pdf_path(doc) == str(pdf_path)
+    assert Path(local_pdf_path(doc)).is_file()

@@ -3,9 +3,12 @@
 Phase 7 built prompt contracts and then left production on the old ones: an
 audit run still used the legacy extraction prompt, semantic v1, live extraction
 with no recording, and threw away the research context the parser had just read
-out of the review. These tests hold the wiring in place, and hold the DEFAULT
-where it is: switching production onto the Phase 8 contract is a later,
-explicit decision, not a side effect of building the mechanism.
+out of the review. These tests hold the wiring in place. The live default is
+``table_locate_v1`` so a unique source table is the locate input instead of a
+20k excerpt; ``lean_v8`` stays the excerpt-only profile and ``legacy.json``
+stays at ``legacy_v3`` for Phase 6/7 replay. Switching onto
+the full Phase 8 contract (semantic v2, scope check, Phase 8 tolerances) is
+a later, explicit decision.
 """
 from __future__ import annotations
 
@@ -44,13 +47,19 @@ def _cli_flags(argv: list[str]):
 
 # --- the default stays where it is ---------------------------------------
 
-def test_run_defaults_to_the_legacy_contract():
+def test_run_defaults_to_table_locate_v1_and_legacy_stays_replayable():
     args = _cli_flags([])
-    assert args.profile is None            # resolved to configs/run_profiles/legacy.json
-    contract = load_run_contract(PROFILES / "legacy.json")
-    assert contract.extraction_profile == "legacy_v3"
-    assert contract.semantic_prompt_profile == "semantic_v1"
-    assert contract.context_policy == "cli_only"
+    assert args.profile is None            # resolved to configs/run_profiles/table_locate_v1.json
+    live = load_run_contract(PROFILES / "table_locate_v1.json")
+    assert live.extraction_profile == "table_locate_v1"
+    assert live.semantic_prompt_profile == "semantic_v1"
+    assert live.context_policy == "cli_only"
+    lean = load_run_contract(PROFILES / "lean_v8.json")
+    assert lean.extraction_profile == "lean_v8"
+    legacy = load_run_contract(PROFILES / "legacy.json")
+    assert legacy.extraction_profile == "legacy_v3"
+    frozen_v7 = load_run_contract(PROFILES / "targeted_v7.json")
+    assert frozen_v7.extraction_profile == "targeted_v7"
 
 
 def test_extraction_defaults_to_live_and_can_be_recorded():

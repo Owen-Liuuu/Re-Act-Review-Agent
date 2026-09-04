@@ -39,6 +39,8 @@ from react_review.tools.extraction_profile import (
     TARGETED_V4,
     TARGETED_V6,
     TARGETED_V7,
+    LEAN_V8,
+    TABLE_LOCATE_V1,
     BATCH_SPLIT_V1,
     is_batch_route,
     prompt_profile,
@@ -241,7 +243,10 @@ async def test_v6_asks_the_model_to_enumerate_arms_like_v4():
 def test_v6_version_string_is_registered_and_distinct():
     assert prompt_version("targeted_v6") == TARGETED_V6
     assert prompt_version("targeted_v7") == TARGETED_V7
-    assert len({LEGACY_V3, TARGETED_V4, TARGETED_V6, TARGETED_V7}) == 4
+    assert prompt_version("lean_v8") == LEAN_V8
+    assert prompt_version("table_locate_v1") == TABLE_LOCATE_V1
+    assert len({LEGACY_V3, TARGETED_V4, TARGETED_V6, TARGETED_V7, LEAN_V8,
+                TABLE_LOCATE_V1}) == 6
 
 
 @pytest.mark.asyncio
@@ -286,6 +291,53 @@ async def test_targeted_v7_contract_hash_matches_what_the_tool_sends():
     fixture = body["fixture_inputs"]
     prompt = await _rendered(
         "targeted_v7",
+        outcome=fixture["outcome"],
+        research_context=fixture["context"],
+    )
+    digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest().upper()
+    assert digest == body["rendered_prompt_sha256"]
+
+
+@pytest.mark.asyncio
+async def test_lean_v8_is_legacy_plus_v6_rules_and_outcome_without_targeted():
+    """lean_v8 must not inherit the enumerate-then-assign machine."""
+    outcome = "overall complications"
+    v3 = await _rendered("legacy_v3", outcome=outcome)
+    v8 = await _rendered("lean_v8", outcome=outcome)
+    v7 = await _rendered("targeted_v7", outcome=outcome)
+    assert outcome in v8
+    assert outcome not in v3
+    assert uses_targeted_sections("targeted_v7")
+    assert not uses_targeted_sections("lean_v8")
+    assert _TARGETED_MARKER not in v8
+    assert _TARGETED_MARKER in v7
+    assert "arms_reported" not in v8
+    assert "diabetic" not in v8.lower()
+    assert 50 <= (len(v8) - len(v3)) <= 80
+    assert (len(v7) - len(v8)) > 2000
+
+
+def test_lean_v8_contract_pins_the_rendered_prompt_with_outcome():
+    from react_review.contracts import repo_root
+
+    body = json.loads(
+        (repo_root() / "configs/prompt_contracts/lean_v8.json"
+         ).read_text(encoding="utf-8"))
+    assert body["extraction_profile"] == "lean_v8"
+    assert body["prompt_version"] == LEAN_V8
+    assert body["rendered_prompt_sha256"] != "PENDING"
+
+
+@pytest.mark.asyncio
+async def test_lean_v8_contract_hash_matches_what_the_tool_sends():
+    from react_review.contracts import repo_root
+
+    body = json.loads(
+        (repo_root() / "configs/prompt_contracts/lean_v8.json"
+         ).read_text(encoding="utf-8"))
+    fixture = body["fixture_inputs"]
+    prompt = await _rendered(
+        "lean_v8",
         outcome=fixture["outcome"],
         research_context=fixture["context"],
     )

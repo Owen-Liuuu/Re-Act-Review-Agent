@@ -83,3 +83,30 @@ async def test_bind_identifier_resolve_injects_pmid_from_the_open_study():
     assert seen[0].pmid == "37251945"
     assert seen[0].title.startswith("Capovilla")
 
+
+@pytest.mark.asyncio
+async def test_bind_identifier_resolve_injects_resolved_origin():
+    from react_review.steps.paper_verification.schemas import ReferenceEntry
+    from react_review.tools.search.resolve_reference import bind_identifier_resolve
+
+    seen: list[ResolveReferenceInput] = []
+
+    class _Inner:
+        async def run(self, payload: ResolveReferenceInput) -> ResolveReferenceResult:
+            seen.append(payload)
+            return ResolveReferenceResult(status="resolved", doi="10.1/x")
+
+    class _Collector:
+        def __init__(self) -> None:
+            self._resolve = _Inner()
+
+        async def open_study(self, reference):
+            return await self._resolve.run(ResolveReferenceInput(title=reference.title))
+
+    wrapped = bind_identifier_resolve(_Collector())
+    await wrapped.open_study(ReferenceEntry(
+        title="Li J. Surg Endosc. 2015;29(4):925-930.",
+        pmid="25249141", pmid_origin="resolved"))
+    assert seen[0].pmid == "25249141"
+    assert seen[0].pmid_origin == "resolved"
+

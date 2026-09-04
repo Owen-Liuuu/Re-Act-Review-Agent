@@ -311,10 +311,27 @@ def test_registered_policy_and_evaluator_hashes_are_resolved_together():
     assert identity.policy_id == "evidence_adequacy_v1"
     assert len(identity.policy_sha256) == 64
     assert identity.evaluator_id == "evidence_adequacy"
-    assert identity.evaluator_version == "1.0.0"
+    assert identity.evaluator_version == "1.1.0"
     assert identity.evaluator_hash.startswith("sha256:")
     assert identity.evaluator_status in {"registered", "unregistered"}
     assert identity.release_eligible is (identity.evaluator_status == "registered")
+
+
+def test_frozen_1_0_0_manifest_still_has_its_published_bytes():
+    from react_review.contracts import repo_root, sha256_file
+
+    path = repo_root() / (
+        "configs/evidence_adequacy/evaluators/evidence_adequacy_1.0.0.json")
+    assert sha256_file(path)[:16] == "03FC06FDA682DA83"
+
+
+def test_current_sources_do_not_hash_as_adequacy_1_0_0():
+    from react_review.contracts import ContractError
+    from react_review.audit.evidence_adequacy import evaluator_readiness
+
+    with pytest.raises(ContractError, match="source hash changed"):
+        evaluator_readiness(
+            policy_id="evidence_adequacy_v1", evaluator_version="1.0.0")
 
 
 @pytest.mark.asyncio

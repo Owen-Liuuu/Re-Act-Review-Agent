@@ -10,6 +10,8 @@ from __future__ import annotations
 import asyncio
 import time
 
+import pytest
+
 from react_review.llm.base import LLMBackend
 from react_review.llm.metered import MeteredBackend
 from react_review.schemas.telemetry import RunTelemetry, wall_clock
@@ -81,6 +83,25 @@ def test_the_wrapper_never_changes_an_answer():
     backend = MeteredBackend(_Backend(output="the answer"), telemetry)
     assert asyncio.run(backend.complete("q")) == "the answer"
     assert backend.model_id == "stub"
+
+
+def test_unused_retry_reason_and_429_do_not_change_the_legacy_shape():
+    body = RunTelemetry().model_dump(mode="json")
+    assert "retry_reason" not in body
+    assert "http_429" not in body
+
+
+def test_retry_reason_counts_are_a_closed_set():
+    telemetry = RunTelemetry()
+    telemetry.record_retry("not_found")
+    telemetry.record_retry("not_found")
+    telemetry.record_retry("call_failed")
+    assert telemetry.retry_reason == {
+        "call_failed": 1, "not_found": 2, "low_confidence": 0, "disagreement": 0,
+    }
+    assert sum(telemetry.retry_reason.values()) == 3
+    with pytest.raises(ValueError, match="not a classified reason"):
+        telemetry.record_retry("unknown")
 
 
 # --- "the model never answered" is a fact about the counters -----------------

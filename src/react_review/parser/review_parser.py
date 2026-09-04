@@ -28,7 +28,11 @@ from react_review.normalize.cohorts import (
     build_cohort_registry,
     load_aliases,
 )
-from react_review.normalize.doi import printed_doi, printed_pmid
+from react_review.normalize.doi import printed_doi, printed_pmid, normalize_pmid
+from react_review.normalize.population import PopulationScope
+from react_review.parser.cohort_headers import arm_labels_from_headers
+from react_review.normalize.population import PopulationScope
+from react_review.parser.cohort_headers import arm_labels_from_headers
 from react_review.normalize.study_key import best_identity_match, join_key, study_key
 from react_review.parser.table_capture import TableCapturer
 from react_review.parser.table_capture_contract import (
@@ -106,8 +110,10 @@ class ParsedStudy(BaseModel):
 
     study_id: str                       # citation slug, e.g. "ahmad_2022" / "li_2015"
     citation: str = ""                  # verbatim reference text
-    doi: str = ""                       # normalized DOI, "" when the reference prints none
-    pmid: str = ""                      # digits only, "" when the reference prints none
+    doi: str = ""                       # normalized DOI, "" when none is known
+    pmid: str = ""                      # digits only, "" when none is known
+    doi_origin: str = ""                # "" | printed | resolved — display must name the source
+    pmid_origin: str = ""               # "" | printed | resolved
 
 
 class ParsedReview(BaseModel):
@@ -243,6 +249,7 @@ class ReviewParser:
         table_capture_prompt_profile: str = DEFAULT_TABLE_CAPTURE_PROFILE,
         vision_backend: LLMBackend | None = None,
         step_backends=None,
+        resolve_reference=None,
     ) -> None:
         self._backend = backend
         self._resolver = resolver          # the parser holds NO domain knowledge itself
@@ -265,6 +272,7 @@ class ReviewParser:
         self._alt_backend = alt_backend
         self._table_capture_prompt_profile = table_capture_prompt_profile
         self._vision = vision_backend
+        self._resolve_reference = resolve_reference
 
     def _slot(self, name: str) -> LLMBackend:
         if self._steps is None:
@@ -324,6 +332,9 @@ class ReviewParser:
         n_tables = max(1, len(table_set.tables))
         for i, table in enumerate(table_set.tables, start=1):
             started = time.monotonic()
+            self._reporter.progress(
+                "long_format", i, n_tables,
+                caption=table.caption or table.table_id, started=started)
             if table.display_kind == "forest_plot":
                 from react_review.parser.review_extraction.forest_unpivot import (
                     unpivot_forest,
@@ -349,9 +360,18 @@ class ReviewParser:
 
         # 3. Discover this review's cohorts from the labels it actually used —
         #    BEFORE any resolution, so nothing has been folded into a default.
+        #    Headers that print the arm only as a column contrast (N MIE /
+        #    N OE, or "(MIE) Events" / "(OE) Events") never fill
+        #    cohort_label or cohort_labels_seen; recover those arms from
+        #    the header geometry here, not inside cohorts.py (hash-pinned).
+        header_arms = arm_labels_from_headers(
+            [path for table in table_set.tables for path in table.column_paths()]
+            + [str(r.get("column_header") or "") for r in raw_rows]
+        )
         registry = build_cohort_registry(
             [str(r.get("cohort_label") or "") for r in raw_rows]
-            + [c for t in table_set.tables for c in t.cohort_labels_seen],
+            + [c for t in table_set.tables for c in t.cohort_labels_seen]
+            + header_arms,
             aliases=self._cohort_aliases,
         )
         unknown = list(registry.unassigned)
@@ -451,6 +471,7 @@ class ReviewParser:
 
         # 6. included-study references, extracted from the reference window (doc tail).
         studies = await self._extract_studies(_refs_window(full_text))
+        studies = await self._backfill_resolved_identifiers(studies)
         studies = await self._review_coverage(studies, items, pdf_path)
 
         if self._checklist is not None and checklist_review_application is not None:
@@ -612,12 +633,62 @@ class ReviewParser:
             citation = str(r.get("citation") or "").strip()
             if not citation:
                 continue
+            doi = printed_doi(r.get("doi"), citation, refs_text)
+            pmid = printed_pmid(citation)
             studies.append(ParsedStudy(
                 study_id=_study_slug(citation), citation=citation,
-                doi=printed_doi(r.get("doi"), citation, refs_text),
-                pmid=printed_pmid(citation),
+                doi=doi, pmid=pmid,
+                doi_origin="printed" if doi else "",
+                pmid_origin="printed" if pmid else "",
             ))
         return studies
+
+    async def _backfill_resolved_identifiers(
+        self, studies: list[ParsedStudy],
+    ) -> list[ParsedStudy]:
+        """Copy a title-search PMID onto studies that printed none.
+
+        Review citations rarely print PMID/DOI, so candidate validation had
+        nothing to compare and fell through to title search. An eligible
+        year+journal hit still yields a PMID; that is an inference, not a
+        fact, and is labelled ``resolved``. A low-confidence DOI is never
+        copied — that is how Capovilla previously got the dote supplement.
+        """
+        tool = self._resolve_reference
+        if tool is None:
+            return studies
+        from react_review.normalize.citation import citation_journal, citation_year
+        from react_review.tools.search.models import ResolveReferenceInput
+
+        out: list[ParsedStudy] = []
+        for study in studies:
+            if study.doi or study.pmid:
+                out.append(study)
+                continue
+            try:
+                res = await tool.run(ResolveReferenceInput(
+                    citation=study.citation,
+                    title=study.citation,
+                    year=citation_year(study.citation),
+                    journal=citation_journal(study.citation),
+                ))
+            except Exception as exc:                               # noqa: BLE001
+                logger.warning("reference_identifier_backfill_failed",
+                               study_id=study.study_id, error=str(exc)[:160])
+                out.append(study)
+                continue
+            updates: dict[str, str] = {}
+            pmid = normalize_pmid(getattr(res, "pmid", ""))
+            if pmid:
+                updates["pmid"] = pmid
+                updates["pmid_origin"] = "resolved"
+            if getattr(res, "status", "") == "resolved":
+                doi = str(getattr(res, "doi", "") or "").strip()
+                if doi:
+                    updates["doi"] = doi
+                    updates["doi_origin"] = "resolved"
+            out.append(study.model_copy(update=updates) if updates else study)
+        return out
 
     async def _review_coverage(
         self, studies: list[ParsedStudy], items: list[ReviewDataItem],
@@ -686,9 +757,19 @@ class ReviewParser:
         return "\n".join(lines)
 
     @staticmethod
+    def _origin_suffix(origin: str) -> str:
+        if origin == "printed":
+            return " (printed in the citation)"
+        if origin == "resolved":
+            return " (resolved via title search)"
+        return ""
+
+    @staticmethod
     def _ident_status(study: ParsedStudy) -> str:
-        doi = f"DOI {study.doi}" if study.doi else "no DOI"
-        pmid = f"PMID {study.pmid}" if study.pmid else "no PMID"
+        doi = (f"DOI {study.doi}{ReviewParser._origin_suffix(study.doi_origin)}"
+               if study.doi else "no DOI")
+        pmid = (f"PMID {study.pmid}{ReviewParser._origin_suffix(study.pmid_origin)}"
+                if study.pmid else "no PMID")
         return f"{doi} · {pmid}"
 
     @staticmethod
@@ -834,6 +915,38 @@ class ReviewParser:
             self._merge_resolution(records, resolved, row)
         return by_row, list(records.values())
 
+    def _row_population_phrases(
+        self,
+        raw_rows: list[dict[str, Any]],
+        row_resolutions: dict[int, ResolvedField],
+    ) -> dict[str, tuple[str, str]]:
+        """Per-study eligibility printed in an Age cell of the same review row.
+
+        The Age cell stays an audit claim; this only copies its wording onto
+        sibling cells so later stages can see the population the review
+        restricted to. Placeholder cells contribute nothing.
+        """
+        phrases: dict[str, tuple[str, str]] = {}
+        for index, row in enumerate(raw_rows):
+            if not isinstance(row, dict):
+                continue
+            header = str(row.get("column_header") or "").strip()
+            resolved = row_resolutions.get(index)
+            is_age = (
+                (resolved is not None and resolved.field_type == "age")
+                or _norm_col(header) == "age"
+            )
+            if not is_age:
+                continue
+            value = row.get("value")
+            text = value.strip() if isinstance(value, str) else str(value or "").strip()
+            if not text or text.lower() in _PLACEHOLDER:
+                continue
+            study_id, _ = _row_study_ids(row)
+            if study_id and study_id not in phrases:
+                phrases[study_id] = (text, header or "Age")
+        return phrases
+
     def _postprocess(
         self, raw_rows: list[dict[str, Any]],
         row_resolutions: dict[int, ResolvedField],
@@ -843,6 +956,7 @@ class ReviewParser:
         registry = registry or CohortRegistry()
         items: list[ReviewDataItem] = []
         seen_study_level: dict[tuple[str, str], object] = {}
+        population_by_study = self._row_population_phrases(raw_rows, row_resolutions)
         for index, r in enumerate(raw_rows):
             if not isinstance(r, dict):
                 continue
@@ -864,16 +978,22 @@ class ReviewParser:
             cohort = registry.resolve(cohort_label)
             # Unpivot often leaves cohort_label empty when the arm is only in
             # the column header ("N MIE"). The registry already discovered
-            # those arms from cohort_labels_seen; resolve() second pass
-            # (cohorts.py) matches the header against them. Accept only
-            # resolved|alias — never combined. "Total"/"Overall" are in
-            # _COMBINED and would otherwise look successfully parsed while
-            # wiping the arm (forest Events/Total columns; that is a 2b trap).
+            # those arms from cohort_labels_seen and from header geometry;
+            # resolve() second pass (cohorts.py) matches the header against
+            # them. Accept only resolved|alias — never combined.
+            # "Total"/"Overall" are in _COMBINED and would otherwise look
+            # successfully parsed while wiping the arm (forest Events/Total
+            # columns; that is a 2b trap).
             if not cohort_label:
                 header = registry.resolve(raw_name)
                 if header.status in ("resolved", "alias"):
                     cohort = header
             group, cohort_status = cohort.key, cohort.status
+            phrase = population_by_study.get(study_id)
+            population_scope = (
+                PopulationScope(basis_phrase=phrase[0], source="column_header")
+                if phrase else None
+            )
             common = dict(
                 study_id=study_id, raw_field_name=raw_name, unit=unit,
                 table_id=table_id, cell_ref=cell_ref, column_header=raw_name,
@@ -882,6 +1002,8 @@ class ReviewParser:
                 outcome=str(r.get("outcome") or ""),
                 display_kind=str(r.get("display_kind") or ""),
                 study_label_raw=study_label_raw,
+                population_scope=population_scope,
+                population_scope_source=(phrase[1] if phrase else ""),
             )
             cohort_reasons = ([] if cohort.known else [ReasonRecord(
                 code="cohort_unknown", stage="parser", message=cohort.reason)])

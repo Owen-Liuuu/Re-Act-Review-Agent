@@ -14,7 +14,7 @@ from collections import defaultdict
 
 import structlog
 
-from react_review.normalize.doi import normalize_doi
+from react_review.normalize.doi import normalize_doi, normalize_pmid
 from react_review.steps.paper_verification.schemas import ReferenceEntry
 from react_review.tools.search.clients import CitationResolver
 from react_review.tools.search.gate import DEFAULT_THRESHOLD, candidate_fits_citation, score_match
@@ -60,6 +60,25 @@ def _query_key(q: ReferenceQuery) -> str:
 
 def _has_identifier(query: ReferenceQuery) -> bool:
     return bool(normalize_doi(query.doi) or (query.pmid or "").strip())
+
+
+def _inferred_identifier(query: ReferenceQuery) -> bool:
+    """True when every identifier on the query was found by title search.
+
+    A printed DOI/PMID is a fact and skips the candidate gate. A PMID that
+    was inferred from a title-search hit is still just a guess — year and
+    journal must still agree, or Capovilla's supplement can ride in on a
+    retrieved identifier.
+    """
+    pmid = (query.pmid or "").strip()
+    doi = normalize_doi(query.doi)
+    pmid_origin = (query.pmid_origin or "").strip()
+    doi_origin = (query.doi_origin or "").strip()
+    printed_doi = bool(doi) and doi_origin != "resolved"
+    printed_pmid = bool(pmid) and pmid_origin != "resolved"
+    if printed_doi or printed_pmid:
+        return False
+    return bool(pmid or doi)
 
 
 def _identifier_hit(query: ReferenceQuery, cand: CandidateWork) -> bool:
@@ -136,6 +155,19 @@ class ReferenceReconciler:
         if not with_doi:
             return ResolvedReference(status="unresolved_source",
                                      candidates_seen=len(scored))
+        if _inferred_identifier(query):
+            eligible = [(s, name, c) for s, name, c in with_doi
+                        if candidate_fits_citation(query, c)]
+            if not eligible:
+                note = mismatch_note(len(scored))
+                logger.info("reference_rejected_all_candidates", n=len(scored),
+                            title=(query.title or query.citation or "")[:60])
+                return ResolvedReference(
+                    status="unresolved_source", candidates_seen=len(scored),
+                    note=note)
+            # Year+journal already agreed; do not re-apply the title-similarity
+            # threshold — that is what dropped li_2015's eligible PMID.
+            return self._accept(eligible, n_seen=len(scored), gated=False)
         return self._accept(with_doi, n_seen=len(scored), gated=False)
 
     async def _resolve_by_title(self, query: ReferenceQuery) -> ResolvedReference:
@@ -170,16 +202,24 @@ class ReferenceReconciler:
         agreed = sorted(by_doi.get(best.doi.lower(), {best_name})) if best.doi else [best_name]
         confidence = best_score + (self._agreement_bonus if len(agreed) >= 2 else 0.0)
         confidence = min(1.0, confidence)
+        pmid = normalize_pmid(best.pmid)
         if gated and (confidence < self._threshold or not best.doi):
             logger.info("reference_unresolved", title=(best.title or "")[:60],
-                        confidence=round(confidence, 3), has_doi=bool(best.doi))
-            return ResolvedReference(status="unresolved_source", confidence=confidence,
-                                     matched_title=best.title, candidates_seen=n_seen)
+                        confidence=round(confidence, 3), has_doi=bool(best.doi),
+                        pmid=pmid or None)
+            # Eligible year+journal hit: keep the PMID so the parser can
+            # backfill it. Do not keep the DOI — that is how a low-confidence
+            # title search previously stamped the wrong paper.
+            return ResolvedReference(
+                status="unresolved_source", confidence=confidence,
+                matched_title=best.title, candidates_seen=n_seen, pmid=pmid,
+                source=best_name)
         if not best.doi:
-            return ResolvedReference(status="unresolved_source", confidence=confidence,
-                                     matched_title=best.title, candidates_seen=n_seen)
+            return ResolvedReference(
+                status="unresolved_source", confidence=confidence,
+                matched_title=best.title, candidates_seen=n_seen, pmid=pmid)
         return ResolvedReference(
-            status="resolved", doi=best.doi.lower(), pmcid=best.pmcid, source=best_name,
-            confidence=confidence, matched_title=best.title, agreed_sources=agreed,
-            candidates_seen=n_seen,
+            status="resolved", doi=best.doi.lower(), pmcid=best.pmcid, pmid=pmid,
+            source=best_name, confidence=confidence, matched_title=best.title,
+            agreed_sources=agreed, candidates_seen=n_seen,
         )

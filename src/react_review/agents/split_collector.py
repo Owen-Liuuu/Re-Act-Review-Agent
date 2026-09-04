@@ -1,12 +1,12 @@
 """Production collector: batch-split routing, field mapping, inter-group concurrency.
 
-``collector.py`` is inside the frozen ``evidence_adequacy_1.0.0`` hash boundary,
-so this file exists: v8 contracts must still load against that exact collector
-module. Split routing, the ``source_field_mapping`` reason, and group-level
-concurrency live here. ``collect()`` does not write the journal or call the
-reporter — HITL prints one paper after ``collect_study`` returns — so overlapping
-groups only interleave telemetry increments, which asyncio's single thread
-already serialises.
+``collector.py`` is inside the ``evidence_adequacy`` hash boundary (1.0.0
+and 1.1.0). Split routing, the ``source_field_mapping`` reason, and
+group-level concurrency live here so v8 contracts that pin 1.0.0 still
+load against that exact collector module as it was when 1.0.0 was
+published — except 1.1.0 now also copies PMC tables onto the document
+and classifies ``missing_source``. New behaviour that is not part of
+that hash stays in this wrapper.
 
 ``source_field_mapping`` is human-readable only. It lets a reader check
 综述叫法 → 论文叫法. Downstream must not parse the message (or scrape ``code``)
@@ -48,6 +48,8 @@ from react_review.tools.extract_batch import prompt_sha256
 from react_review.tools.extract_source import (
     SELECTION_METHOD_ID,
     SELECTION_VERSION,
+    TABLE_SELECTION_METHOD_ID,
+    TABLE_SELECTION_VERSION,
     SourceValueResult,
     select_excerpt,
 )
@@ -117,6 +119,34 @@ def abstract_omits_concept(document, names: list[str]) -> str:
     )
 
 
+def _unique_table_excerpt(document, *, group, field_type, concept, variants,
+                          cohorts=None) -> str:
+    """One unique matching table as TSV, or empty to keep the 20k excerpt."""
+    tables = list(getattr(document, "tables", None) or [])
+    if not tables:
+        return ""
+    from react_review.tools.source_table_lookup import (
+        locate_source_table,
+        render_table_prompt,
+    )
+
+    claim = group.claims[0] if group.claims else None
+    hit = locate_source_table(
+        tables,
+        group=getattr(claim, "group", "") or "",
+        cohort_display=getattr(claim, "cohort_label", "") or "",
+        cohorts=cohorts or {},
+        raw_field_name=group.key.raw_field_name,
+        concept_variants=list(variants or []),
+        field_type=field_type,
+        column_header=getattr(claim, "column_header", "") or "",
+        outcome=getattr(claim, "outcome", "") or "",
+    )
+    if not hit.unique or hit.table is None:
+        return ""
+    return render_table_prompt(hit.table) or ""
+
+
 class SplitAwareCollector(Collector):
     """Collector that can honour ``batch_split_v1`` without editing collector.py."""
 
@@ -128,11 +158,13 @@ class SplitAwareCollector(Collector):
         research_context: str = "",
         source=None,
     ) -> CollectStudyResult:
-        """Every group of one paper, overlapping. Studies stay serial upstream.
+        """Every group of one paper, overlapping. Studies stay serial upstream
+        unless ``--checkpoints none``.
 
-        Concurrency is between groups, not between papers: HITL shows one study
-        block at a time. The backend semaphore is the cap; nothing here adds
-        another. Results are reassembled by ``positions``, never by gather order.
+        Concurrency is between groups, and between papers only when nobody is
+        gating: HITL shows one study block at a time. The backend semaphore is
+        the cap; nothing here adds another. Results are reassembled by
+        ``positions``, never by gather order.
         """
         if source is None:
             source = await self.open_study(reference)
@@ -226,7 +258,7 @@ class SplitAwareCollector(Collector):
     def _failed_group_claim(self, claim, source, exc) -> CollectResult:
         """Keep the existing failure record; do not swallow the exception."""
         retrieved = bool(source is not None and source.retrieved)
-        outcome = CollectionOutcome.MISSING_SOURCE if retrieved else (
+        outcome = CollectionOutcome.EXTRACTION_FAILED if retrieved else (
             getattr(source, "outcome", None) or CollectionOutcome.SOURCE_ACCESS_FAILED)
         return self._result(
             claim,
@@ -275,9 +307,18 @@ class SplitAwareCollector(Collector):
             return skipped, None
         target = concept or group.key.raw_field_name or field_type
         text = getattr(source.document, "full_text", "") or ""
-        excerpt, spans = select_excerpt(text, target=target,
-                                        raw_label=group.key.raw_field_name,
-                                        field_type=field_type, variants=variants)
+        table_text = _unique_table_excerpt(
+            source.document, group=group, field_type=field_type,
+            concept=concept, variants=variants,
+            cohorts=self._cohort_variants())
+        if table_text:
+            excerpt, spans = table_text, [(0, len(table_text))]
+            method_id, method_version = TABLE_SELECTION_METHOD_ID, TABLE_SELECTION_VERSION
+        else:
+            excerpt, spans = select_excerpt(text, target=target,
+                                            raw_label=group.key.raw_field_name,
+                                            field_type=field_type, variants=variants)
+            method_id, method_version = SELECTION_METHOD_ID, SELECTION_VERSION
         split = route == BATCH_SPLIT_PROFILE
         if split:
             prompt = build_batch_locate_prompt(
@@ -316,8 +357,8 @@ class SplitAwareCollector(Collector):
         record.excerpt = ExcerptProvenance(
             windowed=len(excerpt) != len(text), source_chars=len(text),
             excerpt_chars=len(excerpt), spans=spans,
-            selection_method_id=SELECTION_METHOD_ID,
-            selection_version=SELECTION_VERSION)
+            selection_method_id=method_id,
+            selection_version=method_version)
         if self._telemetry is not None:
             self._telemetry.record_batch(claims=len(group.claims),
                                          failed=record.reading is None)

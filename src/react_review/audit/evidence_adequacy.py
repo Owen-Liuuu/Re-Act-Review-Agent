@@ -33,9 +33,9 @@ from react_review.steps.data_extraction.schemas import DocumentScope, PaperDocum
 AXES = ("value", "field", "target", "population", "timepoint", "analysis_set")
 DEFAULT_POLICY = "configs/evidence_adequacy/policy_v1.json"
 EVALUATOR_ID = "evidence_adequacy"
-EVALUATOR_VERSION = "1.0.0"
+EVALUATOR_VERSION = "1.1.0"
 EVALUATOR_DIR = "configs/evidence_adequacy/evaluators"
-REGISTRY = "configs/evidence_adequacy/registry_v1.json"
+REGISTRY = "configs/evidence_adequacy/registry_v2.json"
 HASH_ALGORITHM = "sha256-path-lf-v1"
 
 

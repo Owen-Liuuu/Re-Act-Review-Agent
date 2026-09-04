@@ -64,7 +64,15 @@ def create_backend_from_settings(settings: LLMSettings) -> LLMBackend:
             )
         return OpenAIBackend(settings)
 
+    if provider in ("kimi", "moonshot", "moonshotai"):
+        from react_review.llm.openai_backend import OpenAIBackend
+        if not settings.base_url:
+            settings = settings.model_copy(
+                update={"base_url": "https://api.moonshot.cn/v1"}
+            )
+        return OpenAIBackend(settings)
+
     raise ValueError(
         f"Unknown LLM provider: '{provider}'. "
-        "Supported: mock, openai, anthropic, gemini, qwen, glm."
+        "Supported: mock, openai, anthropic, gemini, qwen, glm, kimi."
     )

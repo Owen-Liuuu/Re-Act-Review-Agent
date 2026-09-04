@@ -56,6 +56,7 @@ from react_review.tools.extract_source import (
     _paper_excerpt,
     select_excerpt,
 )
+from react_review.tools.source_table_lookup import classify_missing_source
 from react_review.tools.extraction_profile import (
     BATCH_PROFILE_NAME,
     DEFAULT_PROFILE,
@@ -184,12 +185,29 @@ def _provenance(document) -> dict[str, str]:
     }
 
 
+def _document_with_tables(document, tables):
+    """Copy FetchResult.tables onto PaperDocument when the document has none."""
+    if document is None:
+        return None
+    incoming = list(tables or [])
+    existing = list(getattr(document, "tables", None) or [])
+    if incoming and not existing and hasattr(document, "model_copy"):
+        return document.model_copy(update={"tables": incoming})
+    return document
+
+
 def _reasons_for(result: SourceValueResult, outcome: CollectionOutcome) -> list[ReasonRecord]:
     """Everything that explains this outcome, in words a reader can act on."""
     reasons: list[ReasonRecord] = []
     if result.error:
         reasons.append(ReasonRecord(code="extraction_error", source="exception",
                                     stage="collector", message=result.error))
+    if (outcome is CollectionOutcome.MISSING_SOURCE
+            and result.table_lookup_class):
+        reasons.append(ReasonRecord(
+            code=result.table_lookup_class, source="deterministic",
+            stage="collector", message=result.table_lookup_reason,
+            detail={"table_sent": result.table_sent}))
     if result.not_found_reason and outcome is not CollectionOutcome.FOUND:
         reason_source = ("deterministic" if (
                              result.aggregation_status in {"rejected", "protocol_error"}
@@ -360,19 +378,21 @@ class Collector:
         fetched = await self._fetch.run(reference)
         if self._telemetry is not None:
             self._telemetry.attempt("fetch_fulltext")
-        provenance = _provenance(fetched.document)
+        document = _document_with_tables(fetched.document, getattr(fetched, "tables", None))
+        provenance = _provenance(document)
         steps.append(StepRecord(
             index=len(steps), thought="fetch source full text", tool="fetch_fulltext",
             args={"doi": reference.doi or "", "title": reference.title[:60]},
-            observation={"retrieved": fetched.retrieved, **provenance},
+            observation={"retrieved": fetched.retrieved, **provenance,
+                         "n_tables": len(getattr(document, "tables", None) or [])},
         ))
-        if not fetched.retrieved or fetched.document is None:
+        if not fetched.retrieved or document is None:
             out = self._decider.decide(ReflectionSignals(retrieval_ok=False, attempt=0))
-            return StudySource(reference=reference, document=fetched.document,
+            return StudySource(reference=reference, document=document,
                                retrieved=False,
                                outcome=CollectionOutcome.SOURCE_ACCESS_FAILED,
                                reason=out.reason, provenance=provenance, steps=steps)
-        return StudySource(reference=reference, document=fetched.document,
+        return StudySource(reference=reference, document=document,
                            retrieved=True, provenance=provenance, steps=steps)
 
     async def collect_study(
@@ -731,6 +751,23 @@ class Collector:
         batch_provenance=None,
         document=None,
     ) -> CollectResult:
+        if (outcome is CollectionOutcome.MISSING_SOURCE
+                and not result.table_lookup_class):
+            lookup = classify_missing_source(
+                list(getattr(document, "tables", None) or []),
+                group=review_item.group,
+                cohort_display=review_item.cohort_label,
+                cohorts=self._cohort_variants(),
+                raw_field_name=review_item.raw_field_name,
+                concept_variants=self._concept_variants_for(review_item.field_type),
+                field_type=review_item.field_type,
+                column_header=review_item.column_header,
+                table_sent=result.table_sent,
+            )
+            result = result.model_copy(update={
+                "table_lookup_class": lookup.klass,
+                "table_lookup_reason": lookup.reason,
+            })
         explicit_id = declared_claim_id(review_item)
         batch_id = str(getattr(batch_provenance, "claim_id", "") or "").strip()
         if explicit_id and batch_id and explicit_id != batch_id:

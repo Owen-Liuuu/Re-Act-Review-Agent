@@ -50,3 +50,11 @@ def test_load_config_empty_yaml(tmp_path: Path):
     config_file.write_text("", encoding="utf-8")
     config = load_config(config_file)
     assert config.app_name == "react-review"
+
+
+def test_env_secrets_fill_empty_api_key(tmp_path: Path, monkeypatch):
+    config_file = tmp_path / "cfg.yaml"
+    config_file.write_text("llm: {provider: mock, api_key: ''}\n", encoding="utf-8")
+    monkeypatch.setenv("REACT_REVIEW_LLM_API_KEY", "sk-from-env")
+    config = load_config(config_file)
+    assert config.llm.api_key == "sk-from-env"

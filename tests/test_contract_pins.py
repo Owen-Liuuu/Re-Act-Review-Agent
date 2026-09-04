@@ -111,14 +111,19 @@ PINNED = {
     "configs/evidence_adequacy/registry_v1.json": "E2C75161EF9642DC",
     "configs/evidence_adequacy/evaluators/evidence_adequacy_1.0.0.json":
         "03FC06FDA682DA83",
+    "configs/evidence_adequacy/registry_v2.json": "B0B80672F4BBFCD8",
+    "configs/evidence_adequacy/evaluators/evidence_adequacy_1.1.0.json":
+        "9D2E7EA9DF079096",
     "configs/run_profiles/phase8_batch_v7.json": "E00D058C259AA4A9",
     "eval/benchmark_2/phase8_batch_v7_profile.json":
         "9213358AC894C959",
     "configs/run_profiles/phase8_batch_v8.json": "90951FD4B8E950B0",
     "eval/benchmark_2/phase8_batch_v8_profile.json":
         "F00D89C28BB24673",
+    "configs/run_profiles/phase8_batch_v10.json": "70C75876A189578E",
     "configs/prompt_contracts/batch_locate_v1.json": "5DC73D73DBF6004F",
     "configs/prompt_contracts/batch_transcribe_v1.json": "09FBE674CA0F20C3",
+    "configs/prompt_contracts/source_table_capture_v1.json": "1D5A20996799AC2C",
 }
 
 

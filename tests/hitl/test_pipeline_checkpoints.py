@@ -195,7 +195,7 @@ def test_collect_title_distinguishes_pmc_abstract_and_unretrieved():
     )
     assert AuditPipeline._collect_title(
         "svanteson_2019", [pmc_item], pmc_source
-    ) == "svanteson_2019 · pmc · 17,619 chars · full_text     (hit:PMC esearch by DOI)"
+    ) == "svanteson_2019 · pmc · 17,619 chars · full_text     (PMC (online))"
 
     abs_item = SourceEvidenceItem(
         study_id="ahmad_2022", group="t1dm", field_type="bmi",
@@ -280,7 +280,7 @@ def test_collect_title_failure_paths_do_not_blank_or_crash():
     )
     titled = AuditPipeline._collect_title("ahmad_2022", [local], local_source)
     assert "Ahmad 2022.pdf" in titled
-    assert "(hit:local PDF)" in titled
+    assert "(uploaded (matched by DOI))" in titled
     assert "10.xxxx" not in titled
     assert "doi:" not in titled
 
@@ -292,7 +292,7 @@ def test_collect_title_failure_paths_do_not_blank_or_crash():
             provenance={"retriever_kind": "pmc"},
         ),
     )
-    assert no_scope == "ahmad_2022 · pmc · 2 chars     (hit:PMC esearch by DOI)"
+    assert no_scope == "ahmad_2022 · pmc · 2 chars     (PMC (online))"
     assert "unknown" not in no_scope
 
 
@@ -335,3 +335,115 @@ async def test_collect_study_step_records_elapsed_ms(tmp_path):
     assert events[0].elapsed_ms >= 200
     assert events[1].elapsed_ms < events[0].elapsed_ms / 2
     assert all(event.payload["n_groups"] >= 1 for event in events)
+
+
+class _OverlapCollector:
+    """One sleep per paper; overlapping papers raise max_in_flight."""
+
+    def __init__(self) -> None:
+        self.in_flight = 0
+        self.max_in_flight = 0
+        self.finished: list[str] = []
+
+    async def collect_study(self, claims, reference, *, research_context="",
+                            source=None):
+        import asyncio
+
+        from react_review.agents.collector import CollectResult, CollectStudyResult
+
+        self.in_flight += 1
+        self.max_in_flight = max(self.max_in_flight, self.in_flight)
+        delay = 0.12 if claims[0].study_id == "ahmad_2022" else 0.02
+        await asyncio.sleep(delay)
+        self.in_flight -= 1
+        self.finished.append(claims[0].study_id)
+        results = [
+            CollectResult(
+                source_item=SourceEvidenceItem(
+                    study_id=item.study_id, group=item.group,
+                    field_type=item.field_type, source_value=item.value,
+                    source_unit=item.unit,
+                    collection_outcome=CollectionOutcome.FOUND,
+                ),
+                record=AgentRun(agent="collector"),
+                decision=ReflectionDecision.ACCEPT,
+            )
+            for item in claims
+        ]
+        return CollectStudyResult(claim_results=results)
+
+
+def _policy_pipeline(tmp_path, policy, collector):
+    from react_review.hitl import ConsoleCheckpoint
+
+    gate = ConsoleCheckpoint(policy)
+
+    async def _continue(event):
+        return Decision.CONTINUE
+
+    gate._ask = _continue  # type: ignore[method-assign]
+    reporter = StepReporter("run1", gate=gate, journal=RunJournal(tmp_path / "run1"))
+    reg = ToolRegistry()
+    reg.register(CompareValuesTool(ToleranceTable()))
+    pipe = AuditPipeline(collector, AuditOrchestrator(reg), Judge(),
+                         reporter=reporter)
+    return pipe, gate, collector
+
+
+@pytest.mark.asyncio
+async def test_checkpoints_none_runs_papers_concurrently(tmp_path):
+    from react_review.hitl import CheckpointPolicy
+    from react_review.hitl.events import StepEvent
+    from tests.hitl.test_step_numbering import assert_screens_consecutive, visible_screens
+
+    collector = _OverlapCollector()
+    pipe, _, _ = _policy_pipeline(tmp_path, CheckpointPolicy.none(), collector)
+    await pipe.run(_items(), lambda sid: ReferenceEntry(title=sid), run_id="run1")
+    assert collector.max_in_flight >= 2
+    assert collector.finished[0] == "keles_2016"
+    steps = sorted((tmp_path / "run1" / "steps").glob("*_collect_study.json"))
+    studies = [json.loads(p.read_text(encoding="utf-8"))["payload"]["study_id"]
+               for p in steps]
+    assert studies == ["ahmad_2022", "keles_2016"]
+    assert [p.name[:3] for p in steps] == ["001", "002"]
+    parsed = [
+        StepEvent.model_validate_json(p.read_text(encoding="utf-8"))
+        for p in sorted((tmp_path / "run1" / "steps").glob("*.json"))
+    ]
+    assert_screens_consecutive(visible_screens(parsed))
+    collect_indexes = [e.index for e in parsed if e.stage is StepStage.COLLECT_STUDY]
+    assert collect_indexes == list(range(collect_indexes[0], collect_indexes[0] + 2))
+
+
+
+@pytest.mark.asyncio
+async def test_checkpoints_show_keeps_papers_serial(tmp_path, capsys):
+    from react_review.hitl import CheckpointPolicy
+
+    collector = _OverlapCollector()
+    pipe, _, _ = _policy_pipeline(tmp_path, CheckpointPolicy.key_stages(), collector)
+    await pipe.run(_items(), lambda sid: ReferenceEntry(title=sid), run_id="run1")
+    capsys.readouterr()
+    assert collector.max_in_flight == 1
+    assert collector.finished == ["ahmad_2022", "keles_2016"]
+
+
+@pytest.mark.asyncio
+async def test_checkpoints_gate_keeps_papers_serial(tmp_path, capsys):
+    from react_review.hitl import CheckpointPolicy
+
+    collector = _OverlapCollector()
+    pipe, _, _ = _policy_pipeline(tmp_path, CheckpointPolicy.all_stages(), collector)
+    await pipe.run(_items(), lambda sid: ReferenceEntry(title=sid), run_id="run1")
+    capsys.readouterr()
+    assert collector.max_in_flight == 1
+    assert collector.finished == ["ahmad_2022", "keles_2016"]
+
+
+def test_only_none_policy_is_unattended():
+    from react_review.hitl import CheckpointPolicy
+
+    assert CheckpointPolicy.none().is_none() is True
+    assert CheckpointPolicy.key_stages().is_none() is False
+    assert CheckpointPolicy.all_stages().is_none() is False
+

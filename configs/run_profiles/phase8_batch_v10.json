@@ -1,0 +1,42 @@
+{
+  "schema_version": 4,
+  "profile_id": "phase8_batch_v10",
+  "written_on": "2026-08-25",
+  "purpose": "phase8_batch_v9 with evidence_adequacy 1.1.0 so PMC tables travel on PaperDocument. Extraction routes, aggregation, tolerances and TableCapture are unchanged from v9; a difference versus a v9 run is attributable to the table-aware document plus missing_source classification.",
+  "why_routed": "Values are still read in batches and arm identities one at a time, unchanged from v9. What changes is the document the extractor is handed: parsed PMC tables sit beside full_text.",
+  "extraction_routes": {
+    "value": "targeted_v5_batch",
+    "arm_identity": "targeted_v6"
+  },
+  "aggregation_policy_id": "safe_sum_v5",
+  "evaluator_version": "1.8.2",
+  "semantic_prompt_profile": "semantic_v2_specificity",
+  "table_capture_prompt_profile": "table_capture_v1",
+  "table_capture_prompt_id": "table_capture_v1",
+  "table_capture_prompt_hash": "3AAC303F18EC25CEEFEB7C3B8D2D0507DFA8A00A912BA5ECB5FB8242B9E9A6B6",
+  "adequacy_policy_id": "evidence_adequacy_v1",
+  "adequacy_policy_hash": "9DA56A30430B6B2B78C4A051DA9DB620A559A6802E3DDBA606551C5ECCD42FC4",
+  "adequacy_evaluator_id": "evidence_adequacy",
+  "adequacy_evaluator_version": "1.1.0",
+  "adequacy_evaluator_hash": "sha256:5e32fc954400f4bd3a53dca33310ea93236b8402ef31bfc046aa1333992d8953",
+  "tolerances": "../tolerances.phase8.yaml",
+  "tolerances_sha256": "B2C217445C1AC7CF9F140ACC97459278B9A76D269FBF41D12E49115EB1269EDF",
+  "population_contract": null,
+  "context_policy": "cli_then_parsed",
+  "scope_policy": "on",
+  "required_scope_axes": {
+    "sample_size": [
+      "population_basis"
+    ],
+    "cohort_n": [
+      "population_basis"
+    ],
+    "event_count": [
+      "population_basis",
+      "analysis_set"
+    ]
+  },
+  "supersedes": "phase8_batch_v9.json",
+  "compare_version": "1.0.0",
+  "why_v10": "Contract 13. evidence_adequacy 1.0.0 cannot hash-match a tree whose PaperDocument carries tables. This profile pins 1.1.0. Extraction prompt contracts are unchanged (P5 is a later profile). Historical runs under 1.0.0 are not directly comparable, by design: accuracy of the gate input outranks byte-reproducibility of the old hash."
+}

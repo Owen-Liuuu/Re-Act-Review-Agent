@@ -23,6 +23,7 @@ from react_review.hitl.gate import (
     Decision,
     ScriptedCheckpoint,
 )
+from react_review.hitl.web import StaleDecision, WebCheckpoint
 from react_review.hitl.journal import NullJournal, RunJournal
 from react_review.hitl.policy import CheckpointPolicy, Mode
 from react_review.hitl.render import (
@@ -41,7 +42,7 @@ from react_review.hitl.reporter import StepReporter
 __all__ = [
     "StepEvent", "StepStage", "SubjectKind",
     "Decision", "CheckpointGate", "AutoContinue", "ScriptedCheckpoint",
-    "ConsoleCheckpoint",
+    "ConsoleCheckpoint", "WebCheckpoint", "StaleDecision",
     "RunJournal", "NullJournal",
     "CheckpointPolicy", "Mode",
     "safe_print", "render_event", "render_screen", "render_prompt",

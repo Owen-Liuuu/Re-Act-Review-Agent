@@ -187,7 +187,7 @@ def run_parser() -> argparse.ArgumentParser:
     ap.add_argument("--profile", type=Path, default=None,
                     help="run contract profile: which prompt contracts, "
                          "tolerances and policies decide the answer "
-                         "(default: configs/run_profiles/legacy.json)")
+                         "(default: configs/run_profiles/table_locate_v1.json)")
     ap.add_argument("--extraction", choices=("live", "record", "replay"),
                     default="live",
                     help="live calls the model; record also saves the raw "
@@ -262,8 +262,11 @@ def _run_main(argv: list[str] | None = None, *, dependencies=None) -> None:
         StepReporter,
     )
     from react_review.parser.review_parser import ReviewParser
+    from react_review.parser.table_capture_contract import DEFAULT_TABLE_CAPTURE_PROFILE
     from react_review.production import ProductionDependencies
     from react_review.store import EvidencePackageStore
+    from react_review.tools.catalogue import build_reference_reconciler
+    from react_review.tools.search import ResolveReferenceTool
 
     ap = run_parser()
     args = ap.parse_args(argv)
@@ -274,14 +277,17 @@ def _run_main(argv: list[str] | None = None, *, dependencies=None) -> None:
     except Exception:                                          # noqa: BLE001
         pass
 
-    config = load_config(args.config)
-    if getattr(args, "profile_all", ""):
-        config = apply_profile_all(config, args.profile_all)
-    setup_logging(log_file=config.paths.log_file)
-    # The model and the paper supply are the only things this entry point
-    # reaches outside itself for, and the only things a test may substitute.
-    # Everything below is built here, in production, by the code under test.
     dependencies = dependencies or ProductionDependencies()
+    if dependencies.config is not None:
+        config = dependencies.config
+        if getattr(args, "profile_all", ""):
+            config = apply_profile_all(config, args.profile_all)
+        setup_logging(log_file=config.paths.log_file)
+    else:
+        config = load_config(args.config)
+        if getattr(args, "profile_all", ""):
+            config = apply_profile_all(config, args.profile_all)
+        setup_logging(log_file=config.paths.log_file)
     backend = dependencies.llm(config)
 
     # The run id is needed BEFORE parsing: the parser's first checkpoint already
@@ -319,7 +325,7 @@ def _run_main(argv: list[str] | None = None, *, dependencies=None) -> None:
     from react_review.schemas.telemetry import RunTelemetry
 
     contract = load_run_contract(
-        args.profile or (_repo_root() / "configs" / "run_profiles" / "legacy.json"))
+        args.profile or (_repo_root() / "configs" / "run_profiles" / "table_locate_v1.json"))
     guard_contract_overrides(contract, {"--tolerances": args.tolerances})
     # The modes are decided by the flags, not by anything the parser finds, so
     # they are settled here — where an interrupt during parsing can still be
@@ -356,10 +362,11 @@ def _run_main(argv: list[str] | None = None, *, dependencies=None) -> None:
         keep_tables=_id_set(args.tables), drop_tables=_id_set(args.drop_tables),
         checklist=checklist,
         table_capture_prompt_profile=(
-            contract.table_capture_prompt_profile or "table_capture_v3"),
+            contract.table_capture_prompt_profile or DEFAULT_TABLE_CAPTURE_PROFILE),
         alt_backend=_alt_backend(config, telemetry, stages.parsing),
         vision_backend=backends.forest_ocr_vision,
         step_backends=backends,
+        resolve_reference=ResolveReferenceTool(build_reference_reconciler(config)),
     )
 
     from react_review.hitl.render import checkpoint_log_header
@@ -377,7 +384,7 @@ def _run_main(argv: list[str] | None = None, *, dependencies=None) -> None:
         prompts={
             "extraction": contract.extraction_profile,
             "table_capture": (
-                contract.table_capture_prompt_profile or "table_capture_v3"),
+                contract.table_capture_prompt_profile or DEFAULT_TABLE_CAPTURE_PROFILE),
             "semantic": contract.semantic_prompt_profile,
         },
         config_summary=(
@@ -460,6 +467,7 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
     )
     from react_review.csv_io import load_included_studies
     from react_review.orchestrator import AuditOrchestrator, AuditPipeline, Judge
+    from react_review.retrieval.composite import CompositeRetriever
     from react_review.retrieval.local_pdf import LocalPdfRetriever
     from react_review.steps.paper_verification.fulltext_retriever import FullTextRetriever
     from react_review.study_match import (
@@ -471,6 +479,7 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
     from react_review.tools.compare import CompareValuesTool
     from react_review.tools.semantic_compare import SemanticCompareTool
     from react_review.tools.extract import FetchFullTextTool
+    from react_review.tools.source_table_capture import SourceTableCapturer
     from react_review.production import (
         aggregation_runtime,
         build_collector,
@@ -482,13 +491,8 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
     from react_review.run_profile import RunManifest
     from react_review.tools.extraction_cache import ExtractionCache
     from react_review.tools.registry import ToolRegistry
-    from react_review.tools.search import (
-        CrossRefResolver,
-        EuropePMCResolver,
-        OpenAlexResolver,
-        ReferenceReconciler,
-        ResolveReferenceTool,
-    )
+    from react_review.tools.catalogue import build_reference_reconciler
+    from react_review.tools.search import ResolveReferenceTool
 
     _safe_print(f"Parsing review PDF: {args.pdf}")
     parsed = asyncio.run(review_parser.parse(args.pdf, research_context=args.context))
@@ -517,18 +521,27 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
         else:
             context_source = "default"
 
-    # References + retriever: LOCAL (included_studies.csv → local source PDFs) or
-    # ONLINE (references from the review's own reference list → online full text).
+    # References + retriever: uploaded PDFs first (DOI / PMID / strict title),
+    # then the online chain for anything the upload catalog does not uniquely
+    # identify. Never guess an upload as a different paper.
     if args.studies:
         studies = load_included_studies(args.studies)
         review_items, sid_map = resolve_studies(parsed.items, studies)
         review_items = apply_modality_disambiguation(
             review_items, sid_map, kb, parsed.field_resolutions)
         base_dir = args.pdf_dir or args.studies.parent
-        doi_to_path = {s.doi: s.source_pdf for s in studies if s.doi and s.source_pdf}
+        _safe_print(f"  mixed retrieval: {sum(1 for s in studies if s.source_pdf)} "
+                    "uploaded PDF(s) first; unmatched citations fetched online")
         retriever = dependencies.papers(
-            lambda: LocalPdfRetriever(doi_to_path, base_dir=base_dir))
-        reference_resolver = build_reference_resolver(sid_map)
+            lambda: CompositeRetriever([
+                LocalPdfRetriever.from_included(studies, base_dir=base_dir),
+                FullTextRetriever(
+                    pubmed_settings=config.pubmed,
+                    unpaywall_email=config.unpaywall.email or config.pubmed.email,
+                    unpaywall_enabled=config.unpaywall.enabled,
+                ),
+            ]))
+        reference_resolver = build_reference_resolver(sid_map, parsed.studies)
     else:
         _safe_print(f"  online mode: references from the review's {len(parsed.studies)} "
                     "extracted citations; full text fetched online")
@@ -546,17 +559,16 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
         tol = ToleranceTable.from_yaml(contract.tolerances_path)
     else:
         tol = ToleranceTable.from_yaml(args.tolerances) if args.tolerances else ToleranceTable()
-    mailto = config.unpaywall.email or config.pubmed.email or config.crossref.mailto
-    reconciler = ReferenceReconciler([
-        CrossRefResolver(base_url=config.crossref.base_url, mailto=mailto,
-                         timeout=config.crossref.timeout),
-        OpenAlexResolver(mailto=mailto, timeout=config.crossref.timeout),
-        EuropePMCResolver(timeout=config.crossref.timeout),
-    ])
+    reconciler = build_reference_reconciler(config)
     reg = ToolRegistry()
-    reg.register(FetchFullTextTool(retriever))
+    source_tables = (
+        SourceTableCapturer(backends.single) if args.studies else None
+    )
+    reg.register(FetchFullTextTool(retriever, source_tables=source_tables))
     extraction_cache = (None if execution.extraction_mode == "live"
                         else ExtractionCache(execution.extraction_cache))
+    if args.studies and extraction_cache is not None:
+        extraction_cache.mark_private()
     # A production run should be able to say what it spent. Until now only the
     # eval harness could, so "what did batching cost" was answerable about the
     # benchmark and not about a real audit. Three labelled views of one backend,
@@ -564,7 +576,8 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
     reg.register(ExtractSourceValueTool(
         backends.single, cache=extraction_cache,
         cache_mode=execution.extraction_mode, telemetry=telemetry,
-        stage=stages.single))
+        stage=stages.single,
+        row_map_backend=backends.source_row_map))
     reg.register(ExtractSourceBatchTool(
         backends.batch,
         locate_backend=backends.extract_locate,
@@ -577,6 +590,8 @@ def _run_audit(args, config, backends, kb, resolver, review_parser,
     # controls. Every judgement is recorded so the run can be replayed offline.
     semantic_cache = (SemanticCache(execution.semantic_cache)
                       if execution.semantic_cache is not None else None)
+    if args.studies and semantic_cache is not None:
+        semantic_cache.mark_private()
     # Handed to the session as they are built, so an interrupt at any point
     # after this line still writes the totals and saves the judgements.
     session.extraction_cache, session.semantic_cache = extraction_cache, semantic_cache
@@ -790,11 +805,57 @@ _SUBCOMMANDS = {
     "report": "re-render the report for a run that already happened",
     "audit": "compare two prepared CSV tables (no LLM, no network)",
     "learn": "curate proposed knowledge-base concepts",
+    "serve": "minimal web UI for a human-gated run",
 }
 
 
+def _serve_main(argv: list[str] | None = None) -> None:
+    """HTTP UI: browse run files, post checkpoint decisions, start one run."""
+    import os
+
+    ap = argparse.ArgumentParser(
+        prog="react-review serve",
+        description="Minimal web UI. Artifacts stay on this host; keys come "
+                    "from the environment, not the image.",
+    )
+    ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--port", type=int, default=8080)
+    ap.add_argument("--out", type=Path, default=Path("output/runs"),
+                    help="run directory (default: output/runs)")
+    ap.add_argument("--uploads", type=Path, default=Path("output/uploads"),
+                    help="where uploaded PDFs are stored per run_id "
+                         "(kept until you delete the folder; see RETENTION.txt)")
+    ap.add_argument("--config", type=Path, default=Path("configs/config.local.yaml"))
+    ap.add_argument("--auth-off", action="store_true",
+                    help="disable Basic Auth (tests / local only)")
+    args = ap.parse_args(argv)
+
+    user = os.environ.get("REACT_REVIEW_BASIC_USER", "").strip()
+    password = os.environ.get("REACT_REVIEW_BASIC_PASSWORD", "").strip()
+    if args.auth_off:
+        basic = None
+    else:
+        if not user or not password:
+            raise SystemExit(
+                "react-review serve: set REACT_REVIEW_BASIC_USER and "
+                "REACT_REVIEW_BASIC_PASSWORD (or pass --auth-off for local tests)")
+        basic = (user, password)
+    config_path = args.config
+    if not config_path.is_file():
+        fallback = Path("configs/config.example.yaml")
+        if fallback.is_file():
+            config_path = fallback
+    from react_review.web.app import create_app
+    import uvicorn
+
+    app = create_app(
+        runs_dir=args.out, uploads_dir=args.uploads,
+        config_path=config_path, basic_auth=basic)
+    uvicorn.run(app, host=args.host, port=args.port)
+
+
 def main() -> None:
-    """CLI entry point. Subcommands: ``run`` / ``report`` / ``audit`` / ``learn``."""
+    """CLI entry point. Subcommands: ``run`` / ``report`` / ``audit`` / ``learn`` / ``serve``."""
     import sys
 
     argv = sys.argv[1:]
@@ -806,6 +867,8 @@ def main() -> None:
         return _audit_main(argv[1:])
     if argv and argv[0] == "learn":
         return _learn_main(argv[1:])
+    if argv and argv[0] == "serve":
+        return _serve_main(argv[1:])
     # An unrecognised subcommand is a usage error, not a silent default: running
     # something other than what was asked for is worse than refusing.
     given = argv[0] if argv else "(none)"

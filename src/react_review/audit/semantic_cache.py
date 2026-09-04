@@ -30,6 +30,7 @@ class SemanticCache:
         # with no model configured can still reconstruct the keys it recorded —
         # otherwise a cache-only run misses everything it just wrote.
         self.model_id = ""
+        self.shareable = True
         self.hits = 0
         self.misses = 0
         if self.path and self.path.is_file():
@@ -37,6 +38,7 @@ class SemanticCache:
                 body = json.loads(self.path.read_text(encoding="utf-8-sig"))
                 self.model_id = body.get("model_id", "")
                 self._entries = body.get("entries", {})
+                self.shareable = body.get("shareable") is not False
             except Exception:                                     # noqa: BLE001
                 self._entries = {}
 
@@ -83,12 +85,22 @@ class SemanticCache:
         self._entries[key] = verdict.model_dump(mode="json")
         self.model_id = self.model_id or str(verdict.provenance.get("model_id") or "")
 
+    def mark_private(self) -> None:
+        """Uploaded source-paper content went into this cache. Do not share it."""
+        self.shareable = False
+
     def save(self) -> Path | None:
         if self.path is None:
             return None
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        body = {"model_id": self.model_id, "entries": self._entries}
+        if not self.shareable:
+            body["shareable"] = False
+            body["shareable_reason"] = (
+                "contains model responses over uploaded full-text PDFs; "
+                "stored locally only; never redistribute"
+            )
         self.path.write_text(
-            json.dumps({"model_id": self.model_id, "entries": self._entries},
-                       indent=2, ensure_ascii=False, sort_keys=True),
+            json.dumps(body, indent=2, ensure_ascii=False, sort_keys=True),
             encoding="utf-8")
         return self.path

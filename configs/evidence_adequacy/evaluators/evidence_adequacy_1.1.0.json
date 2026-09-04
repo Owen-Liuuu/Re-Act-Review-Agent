@@ -1,0 +1,26 @@
+{
+  "evaluator_id": "evidence_adequacy",
+  "evaluator_version": "1.1.0",
+  "written_on": "2026-08-25",
+  "hash_algorithm": "sha256-path-lf-v1",
+  "purpose": "Same claim-level binding as 1.0.0. PaperDocument now carries parsed PMC tables beside full_text, and the collector copies FetchResult.tables onto that document and classifies missing_source. Binding rules are unchanged; the hash moves because the input shape extraction can feed the gate has changed.",
+  "versioning": {
+    "patch": "wording or provenance changes proven not to move a claim between sufficient insufficient or unknown",
+    "minor": "any new refusal or changed field target population timepoint or analysis-set binding rule",
+    "major": "an incompatible input/output contract or a different adequacy algorithm"
+  },
+  "source_files": {
+    "src/react_review/agents/collector.py": "sha256:9f8c38cf32f1b679848be5a83231b0fd8b44dbeebb07abbfd1f8edcc723745f1",
+    "src/react_review/audit/evidence_adequacy.py": "sha256:b264bcc69f680631420b1fb1195eb8d16468949040da09d520880849b676ebbc",
+    "src/react_review/contracts.py": "sha256:237e39b98ae068e70f92575f8a5d6e49746b7d016f31d9b29d5c686dc793b999",
+    "src/react_review/normalize/cohorts.py": "sha256:22c3f111aa4a910be2345285629e26233801d86d0d170a276c88b7dbf3a991a8",
+    "src/react_review/normalize/numeric.py": "sha256:f23290a3f2b67e1c97adc2816d956d72895aef38e7cb6f26f243847e1bfd270a",
+    "src/react_review/normalize/population.py": "sha256:e5f71fa85d68ad283c379872b19154714da64a29c05273e06afd000b3351f150",
+    "src/react_review/schemas/adequacy.py": "sha256:e3436f4f7728eefa20090cb4146ae08890f7e8fc5e38e5d62a1f6259f253e906",
+    "src/react_review/schemas/evidence.py": "sha256:5459008cab4ddf11a66fb76462707d6d56c8a61642bd98e20c1d3024f5761abb",
+    "src/react_review/steps/data_extraction/schemas.py": "sha256:92f8370008603928ef7ee85194f549337939a0591f2b3a432393dcfb182e1309"
+  },
+  "evaluator_hash": "sha256:5e32fc954400f4bd3a53dca33310ea93236b8402ef31bfc046aa1333992d8953",
+  "supersedes": "1.0.0",
+  "why_1_1_0": "Contract 13 wires already-parsed PMC tables onto PaperDocument. Adequacy still reads quotes and document text; it does not newly inspect grids. Historical 1.0.0 remains byte-identical and will not hash-match this tree."
+}

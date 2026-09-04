@@ -13,9 +13,12 @@ prompt therefore still leaves the step's full content on disk.
 """
 from __future__ import annotations
 
+import json
 import time
 
 from pathlib import Path
+
+import structlog
 
 from react_review.core.config import PathSettings
 from react_review.core.exceptions import RunStopped
@@ -25,6 +28,8 @@ from react_review.hitl.journal import NullJournal, RunJournal
 from react_review.hitl.policy import Mode
 from react_review.hitl.render import checkpoint_log_header, render_screen
 from react_review.llm.reasoning import take_backend_trace
+
+logger = structlog.get_logger(__name__)
 
 
 class StepReporter:
@@ -87,6 +92,7 @@ class StepReporter:
                 tokens if isinstance(tokens, int) else None)
         self.last_event = event
         self.journal.emit(event, sidecars=sidecars)      # disk first — survives Ctrl-C
+        self._clear_live()
         check = self.gate.check
         try:
             decision = await check(
@@ -96,6 +102,28 @@ class StepReporter:
         self.journal.record_decision(event)              # also records any edits
         self._append_checkpoint(event)
         return decision
+
+    def _append_progress_log(
+        self,
+        label: str,
+        *,
+        caption: str = "",
+        index: int | None = None,
+        total: int | None = None,
+    ) -> None:
+        """Testing trail: every in-flight stage hits checkpoints.log, not only gates."""
+        run_dir = getattr(self.journal, "run_dir", None)
+        if run_dir is None:
+            return
+        path = Path(run_dir) / PathSettings().checkpoint_log
+        path.parent.mkdir(parents=True, exist_ok=True)
+        bits = [f"progress {label}"]
+        if index is not None and total is not None:
+            bits.append(f"{index}/{total}")
+        if caption:
+            bits.append(caption)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(" · ".join(bits) + "\n")
 
     def _next_screen(self, stage: StepStage, *, force_gate: bool,
                      hold_display: bool = False) -> int:
@@ -161,9 +189,77 @@ class StepReporter:
         caption: str = "",
         started: float | None = None,
     ) -> None:
-        """One discrete progress line. No-op unless the gate prints them."""
+        """One discrete progress line. Also writes live.json when a run_dir exists."""
+        elapsed_s = (time.monotonic() - started) if started is not None else None
+        if getattr(self.journal, "run_dir", None) is not None:
+            logger.info(
+                "run_progress",
+                label=label,
+                caption=caption or None,
+                index=index,
+                total=total,
+            )
+        self._append_progress_log(label, caption=caption, index=index, total=total)
+        self._write_live(
+            stage=_PROGRESS_STAGE.get(label, label),
+            label=label,
+            caption=caption,
+            index=index,
+            total=total,
+            elapsed_s=elapsed_s,
+        )
         sink = getattr(self.gate, "progress", None)
         if not callable(sink):
             return
-        elapsed_s = (time.monotonic() - started) if started is not None else None
         sink(label, index, total, caption=caption, elapsed_s=elapsed_s)
+
+    def _write_live(
+        self,
+        *,
+        stage: str,
+        label: str,
+        caption: str = "",
+        index: int | None = None,
+        total: int | None = None,
+        elapsed_s: float | None = None,
+    ) -> None:
+        run_dir = getattr(self.journal, "run_dir", None)
+        if run_dir is None:
+            return
+        elapsed = float(elapsed_s or 0)
+        now = time.time()
+        body = {
+            "stage": stage,
+            "label": label,
+            "caption": caption,
+            "index": index,
+            "total": total,
+            "started_unix": now - elapsed,
+            "updated_unix": now,
+            "state": "running",
+        }
+        path = Path(run_dir) / "live.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(body), encoding="utf-8")
+
+    def _clear_live(self) -> None:
+        run_dir = getattr(self.journal, "run_dir", None)
+        if run_dir is None:
+            return
+        path = Path(run_dir) / "live.json"
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
+_PROGRESS_STAGE = {
+    "review_lens": "review_lens",
+    "evidence_localize": "evidence_localize",
+    "claim_origin": "claim_origin",
+    "table": "review_table_capture",
+    "figure": "forest_ocr",
+    "forest_ocr": "forest_ocr",
+    "long_format": "long_format_rows",
+    "paper": "collect_study",
+}

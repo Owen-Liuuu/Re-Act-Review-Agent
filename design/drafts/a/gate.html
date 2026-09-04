@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>A 刊体 · Gate</title>
+  <link rel="stylesheet" href="../bar.css">
+  <link rel="stylesheet" href="theme.css">
+</head>
+<body>
+  <div class="draft-bar">
+    <a href="../index.html">思路</a><span class="sep">|</span>
+    <b>A 刊体</b>
+    <a href="../b/gate.html">B 夜班</a>
+    <a href="../d/gate.html">D 白班</a>
+    <a href="../c/gate.html">C 案卷</a>
+    <span class="sep">|</span>
+    <a href="home.html">Desk</a>
+    <a class="on" href="gate.html">Gate</a>
+    <a href="report.html">Report</a>
+  </div>
+
+  <header class="top">
+    <a class="wordmark" href="home.html">ReAct-Review</a>
+    <span class="mono">8f3a91c2b0e1</span>
+    <span class="chip pine"><span class="dot"></span> waiting</span>
+    <nav>
+      <a href="home.html">Desk</a>
+      <a href="#">checkpoints.log</a>
+    </nav>
+  </header>
+
+  <div class="run">
+    <aside class="rail">
+      <h2>Checkpoints</h2>
+      <a class="step done" href="#">
+        <div class="n">01</div>
+        Review PDF loaded
+      </a>
+      <a class="step done" href="#">
+        <div class="n">02</div>
+        Review lens
+      </a>
+      <a class="step done" href="#">
+        <div class="n">03</div>
+        Evidence localized
+      </a>
+      <a class="step on" href="#">
+        <div class="n">04</div>
+        Displays captured
+      </a>
+      <a class="step" href="#">
+        <div class="n">05</div>
+        Forest OCR
+      </a>
+      <a class="step" href="#">
+        <div class="n">06+</div>
+        Later steps hold
+      </a>
+    </aside>
+
+    <div>
+      <section class="stage">
+        <div class="kicker">Gate · step 4 of this run</div>
+        <h1>Displays captured</h1>
+        <div class="file">review.pdf · put this next to the paper and keep only faithful tables</div>
+
+        <div class="callout">table_1: low extraction confidence (0.42) — check the rows against the PDF before continuing.</div>
+
+        <article class="keep">
+          <header>
+            <label>
+              <input type="checkbox" name="keep" value="table_1" checked>
+              table_1 · Table 1 Baseline characteristics
+            </label>
+            <span class="chip muted">12 × 8</span>
+          </header>
+          <div style="overflow-x:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Study</th>
+                  <th>Design</th>
+                  <th>N MIE</th>
+                  <th>N OE</th>
+                  <th>Age</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Li 2015</td>
+                  <td>Retrospective PSM</td>
+                  <td>58</td>
+                  <td>58</td>
+                  <td>&gt;70 years</td>
+                </tr>
+                <tr>
+                  <td>Capovilla 2023</td>
+                  <td>Multicenter matched</td>
+                  <td>58</td>
+                  <td>102 / 58*</td>
+                  <td>≥75 years</td>
+                </tr>
+                <tr>
+                  <td>Li 2025</td>
+                  <td>Retrospective PSM</td>
+                  <td>92</td>
+                  <td>55</td>
+                  <td>&gt;70 years</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="fig">
+          <label>
+            <input type="checkbox" name="keep" value="fig_2" checked>
+            fig_2 · Overall complications
+          </label>
+          <span class="chip good">15 study rows · checksum ok</span>
+        </article>
+        <article class="fig">
+          <label>
+            <input type="checkbox" name="keep" value="fig_3" checked>
+            fig_3 · Pulmonary complications
+          </label>
+          <span class="chip good">15 study rows · checksum ok</span>
+        </article>
+        <article class="fig">
+          <label>
+            <input type="checkbox" name="keep" value="fig_4">
+            fig_4 · 30-day mortality
+          </label>
+          <span class="chip warn">checksum failed</span>
+        </article>
+      </section>
+
+      <form class="dock" action="#" onsubmit="return false">
+        <button class="btn" type="submit">Continue</button>
+        <button class="btn alt" type="button">Retry</button>
+        <button class="btn alt" type="button">Retry with model 2</button>
+        <button class="btn warn" type="button">Stop</button>
+        <span class="note">Unchecked displays are dropped. The run stays paused until you post a decision — no full-page refresh.</span>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

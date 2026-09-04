@@ -36,6 +36,7 @@ class ExtractionCache:
     def __init__(self, path: Path | str | None = None) -> None:
         self.path = Path(path) if path else None
         self.model_id = ""
+        self.shareable = True
         self._entries: dict[str, dict[str, Any]] = {}
         self.hits = 0
         self.misses = 0
@@ -44,6 +45,7 @@ class ExtractionCache:
                 body = json.loads(self.path.read_text(encoding="utf-8-sig"))
                 self.model_id = str(body.get("model_id") or "")
                 self._entries = dict(body.get("entries") or {})
+                self.shareable = body.get("shareable") is not False
             except Exception:  # noqa: BLE001
                 self._entries = {}
 
@@ -71,13 +73,26 @@ class ExtractionCache:
         if self.path is not None:
             self.save()
 
+    def mark_private(self) -> None:
+        """Uploaded source-paper content went into this cache. Do not share it."""
+        self.shareable = False
+
     def save(self) -> Path | None:
         if self.path is None:
             return None
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps({
+        body: dict[str, Any] = {
             "format": "react-review-extraction-replay-v1",
             "model_id": self.model_id,
             "entries": self._entries,
-        }, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        }
+        if not self.shareable:
+            body["shareable"] = False
+            body["shareable_reason"] = (
+                "contains model responses over uploaded full-text PDFs; "
+                "stored locally only; never redistribute"
+            )
+        self.path.write_text(json.dumps(
+            body, ensure_ascii=False, indent=2, sort_keys=True,
+        ), encoding="utf-8")
         return self.path

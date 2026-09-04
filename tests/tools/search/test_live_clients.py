@@ -127,7 +127,29 @@ async def test_crossref_identifier_query_uses_doi_path(monkeypatch):
     assert cands and cands[0].doi == "10.1/x"
 
 
-def test_crossref_unreadable_item_returns_none_and_warns():
+def test_crossref_alternative_id_article_number_is_not_a_pmid():
+    work = _from_crossref_item({
+        "DOI": "10.1007/s00464-014-3753-x",
+        "title": ["Is minimally invasive esophagectomy beneficial"],
+        "container-title": ["Surgical Endoscopy"],
+        "issued": {"date-parts": [[2014]]},
+        "alternative-id": ["3753"],
+    }, "crossref")
+    assert work is not None
+    assert work.pmid == ""
+
+
+def test_crossref_pubmed_alternative_id_is_kept():
+    work = _from_crossref_item({
+        "DOI": "10.1007/s00464-014-3753-x",
+        "title": ["Is minimally invasive esophagectomy beneficial"],
+        "container-title": ["Surgical Endoscopy"],
+        "issued": {"date-parts": [[2014]]},
+        "alternative-id": ["25249141"],
+    }, "crossref")
+    assert work is not None
+    assert work.pmid == "25249141"
+
     from react_review.observe import records, reset
 
     reset()

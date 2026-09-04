@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "profile_id": "table_locate_v1",
+  "written_on": "2026-08-31",
+  "purpose": "Live default: lean_v8's question, but when a unique source table is known the locate input is that table (usually < 2k chars) rather than a 20k excerpt. Empty or ambiguous tables still render the lean_v8 body. Frozen lean_v8 / targeted_v7 bytes are unchanged.",
+  "extraction_profile": "table_locate_v1",
+  "semantic_prompt_profile": "semantic_v1",
+  "tolerances": null,
+  "population_contract": null,
+  "context_policy": "cli_only",
+  "scope_policy": "off",
+  "required_scope_axes": {}
+}

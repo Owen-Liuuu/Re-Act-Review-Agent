@@ -1,0 +1,12 @@
+.git
+.venv
+venv
+output
+__pycache__
+*.pyc
+.pytest_cache
+.codex-test-tmp
+configs/config.local.yaml
+.env
+*.egg-info
+agent-transcripts

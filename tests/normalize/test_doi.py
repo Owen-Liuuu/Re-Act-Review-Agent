@@ -1,7 +1,7 @@
 """Printed DOI / PMID are copied from the review, never invented."""
 from __future__ import annotations
 
-from react_review.normalize.doi import printed_doi, printed_pmid
+from react_review.normalize.doi import printed_doi, printed_pmid, normalize_pmid
 
 
 def test_printed_doi_keeps_a_doi_that_the_reference_list_shows():
@@ -29,3 +29,10 @@ def test_printed_doi_copies_the_doi_off_the_citation_when_the_model_omits_it():
 def test_printed_pmid_copies_digits_from_the_citation_line():
     assert printed_pmid("Li J et al. Surg Endosc. 2015. PMID: 25294532") == "25294532"
     assert printed_pmid("Front Oncol. 2023;13:1104109.") == ""
+
+
+def test_normalize_pmid_rejects_a_crossref_article_number():
+    assert normalize_pmid("25249141") == "25249141"
+    assert normalize_pmid("https://pubmed.ncbi.nlm.nih.gov/25249141") == "25249141"
+    assert normalize_pmid("3753") == ""
+    assert normalize_pmid("pmid:25249141") == ""

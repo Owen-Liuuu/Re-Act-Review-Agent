@@ -81,28 +81,28 @@ def test_unknown_table_capture_profile_is_refused():
 
 
 @pytest.mark.asyncio
-async def test_table_capturer_defaults_to_v3_and_keeps_frozen_v1():
+async def test_table_capturer_defaults_to_v4_and_keeps_frozen_v1():
     payload = {"research_context": "", "tables": []}
-    v3_backend = RecordingBackend(payload)
+    v4_backend = RecordingBackend(payload)
     v1_backend = RecordingBackend(payload)
     v2_backend = RecordingBackend(payload)
     selected = [{"display_id": "table_1", "caption": "Table 1"}]
 
-    await TableCapturer(v3_backend).capture(
+    await TableCapturer(v4_backend).capture(
         "fixture", reporter=StepReporter(), selected=selected)
     await TableCapturer(v1_backend, prompt_profile="table_capture_v1").capture(
         "fixture", reporter=StepReporter())
     await TableCapturer(v2_backend, prompt_profile="table_capture_v2").capture(
         "fixture", reporter=StepReporter())
 
-    assert DEFAULT_TABLE_CAPTURE_PROFILE == "table_capture_v3"
-    assert v3_backend.prompts == [render_table_capture_prompt(
-        "table_capture_v3", text="fixture",
+    assert DEFAULT_TABLE_CAPTURE_PROFILE == "table_capture_v4"
+    assert v4_backend.prompts == [render_table_capture_prompt(
+        "table_capture_v4", text="fixture",
         selected='[{"display_id": "table_1", "caption": "Table 1"}]')]
     assert v1_backend.prompts == [render_table_capture_prompt("table_capture_v1", text="fixture")]
     assert v2_backend.prompts == [render_table_capture_prompt("table_capture_v2", text="fixture")]
     assert v1_backend.prompts != v2_backend.prompts
-    assert "SELECTED DISPLAYS" in v3_backend.prompts[0]
+    assert "SELECTED DISPLAYS" in v4_backend.prompts[0]
     assert "SELECTED DISPLAYS" not in v1_backend.prompts[0]
 
 

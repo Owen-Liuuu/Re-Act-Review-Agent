@@ -361,18 +361,22 @@ restored to its original bytes and the corrections published as v2.
 | D4 | `configs/aggregation/registry_v9.json` | `09B3D2E4FF569EDD` | current |
 | D4 | `configs/aggregation/evaluators/safe_aggregation_1.8.2.json` | `5338C2345D389B68` | current |
 | D4 | `configs/evidence_adequacy/policy_v1.json` | `9DA56A30430B6B2B` | frozen policy |
-| D4 | `configs/evidence_adequacy/registry_v1.json` | `E2C75161EF9642DC` | current |
-| D4 | `configs/evidence_adequacy/evaluators/evidence_adequacy_1.0.0.json` | `03FC06FDA682DA83` | current |
+| D4 | `configs/evidence_adequacy/registry_v1.json` | `E2C75161EF9642DC` | superseded; bytes frozen |
+| D4 | `configs/evidence_adequacy/evaluators/evidence_adequacy_1.0.0.json` | `03FC06FDA682DA83` | superseded; bytes frozen |
+| C13 | `configs/evidence_adequacy/registry_v2.json` | `B0B80672F4BBFCD8` | current |
+| C13 | `configs/evidence_adequacy/evaluators/evidence_adequacy_1.1.0.json` | `9D2E7EA9DF079096` | current evaluator |
 | D4 | `configs/run_profiles/phase8_batch_v7.json` | `E00D058C259AA4A9` | superseded; bytes frozen |
 | D4 | `eval/benchmark_2/phase8_batch_v7_profile.json` | `9213358AC894C959` | superseded; bytes frozen |
 | D4c | `configs/run_profiles/phase8_batch_v8.json` | `90951FD4B8E950B0` | current; evidence gate required before compare |
 | D4c | `eval/benchmark_2/phase8_batch_v8_profile.json` | `F00D89C28BB24673` | current offline replay profile |
-| G1 | `configs/run_profiles/phase8_batch_v9.json` | `480E7277FBC0B177` | current; single-claim route on the domain-neutral prompt |
+| G1 | `configs/run_profiles/phase8_batch_v9.json` | `480E7277FBC0B177` | superseded for the adequacy pin; single-claim route on the domain-neutral prompt |
+| C13 | `configs/run_profiles/phase8_batch_v10.json` | `70C75876A189578E` | current; evidence_adequacy 1.1.0, PMC tables on PaperDocument |
 | RE1 | `configs/prompt_contracts/table_capture_v3.json` | `0DAB06AF2160066C` | current production TableCapture (selected displays only) |
 | RE1 | `configs/prompt_contracts/review_lens_v1.json` | `86505A34934569D9` | compressed review lens |
 | RE1 | `configs/prompt_contracts/evidence_localize_v1.json` | `2528D2FA3F018307` | evidence-chain localization |
 | RE1 | `configs/prompt_contracts/claim_origin_v1.json` | `614C066BA6C4432B` | source_paper vs review_computed labels |
 | RE1 | `configs/prompt_contracts/forest_ocr_v1.json` | `15E238EF83B380E1` | forest-plot Events/Total parse |
+| C13 | `configs/prompt_contracts/source_table_capture_v1.json` | `1D5A20996799AC2C` | source-paper table transcription; sealed, no review_* / value slots |
 
 ## Claim identity provenance: safe_aggregation 1.8.0 → 1.8.1
 
@@ -500,3 +504,14 @@ contradict B2.
 **No verdict moves because of this version.** No recording is reachable under
 `targeted_v6` yet, so nothing that has been measured was measured through it.
 The first result attributable to v9 will be the first review recorded under it.
+
+## Contract 13: evidence_adequacy 1.1.0
+
+PMC XML already produced `CapturedTable` grids; extraction never read them.
+`PaperDocument.tables` now carries those grids beside `full_text`. That file
+sits inside the 1.0.0 hash boundary, so the change is MINOR `1.1.0` rather
+than an in-place edit. `registry_v1.json` and `evidence_adequacy_1.0.0.json`
+stay byte-identical. Current sources do not hash as 1.0.0; run profile
+`phase8_batch_v10` pins 1.1.0. Historical runs under 1.0.0 are not directly
+comparable — the gate's input shape changed, which is the point.
+

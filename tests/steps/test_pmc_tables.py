@@ -73,6 +73,8 @@ TABLE1_SHAPE = {
     "svanteson_2019": {"width": 4, "rows": 28},
     "de_gonzalo_calvo_2018": {"width": 2, "rows": 25},
     "colom_2018": {"width": 2, "rows": 21},
+    "capovilla_2023": {"width": 4, "rows": 37},
+    "li_2025": {"width": 10, "rows": 48},
 }
 
 
@@ -91,8 +93,18 @@ def _table_1(tables: list[CapturedTable]) -> CapturedTable:
     )
 
 
-def test_paper_document_schema_does_not_grow_tables():
-    assert "tables" not in PaperDocument.model_fields
+def test_paper_document_carries_tables_alongside_full_text():
+    assert "tables" in PaperDocument.model_fields
+    document = PaperDocument(
+        paper_id="pmc:1",
+        reference=ReferenceEntry(title="t", doi="10.0/x"),
+        full_text="TABLE: Patient characteristics\nAge\t1\t2\n",
+        document_scope=DocumentScope.FULL_TEXT,
+    )
+    dumped = document.model_dump()
+    assert dumped["full_text"]
+    assert "tables" not in dumped
+    assert "source_pdf_path" not in dumped
 
 
 def test_synthetic_xml_text_path_is_byte_identical():
@@ -121,24 +133,169 @@ def test_srma_pmc_papers_emit_table_1_with_pdf_shape():
         assert len(table.rows) == shape["rows"], study_id
 
 
-def test_captured_grid_cells_match_the_existing_tsv_walk():
+def _naive_tsv(table_el) -> str:
+    """Document-order cells, no span expansion — the ``full_text`` walk."""
+    rows: list[str] = []
+    for tr in table_el.iter("tr"):
+        cells = [
+            "".join(cell.itertext()).strip()
+            for cell in tr if cell.tag in ("th", "td")
+        ]
+        if cells:
+            rows.append("\t".join(cells))
+    return "\n".join(rows)
+
+
+def test_table_to_text_still_walks_cells_in_document_order():
+    """B0 must not change ``_table_to_text``: it feeds ``full_text``."""
     import xml.etree.ElementTree as ET
 
-    xml_text = (FIXTURES / "svanteson_2019.xml").read_text(encoding="utf-8")
-    root = ET.fromstring(xml_text)
-    tables = {t.table_id: t for t in pmc_xml_to_tables(xml_text)}
-    for wrap in root.iter("table-wrap"):
-        table_el = wrap.find(".//table")
-        if table_el is None:
-            continue
-        captured = tables[wrap.get("id")]
-        from_grid = "\n".join(
-            "\t".join(row) for row in captured.header_rows + captured.rows
-        )
-        assert from_grid == _table_to_text(table_el)
+    for xml_path in sorted(FIXTURES.glob("*.xml")):
+        root = ET.fromstring(xml_path.read_text(encoding="utf-8"))
+        for wrap in root.iter("table-wrap"):
+            table_el = wrap.find(".//table")
+            if table_el is None:
+                continue
+            assert _table_to_text(table_el) == _naive_tsv(table_el), xml_path.name
 
 
-async def test_fetch_result_carries_tables_outside_paper_document():
+def test_expanded_grid_every_row_matches_column_path_width():
+    for xml_path in sorted(FIXTURES.glob("*.xml")):
+        for table in pmc_xml_to_tables(xml_path.read_text(encoding="utf-8")):
+            n = len(table.column_paths())
+            assert n == table.width, (xml_path.name, table.table_id)
+            for i, row in enumerate(table.header_rows + table.rows):
+                assert len(row) == n, (
+                    xml_path.name, table.table_id, i, len(row), n)
+
+
+def _path_key(text: str) -> str:
+    return (
+        text.replace("\u2009", "")
+        .replace("\xa0", " ")
+        .replace("\u2013", "-")
+        .replace("\u2212", "-")
+    )
+
+
+def _li_2025_tables() -> dict[str, CapturedTable]:
+    xml_text = (FIXTURES / "li_2025.xml").read_text(encoding="utf-8")
+    return {t.table_id: t for t in pmc_xml_to_tables(xml_text)}
+
+
+def test_li_2025_table_1_column_paths_after_span_expand():
+    import xml.etree.ElementTree as ET
+
+    table = _li_2025_tables()["Tab1"]
+    assert [_path_key(p) for p in table.column_paths()] == [
+        "Characteristic",
+        "Total(n=469)",
+        "Before PSM / MIE (n=358)",
+        "Before PSM / OE(n=111)",
+        "P value",
+        "Smd",
+        "After PSM / MIE (n=92)",
+        "After PSM / OE(n=55)",
+        "P value",
+        "Smd",
+    ]
+    root = ET.fromstring((FIXTURES / "li_2025.xml").read_text(encoding="utf-8"))
+    wrap = next(w for w in root.iter("table-wrap") if w.get("id") == "Tab1")
+    tsv_header0 = _table_to_text(wrap.find(".//table")).splitlines()[0].split("\t")
+    assert len(tsv_header0) == 8
+    assert len(table.column_paths()) == 10
+
+
+def test_li_2025_median_row_sits_under_those_column_paths():
+    table = _li_2025_tables()["Tab1"]
+    paths = [_path_key(p) for p in table.column_paths()]
+    row = next(
+        r for r in table.rows
+        if _path_key(r[0]).lower().startswith("median")
+    )
+    by_col = dict(zip(paths, (_path_key(c) for c in row)))
+    assert by_col["Total(n=469)"] == "73(70-88)"
+    assert by_col["After PSM / MIE (n=92)"] == "73(70-83)"
+    assert by_col["Before PSM / MIE (n=358)"] == "73(70-85)"
+    assert by_col["After PSM / OE(n=55)"] == "72(70-88)"
+
+
+def test_li_2025_table_2_and_3_column_paths_after_span_expand():
+    tables = _li_2025_tables()
+    assert [_path_key(p) for p in tables["Tab2"].column_paths()] == [
+        "Characteristic",
+        "Total(n=469)",
+        "Before PSM / MIE (n=358)",
+        "Before PSM / OE(n=111)",
+        "P value",
+        "After PSM / MIE (n=92)",
+        "After PSM / OE(n=55)",
+        "P value",
+    ]
+    assert [_path_key(p) for p in tables["Tab3"].column_paths()] == [
+        "Adverse events",
+        "Before PSM / MIE(n=358)",
+        "Before PSM / OE(n=111)",
+        "Before PSM / P value",
+        "After PSM / MIE(n=92)",
+        "After PSM / OE(n=55)",
+        "After PSM / P value",
+    ]
+
+
+SPAN_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<article>
+  <article-title>Span fixture</article-title>
+  <table-wrap id="Tab1">
+    <label>Table 1</label>
+    <caption><p>Groups</p></caption>
+    <table>
+      <thead>
+        <tr>
+          <th rowspan="2">Characteristic</th>
+          <th></th>
+          <th colspan="2">Before PSM</th>
+          <th rowspan="2">P value</th>
+        </tr>
+        <tr>
+          <th>Total</th>
+          <th>MIE</th>
+          <th>OE</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Age</td><td>1</td><td>2</td><td>3</td><td>0.1</td>
+        </tr>
+      </tbody>
+    </table>
+  </table-wrap>
+</article>
+"""
+
+
+def test_colspan_rowspan_expand_to_a_rectangle_without_changing_tsv():
+    import xml.etree.ElementTree as ET
+
+    tables = pmc_xml_to_tables(SPAN_XML)
+    table = tables[0]
+    assert table.column_paths() == [
+        "Characteristic", "Total",
+        "Before PSM / MIE", "Before PSM / OE", "P value",
+    ]
+    assert table.rows[0] == ["Age", "1", "2", "3", "0.1"]
+    root = ET.fromstring(SPAN_XML)
+    table_el = root.find(".//table")
+    tsv = _table_to_text(table_el)
+    assert tsv == _naive_tsv(table_el)
+    # Document-order TSV still has the unexpanded header cell counts.
+    header0 = tsv.splitlines()[0].split("\t")
+    assert len(header0) == 4
+    assert len(table.column_paths()) == 5
+
+
+
+async def test_fetch_result_copies_tables_onto_the_document():
     document = PaperDocument(
         paper_id="pmc:1",
         reference=ReferenceEntry(title="t", doi="10.0/x"),
@@ -159,5 +316,6 @@ async def test_fetch_result_carries_tables_outside_paper_document():
 
     result = await FetchFullTextTool(_Retriever()).run(document.reference)
     assert result.tables == [captured]
-    assert "tables" not in PaperDocument.model_fields
-    assert "tables" not in document.model_dump()
+    assert result.document is not None
+    assert result.document.tables == [captured]
+    assert result.document.full_text == document.full_text

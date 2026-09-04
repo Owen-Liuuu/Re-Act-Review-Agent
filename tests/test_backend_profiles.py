@@ -41,7 +41,7 @@ def test_example_config_routes_only_the_transcribe_steps():
     config = load_config(root / "configs" / "config.example.yaml")
     assert set(config.routing) == {
         "table_capture", "forest_ocr_text", "claim_origin", "unpivot",
-        "references"}
+        "references", "source_row_map"}
     assert set(config.routing.values()) == {"transcribe"}
     assert config.backend_profiles["transcribe"].model == "deepseek-v4-flash"
     assert config.backend_profiles["transcribe"].reasoning == "off"

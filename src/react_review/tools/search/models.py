@@ -14,6 +14,8 @@ class ReferenceQuery(BaseModel):
     journal: str = ""
     doi: str = ""                       # already known → identifier lookup, no title-search gate
     pmid: str = ""                      # PubMed ID → identifier lookup, no title-search gate
+    doi_origin: str = ""                # "" | printed | resolved — inferred IDs stay journal-gated
+    pmid_origin: str = ""               # "" | printed | resolved
 
 
 class CandidateWork(BaseModel):
@@ -35,6 +37,7 @@ class ResolvedReference(BaseModel):
     status: str = "unresolved_source"   # resolved | unresolved_source
     doi: str = ""
     pmcid: str = ""
+    pmid: str = ""                      # eligible title-search hit, even when status is unresolved
     source: str = ""                    # which service the accepted match came from
     confidence: float = 0.0
     matched_title: str = ""
@@ -57,6 +60,8 @@ class ResolveReferenceInput(BaseModel):
     journal: str = ""
     doi: str = ""                       # already known → passthrough (no lookup)
     pmid: str = ""                      # PubMed ID → identifier lookup, skip title-search gate
+    doi_origin: str = ""                # "" | printed | resolved
+    pmid_origin: str = ""               # "" | printed | resolved
 
 
 class ResolveReferenceResult(ResolvedReference):

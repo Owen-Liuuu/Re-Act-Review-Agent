@@ -57,6 +57,12 @@ class LLMBackend(ABC):
         self._max_concurrency: int = max(1, max_concurrency)
         self._max_retries: int = max(0, max_retries)
         self._retry_base_delay: float = max(0.0, retry_base_delay)
+        self.http_429_count: int = 0
+
+    def record_http_429(self) -> None:
+        """Count one HTTP 429, including a response the retry loop recovered from."""
+        self.http_429_count += 1
+
     @property
     def max_concurrency(self) -> int:
         """The configured concurrency cap for this backend instance."""

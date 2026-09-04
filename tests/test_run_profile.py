@@ -38,7 +38,35 @@ def test_the_legacy_contract_describes_what_the_system_did_before():
     assert contract.scope_enabled is False
 
 
-def test_the_phase8_contract_pins_its_tolerance_table():
+def test_the_lean_v8_profile_only_changes_extraction():
+    contract = load_run_contract(PROFILES / "lean_v8.json")
+    assert contract.extraction_profile == "lean_v8"
+    assert contract.semantic_prompt_profile == "semantic_v1"
+    assert contract.tolerances_path is None
+    assert contract.population_contract_path is None
+    assert contract.context_policy == "cli_only"
+    assert contract.scope_enabled is False
+
+
+def test_the_table_locate_v1_live_default_only_changes_extraction():
+    contract = load_run_contract(PROFILES / "table_locate_v1.json")
+    assert contract.extraction_profile == "table_locate_v1"
+    assert contract.semantic_prompt_profile == "semantic_v1"
+    assert contract.tolerances_path is None
+    assert contract.population_contract_path is None
+    assert contract.context_policy == "cli_only"
+    assert contract.scope_enabled is False
+
+
+def test_the_targeted_v7_contract_only_changes_extraction():
+    contract = load_run_contract(PROFILES / "targeted_v7.json")
+    assert contract.extraction_profile == "targeted_v7"
+    assert contract.semantic_prompt_profile == "semantic_v1"
+    assert contract.tolerances_path is None
+    assert contract.population_contract_path is None
+    assert contract.context_policy == "cli_only"
+    assert contract.scope_enabled is False
+
     contract = load_run_contract(PROFILES / "phase8.json")
     assert contract.extraction_profile == "targeted_v4"
     assert contract.semantic_prompt_profile == "semantic_v2_specificity"
@@ -51,18 +79,38 @@ def test_the_phase8_contract_pins_its_tolerance_table():
 
 
 def test_the_phase8_v8_contract_pins_the_evidence_gate_identity():
-    contract = load_run_contract(PROFILES / "phase8_batch_v8.json")
+    body = json.loads((PROFILES / "phase8_batch_v8.json").read_text(
+        encoding="utf-8-sig"))
 
-    assert contract.schema_version == 4
-    assert contract.adequacy_enabled is True
-    assert contract.adequacy_policy_id == "evidence_adequacy_v1"
-    assert contract.adequacy_policy_hash == (
+    assert body["schema_version"] == 4
+    assert body["adequacy_policy_id"] == "evidence_adequacy_v1"
+    assert body["adequacy_policy_hash"] == (
         "9DA56A30430B6B2B78C4A051DA9DB620A559A6802E3DDBA606551C5ECCD42FC4")
-    assert contract.adequacy_evaluator_id == "evidence_adequacy"
-    assert contract.adequacy_evaluator_version == "1.0.0"
-    assert contract.adequacy_evaluator_hash == (
+    assert body["adequacy_evaluator_id"] == "evidence_adequacy"
+    assert body["adequacy_evaluator_version"] == "1.0.0"
+    assert body["adequacy_evaluator_hash"] == (
         "sha256:4c04abf8b32e959b74d9dd6e0100c5c49c10ba09a31f727a1f39c3c1266e1931")
-    assert contract.identity()["adequacy_evaluator_version"] == "1.0.0"
+
+
+def test_the_phase8_v10_contract_pins_evidence_adequacy_1_1_0():
+    body = json.loads((PROFILES / "phase8_batch_v10.json").read_text(
+        encoding="utf-8-sig"))
+
+    assert body["schema_version"] == 4
+    assert body["adequacy_evaluator_version"] == "1.1.0"
+    assert body["adequacy_evaluator_hash"] == (
+        "sha256:5e32fc954400f4bd3a53dca33310ea93236b8402ef31bfc046aa1333992d8953")
+    assert body["extraction_routes"] == {
+        "value": "targeted_v5_batch",
+        "arm_identity": "targeted_v6",
+    }
+
+
+def test_v8_and_v9_run_contracts_refuse_current_1_1_0_sources():
+    with pytest.raises(ContractError, match="source hash changed"):
+        load_run_contract(PROFILES / "phase8_batch_v8.json")
+    with pytest.raises(ContractError, match="source hash changed"):
+        load_run_contract(PROFILES / "phase8_batch_v9.json")
 
 
 def test_the_v9_contract_moves_the_single_claim_route_and_nothing_else():
@@ -96,20 +144,21 @@ def test_v9_keeps_table_capture_on_the_baseline_the_ab_gate_chose():
     anything" is. Promoting table_capture_v2 here would contradict the B2
     diagnostic while looking like the same tidy-up.
     """
-    contract = load_run_contract(PROFILES / "phase8_batch_v9.json")
-    assert contract.table_capture_prompt_profile == "table_capture_v1"
+    v9 = json.loads((PROFILES / "phase8_batch_v9.json").read_text(
+        encoding="utf-8-sig"))
+    assert v9["table_capture_prompt_profile"] == "table_capture_v1"
 
 
 def test_the_v9_contract_loads_and_routes_arm_identity_to_the_neutral_prompt():
     from react_review.tools.extraction_profile import uses_targeted_sections
 
-    contract = load_run_contract(PROFILES / "phase8_batch_v9.json")
-    assert contract.schema_version == 4
-    assert contract.adequacy_enabled is True
-    assert contract.extraction_routes["arm_identity"] == "targeted_v6"
+    v9 = json.loads((PROFILES / "phase8_batch_v9.json").read_text(
+        encoding="utf-8-sig"))
+    assert v9["schema_version"] == 4
+    assert v9["extraction_routes"]["arm_identity"] == "targeted_v6"
     # A neutral prompt that lost the enumerate-then-assign sections would be a
     # different contract wearing a wording change's name.
-    assert uses_targeted_sections(contract.extraction_routes["arm_identity"])
+    assert uses_targeted_sections(v9["extraction_routes"]["arm_identity"])
 
 
 def test_only_the_phase8_table_makes_counts_exact():
@@ -200,7 +249,7 @@ def test_v4_contract_refuses_an_unpinned_adequacy_evaluator(tmp_path):
     (tmp_path / "tolerances.phase8.yaml").write_bytes(
         (ROOT / "configs" / "tolerances.phase8.yaml").read_bytes())
     body = json.loads(
-        (PROFILES / "phase8_batch_v8.json").read_text(encoding="utf-8-sig"))
+        (PROFILES / "phase8_batch_v10.json").read_text(encoding="utf-8-sig"))
     body["adequacy_evaluator_hash"] = "sha256:" + "0" * 64
     path = run_dir / "bad-v4.json"
     path.write_text(json.dumps(body), encoding="utf-8")
@@ -295,8 +344,10 @@ def test_a_partial_manifest_carries_no_cache_hash(tmp_path):
 
 def test_manifest_records_the_resolved_evidence_gate_runtime():
     from react_review.production import evidence_adequacy_runtime
+    from tests.conftest import requires_frozen_adequacy
 
-    contract = load_run_contract(PROFILES / "phase8_batch_v8.json")
+    requires_frozen_adequacy()
+    contract = load_run_contract(PROFILES / "phase8_batch_v10.json")
     evaluator = evidence_adequacy_runtime(contract)
     manifest = RunManifest.of(contract, ExecutionMode())
     manifest.adequacy_runtime = RunManifest.adequacy_of(evaluator)

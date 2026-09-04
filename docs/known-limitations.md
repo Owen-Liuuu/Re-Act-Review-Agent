@@ -6,7 +6,7 @@
 > **跨领域准确率门槛仍未通过,也不以其通过为验收目标**:15 行里一行就值 6.7 个百分点,这个百分数不构成跨领域准确性的证明。
 > 本文列出**已知边界**(非 bug,是 MVP 的范围选择)与**通用化路线**,供后续(尤其 DKB 阶段)一并处理。
 
-最后更新:2026-08-04 · Phase 6E 验收基于 commit `4742517`;Phase 7 处置见 `docs/deferred/phase6b-melanoma-audit.md` 的 "Phase 7 disposition" 一节。
+最后更新:2026-08-31 · 合同 14 记录 li_2025 的 `30-day mortality` 不在源表里(L18);Phase 6E 验收基于 commit `4742517`;Phase 7 处置见 `docs/deferred/phase6b-melanoma-audit.md` 的 "Phase 7 disposition" 一节。
 
 ---
 
@@ -17,7 +17,7 @@
 | 编号 | 现象 | 影响 | 位置 | 改进方向 |
 |---|---|---|---|---|
 | **L1** | **图片 / 森林图 / 扫描页读不到** —— `get_text()` 只读文字层,无 OCR / 无多模态 | Meta 分析的**效应量常在森林图=图片里 → 全丢**;某研究若只把数据画成图也会漏 | `retrieval/local_pdf.py` `_pdf_text`、`parser/review_parser.py` `_pdf_text` | 接 OCR / 多模态视觉模型读图与扫描页 |
-| **L2** | **表格结构被拍平** —— `get_text()` 把表格线性化成一维文字流,列对齐丢失 | 模型分不清"哪个值属于哪一列/队列" → **group 串列**(拿糖尿病组的值当对照组) | 同上 | 版面感知的结构化表格抽取(PyMuPDF table detection / layout parser) |
+| **L2** | **表格结构被拍平** —— `get_text()` 把表格线性化成一维文字流,列对齐丢失 | 模型分不清"哪个值属于哪一列/队列" → **group 串列**(拿糖尿病组的值当对照组) | `retrieval/local_pdf.py` `_pdf_text`、`parser/review_parser.py` `_pdf_text` | **源论文上传路径已接 PyMuPDF `find_tables` → `PaperDocument.tables`**(合同 13 A2);综述 PDF 仍走 TableCapture。找不到格时降级到原文 locate,不猜 |
 | **L3** | **`[:50000]` 截断** | 超 5 万字符的后半部分被切;Table 1 通常在前面所以目前没踩到 | `ReviewParser.max_chars` | 定位相关表格区域后再喂,或按需调大 |
 | **L11** | **Stage-2 单次吐全表 → 输出 token 上限** —— 9 篇 ≈12k 字符 JSON;`max_tokens<8192` 直接截断→JSON 失败→**0 项**;综述再大(几十篇)连 8192 也会爆 | parser 整段失败 | `parser/review_parser.py` `_STAGE2` | **运行时 `max_tokens≥8192` 必需**;根治=Stage-2 按研究/分节**分块抽取**(输出有界,不受综述规模限制) |
 | **L12** | **子组样本量 `subgroup_n` 未抽** —— parser 把总 N 复读进两队列,没读每队列的 50/50 分组数 | 15 个 subgroup_n 全漏(占 parser 漏项一半) | `parser/review_parser.py` Stage-2 | 提示 Stage-2 显式抽每队列 N;或和 sample_size 一起做"研究级 vs 队列级"scope 建模 |
@@ -43,6 +43,7 @@
 |---|---|---|---|---|
 | **L9** | **近值与多臂 target drift** —— Phase 7 后模型仍会选错,但**选错不再被接受**:枚举项必须各自带原文引文,指派唯一才采纳 | 代价转为能力损失:melanoma 有 2 行因模型改写引文被证据守卫拒绝(`missing_source`),而非错值入库 | `tools/target_assignment.py`、`tools/extract_source.py` | 双模型交叉校验仍是治本方向;引文改写可考虑要求模型给出字符区间 |
 | **L16** | **模型会改写自己的引文** —— 把论文缩写的 `95% CI` 拼成 `95% confidence interval [CI]`,引文因此不再是原文连续子串 | 守卫正确拒绝(安全),但正确的值也一并丢失 | `tools/target_assignment.py`、`normalize/anchors.py` | 值的**数字序列**已放宽为可接受措辞规整;引文本身仍要求逐字,不打算放宽 |
+| **L18** | **`30-day mortality` 不在 li_2025 的表里** —— Table 3 没有对应行;Table 2 的 `Died in 30 days` / `death` 不是同一终点(综述森林图要的是 30-day mortality)。确定性表定位正确降级到全文,不得为提高命中率把 `death` 当成 30-day mortality | 该 outcome 在 PMC 表路径上保持 missing,走 20k 全文 locate | `tools/source_table_lookup.py` | 保持拒绝;不要加同义词强匹配 |
 | ~~**L17**~~ | ~~**解析阶段模型全程失败 ≠ 综述没有可抽表格**~~ → **已关闭**:解析结束时若 `backend_requests > 0` 且 `backend_failures == backend_requests`,运行判为 `status: error`、`stopped_at_stage: review_parsing`、退出码 **3**,不再以 `complete` 发布 | 判据取自解析**刚结束**那一刻的遥测,此时 `backend_requests` 只含解析开销,因此"全部失败"精确等于"解析阶段整体失败";无需新增遥测字段或改动 artifact 形状 | `schemas/telemetry.py`(`every_call_failed`)、`core/exceptions.py`(`ModelUnavailable`)、`cli.py`(`_run_audit` 设卡 + 退出码分支) | **保留的边界**:①"模型正常应答但综述确实没有可解析的表"仍然是 `complete` + 警告 —— 那是验收评审要求"清楚说明未找到"的正确出口,判为失败会用假失败换掉假通过;②"表格捕获成功但 unpivot 全失败"(`requests > failures`)不触发,目前仅由 `LONG_FORMAT_ROWS` 检查点的警告呈现,是否升级为致命取决于"纯定性表格产生 0 行是否合法",尚未决定。三条行为均由 `tests/test_production_run_offline.py` 固定 |
 
 ### E. 评测

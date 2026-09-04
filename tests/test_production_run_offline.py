@@ -411,19 +411,25 @@ def test_one_failed_call_among_answered_ones_does_not_fail_the_run(
 
 # --- what may be substituted, and what may not ------------------------------
 
-def test_only_the_model_the_papers_and_the_person_may_be_injected():
+def test_only_outside_reach_may_be_injected():
     """A `parser` field here would make this file a lifecycle test.
 
     The wiring is the part that keeps being wrong while every component is
     right, so the run has to build it — a test that supplies it proves only
-    that the wiring a test writes works. The three that ARE injectable are the
-    three a run reaches outside itself for; the gate is the human operator, not
-    a stage of the pipeline.
+    that the wiring a test writes works. The injectable fields are what a run
+    reaches *outside* itself for: the model, the papers, the person at the
+    gate, and the credentials for that run.
+
+    ``config`` is the fourth on purpose, not a silent widening. The web UI
+    injects a per-run overlay so a user's API key and model choice never land
+    in ``config.local.yaml``. It is still credentials, not a pipeline stage.
+    Adding a fifth field (a parser, a collector, a contract) would be the
+    thing this assertion exists to stop.
     """
     from dataclasses import fields
 
     assert {f.name for f in fields(ProductionDependencies)} == {
-        "backend", "retriever", "gate"}
+        "backend", "retriever", "gate", "config"}
 
 
 # --- the batch contract, through the same entry point -----------------------
@@ -496,15 +502,17 @@ def test_schema_v4_production_run_records_and_applies_evidence_gate(
     workspace, tmp_path,
 ):
     from react_review.contracts import repo_root
+    from tests.conftest import requires_frozen_adequacy
 
-    profile = repo_root() / "configs/run_profiles/phase8_batch_v8.json"
-    store = _run(workspace, tmp_path, ScriptedBackend(), run_id="adequacy-v8",
+    requires_frozen_adequacy()
+    profile = repo_root() / "configs/run_profiles/phase8_batch_v10.json"
+    store = _run(workspace, tmp_path, ScriptedBackend(), run_id="adequacy-v10",
                  argv_extra=("--profile", str(profile)))
 
-    package = store.load("adequacy-v8")
+    package = store.load("adequacy-v10")
     runtime = package.run_manifest.adequacy_runtime
     assert runtime["policy_id"] == "evidence_adequacy_v1"
-    assert runtime["evaluator_version"] == "1.0.0"
+    assert runtime["evaluator_version"] == "1.1.0"
     assert runtime["release_eligible"] is True
     assert all(item.evidence_adequacy is not None for item in package.source_items)
     assert all(result.evidence_adequacy is not None for result in package.report.results)

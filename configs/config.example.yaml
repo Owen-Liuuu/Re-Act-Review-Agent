@@ -17,10 +17,10 @@ llm:
   provider: mock
   model: gpt-4o
   temperature: 0.1
-  max_tokens: 8192
+  max_tokens: 16384
   api_key: ""                     # leave empty for mock; set via env in real runs
   base_url: ""
-  max_concurrency: 4              # measured group cap; per-backend asyncio.Semaphore
+  max_concurrency: 8              # measured group cap; per-backend asyncio.Semaphore
   max_retries: 5                  # HTTP 429 / transient-network retry attempts
   retry_base_delay: 2.0           # exponential backoff base (seconds)
 
@@ -64,9 +64,10 @@ thresholds:
   title_similarity: 0.85
   author_match_ratio: 0.8
 
-# Transcription gear: copy the same api_key as `llm`. Only these four steps —
-# they copy text. Leave evidence_localize / claim_origin / field_resolution /
-# semantic_compare / extract_* on the default (reasoning) model.
+# Transcription gear: copy the same api_key as `llm`. These steps copy text
+# rather than judge. Leave evidence_localize / field_resolution /
+# semantic_compare / extract_* (except source_row_map) on the default
+# (reasoning) model.
 backend_profiles:
   transcribe:
     provider: openai
@@ -82,6 +83,7 @@ routing:
   claim_origin:    transcribe
   unpivot:         transcribe
   references:      transcribe
+  source_row_map:  transcribe
 
 paths:
   data_dir: ./data

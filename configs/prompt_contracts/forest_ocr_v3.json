@@ -1,0 +1,17 @@
+{
+  "prompt_id": "forest_ocr_v3",
+  "prompt_version": "forest-ocr-v3",
+  "written_on": "2026-08-26",
+  "hash_algorithm": "sha256-rendered-utf8-v1",
+  "renderer_identity": "react_review.review_extraction.render.v1",
+  "purpose": "forest_ocr_v2 with cohort_labels_seen changed from a hardcoded empty array to an angle-bracket placeholder so the model reports printed arm names. Production stays on v1 until A/B says otherwise. Do not edit forest_ocr_v1 or forest_ocr_v2.",
+  "boundary": "The rendered prompt bytes sent to the model, using the model-independent fixture input below. Python comments, helper names and source layout are outside the boundary.",
+  "governance": "Do not edit this prompt or replace this hash. A model-visible change is a new prompt profile and a new contract file.",
+  "fixture_inputs": {
+    "figure_id": "fig_3_3_1",
+    "caption": "Figure 3.3.1 Forest plot of overall complications",
+    "outcomes": "overall complications",
+    "figure_text": "Li J 2015 23 58 32 54 Total (Wald)"
+  },
+  "rendered_prompt_sha256": "81F29B544B8706F2237101C77E27D5ED09621788AE33FD57B43DEEC5080673F0"
+}

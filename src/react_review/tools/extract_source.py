@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from contextvars import ContextVar
 from types import SimpleNamespace
 
 import structlog
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 from react_review.contracts import ContractError
 from react_review.schemas.telemetry import SINGLE_EXTRACTION
@@ -165,6 +166,25 @@ _COHORT_RULES_V6 = """- PREFER the data table (e.g. Table 1) over prose. A narra
   "Age (years) | <cohort A value> | <cohort B value> | <P value>". Identify which
   column is the {group_desc} and read THAT column's cell in the target row."""
 
+
+def _table_locate_template() -> str:
+    """lean_v8's question with ONE table as the locate input. ``_PROMPT`` is not edited."""
+    return (
+        _PROMPT
+        .replace(
+            "substring of PAPER TEXT and must",
+            "substring of the SOURCE TABLE below and must",
+        )
+        .replace(
+            "## PAPER TEXT\n{paper_text}",
+            "## SOURCE TABLE\n"
+            "The text below is ONE table from the paper — the only table that uniquely\n"
+            "matches this field. Do not look outside it. If the value is not in this table,\n"
+            "set found=false.\n"
+            "{paper_text}",
+        )
+    )
+
 _TARGETED_ARM = """
 The requested target is ONE arm. Do not decide which of the paper's arms it is —
 list them all below and let the audit make that assignment."""
@@ -220,9 +240,9 @@ def _targeted_target(comparison: ComparisonTarget | None) -> str:
 
 
 def _outcome_line(profile: str, outcome: str) -> str:
-    """Outcome clause for targeted_v7 only — empty on frozen v3/v4/v6 bytes."""
+    """Outcome clause for targeted_v7 / lean_v8 / table_locate_v1 — empty on frozen v3/v4/v6."""
     text = (outcome or "").strip()
-    if profile != "targeted_v7" or not text:
+    if profile not in {"targeted_v7", "lean_v8", "table_locate_v1"} or not text:
         return ""
     return f'This claim is about the outcome: "{text}".\n'
 
@@ -321,6 +341,19 @@ class SourceQuery(BaseModel):
     outcome: str = ""
 
 
+class SourceRowMapRequest(BaseModel):
+    """Which row label refers to this outcome. Never a cell value.
+
+    The model may only point at a row. ``review_*`` and ``value`` are not
+    fields; extra="forbid" is what keeps them from appearing later.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    outcome: str = ""
+    row_labels: list[str] = Field(default_factory=list)
+
+
 def source_query_from_claim(
     claim: ReviewDataItem,
     *,
@@ -364,11 +397,13 @@ def render_source_extract_prompt(
     comparison: ComparisonTarget | None = None,
     attempt: int = 0,
     extraction_profile: str = DEFAULT_PROFILE,
+    source_table: str | None = None,
 ) -> str:
     """Render the single-target source prompt from a SourceQuery plus paper text.
 
     Structural extras (group, profile, comparison, attempt) describe HOW to ask,
     not WHAT value the review reported. The review cell is not an argument.
+    ``source_table`` is table_locate_v1 only: one unique table, not a 20k excerpt.
     """
     profile = prompt_profile(SimpleNamespace(extraction_profile=extraction_profile))
     targeted = uses_targeted_sections(profile)
@@ -379,11 +414,19 @@ def render_source_extract_prompt(
         cohort_description(
             group, display=cohort_display,
             variants=(cohorts or {}).get(group, [])))
-    return _PROMPT.format(
+    use_table = profile == "table_locate_v1" and bool(source_table)
+    body = _table_locate_template() if use_table else _PROMPT
+    anchor = "the SOURCE TABLE" if use_table else "PAPER TEXT"
+    sent = source_table if use_table else _paper_excerpt(
+        paper_text, target=target, raw_label=raw_label,
+        field_type=query.field_type, variants=query.concept_variants)
+    return body.format(
         targeted_target=(_targeted_target(comparison) if targeted else ""),
         targeted_rules=(_TARGETED_RULES if targeted else ""),
         targeted_outputs=(_TARGETED_OUTPUTS if targeted else ""),
-        cohort_rules=(_COHORT_RULES_V6 if profile in {"targeted_v6", "targeted_v7"}
+        cohort_rules=(_COHORT_RULES_V6 if profile in {
+                          "targeted_v6", "targeted_v7", "lean_v8",
+                          "table_locate_v1"}
                       else _COHORT_RULES_V3).format(group_desc=group_desc),
         outcome_line=_outcome_line(profile, query.outcome),
         context=query.research_context or "a systematic review",
@@ -400,13 +443,11 @@ def render_source_extract_prompt(
         retry_rules=("- RETRY CORRECTION: the previous response failed a "
                      "deterministic evidence check. Re-read the paper and "
                      "return only an exact contiguous quote that is visibly "
-                     "present in PAPER TEXT and contains the extracted value. "
+                     f"present in {anchor} and contains the extracted value. "
                      "The returned unit must also be exactly the unit printed "
                      "in that quote; do not correct a paper's apparent typo."
                      if attempt else ""),
-        paper_text=_paper_excerpt(
-            paper_text, target=target, raw_label=raw_label,
-            field_type=query.field_type, variants=query.concept_variants),
+        paper_text=sent,
     )
 
 
@@ -447,7 +488,8 @@ class ExtractSourceValueInput(BaseModel):
     # what lets the assignment check the direction.
     comparison: ComparisonTarget | None = None
     # Which review-side outcome this claim is about. Carried on every request;
-    # interpolated into the prompt only under targeted_v7.
+    # interpolated into the prompt only under targeted_v7, lean_v8, and
+    # table_locate_v1.
     outcome: str = ""
 
 
@@ -498,6 +540,34 @@ class SourceValueResult(BaseModel):
     error: str = ""
     # Provider refused (HTTP 401/402/403). Retrying cannot succeed.
     permanent_failure: bool = False
+    # Deterministic PMC-table locate. Empty when the value was found, or when
+    # collection never reached extraction. On a miss this is one of
+    # no_tables | not_in_table | located_not_read | fallback_text — never unknown.
+    table_lookup_class: str = ""
+    table_lookup_reason: str = ""
+    table_sent: bool = False
+    # B1 table-cell attribution. Independent of ``quote``: the quote is the
+    # cell text; these name where it sat. Empty when extraction used the text path.
+    row_label: str = ""
+    column_header: str = ""
+    table_caption: str = ""
+
+    @model_serializer(mode="wrap")
+    def _omit_empty_table_lookup(self, handler):
+        data = handler(self)
+        if not data.get("table_lookup_class"):
+            data.pop("table_lookup_class", None)
+        if not data.get("table_lookup_reason"):
+            data.pop("table_lookup_reason", None)
+        if not data.get("table_sent"):
+            data.pop("table_sent", None)
+        if not data.get("row_label"):
+            data.pop("row_label", None)
+        if not data.get("column_header"):
+            data.pop("column_header", None)
+        if not data.get("table_caption"):
+            data.pop("table_caption", None)
+        return data
 
 
 class ExtractSourceValueTool(Tool):
@@ -516,6 +586,7 @@ class ExtractSourceValueTool(Tool):
         cache_mode: str = "live",
         stage: str = "",
         telemetry=None,
+        row_map_backend: LLMBackend | None = None,
     ) -> None:
         if cache_mode not in {"live", "record", "replay"}:
             raise ValueError("cache_mode must be live, record, or replay")
@@ -524,6 +595,7 @@ class ExtractSourceValueTool(Tool):
         if cache_mode != "replay" and backend is None:
             raise ValueError("live extraction requires an LLM backend")
         self._backend = backend
+        self._row_map_backend = row_map_backend
         self._cache = cache
         self._cache_mode = cache_mode
         self._stage = stage
@@ -544,6 +616,16 @@ class ExtractSourceValueTool(Tool):
             reused = self._query_reuse.get(reuse_key)
             if reused is not None:
                 return reused
+        table_reading = _table_cell_reading(payload)
+        if table_reading is not None:
+            if payload.attempt == 0:
+                self._query_reuse[reuse_key] = table_reading
+            return table_reading
+        mapped_reading = await self._row_mapped_reading(payload)
+        if mapped_reading is not None:
+            if payload.attempt == 0:
+                self._query_reuse[reuse_key] = mapped_reading
+            return mapped_reading
         if self._telemetry is not None:
             self._telemetry.attempt("extract_source_value")
             if payload.attempt:
@@ -573,6 +655,7 @@ class ExtractSourceValueTool(Tool):
             comparison=payload.comparison,
             attempt=payload.attempt,
             extraction_profile=payload.extraction_profile,
+            source_table=_unique_table_text(payload),
         )
         model_id = ((self._backend.model_id if self._backend is not None else "")
                     or (self._cache.model_id if self._cache is not None else "")
@@ -634,6 +717,148 @@ class ExtractSourceValueTool(Tool):
         if payload.attempt == 0:
             self._query_reuse[reuse_key] = result
         return result
+
+    async def _row_mapped_reading(
+        self, payload: ExtractSourceValueInput,
+    ) -> SourceValueResult | None:
+        """Unique table, model names the row, code takes the cell. Or None."""
+        if self._row_map_backend is None:
+            return None
+        if payload.target_kind == "arm_identity" or payload.comparison is not None:
+            return None
+        outcome = (payload.outcome or "").strip()
+        if not outcome:
+            return None
+        tables = list(getattr(payload.document, "tables", None) or [])
+        if not tables:
+            return None
+        from react_review.tools.source_table_lookup import (
+            interpret_row_map_response,
+            locate_source_cell,
+            locate_source_table,
+            render_source_row_map_prompt,
+        )
+
+        table_hit = locate_source_table(
+            tables,
+            group=payload.group,
+            cohort_display=payload.cohort_display,
+            cohorts=payload.cohorts or {},
+            raw_field_name=payload.raw_field_name,
+            concept_variants=list(payload.concept_variants or []),
+            field_type=payload.field_type,
+            outcome=payload.outcome,
+        )
+        if not table_hit.unique or table_hit.table is None:
+            return None
+        labels = [
+            (row[0] or "").strip() for row in table_hit.table.rows if row
+        ]
+        SourceRowMapRequest(outcome=outcome, row_labels=labels)
+        prompt = render_source_row_map_prompt(
+            outcome=outcome, row_labels=labels)
+        raw = await self._row_map_backend.complete(prompt)
+        mapped = interpret_row_map_response(raw, labels)
+        if not mapped:
+            return None
+        hit = locate_source_cell(
+            tables,
+            group=payload.group,
+            cohort_display=payload.cohort_display,
+            cohorts=payload.cohorts or {},
+            raw_field_name=payload.raw_field_name,
+            concept_variants=list(payload.concept_variants or []),
+            field_type=payload.field_type,
+            outcome=payload.outcome,
+            document_text=payload.document.full_text or "",
+            mapped_row=mapped,
+        )
+        if not hit.unique:
+            return None
+        return _source_from_cell_hit(hit)
+
+
+def _source_from_cell_hit(hit) -> SourceValueResult:
+    location = " · ".join(
+        part for part in (hit.table_caption, hit.row_label, hit.column_header)
+        if part)
+    return SourceValueResult(
+        found=True,
+        value=hit.value,
+        quote=hit.quote,
+        source_field_name=hit.row_label,
+        location=location,
+        group_label_in_paper=hit.column_header,
+        assigned_arm_label=hit.column_header,
+        value_origin="verbatim",
+        row_label=hit.row_label,
+        column_header=hit.column_header,
+        table_caption=hit.table_caption,
+    )
+
+
+def _table_cell_reading(payload: ExtractSourceValueInput) -> SourceValueResult | None:
+    """Unique PMC-table cell, or None to keep the existing text path.
+
+    No model call. Ambiguous table/column/row, missing tables, or a cell whose
+    text is not in ``full_text`` all return None — the same as today.
+    """
+    if payload.target_kind == "arm_identity" or payload.comparison is not None:
+        return None
+    tables = list(getattr(payload.document, "tables", None) or [])
+    if not tables:
+        return None
+    from react_review.tools.source_table_lookup import locate_source_cell
+
+    hit = locate_source_cell(
+        tables,
+        group=payload.group,
+        cohort_display=payload.cohort_display,
+        cohorts=payload.cohorts or {},
+        raw_field_name=payload.raw_field_name,
+        concept_variants=list(payload.concept_variants or []),
+        field_type=payload.field_type,
+        outcome=payload.outcome,
+        document_text=payload.document.full_text or "",
+    )
+    if not hit.unique:
+        return None
+    return _source_from_cell_hit(hit)
+
+
+def _unique_table_text(payload: ExtractSourceValueInput) -> str | None:
+    """The unique matching table as TSV, or None to keep the 20k excerpt.
+
+    table_locate_v1 only. A unique *cell* is already handled above and never
+    reaches the model. This is the B1 miss: the table is unique, the cell is
+    not, so locate is asked about that table rather than the whole paper.
+    """
+    if prompt_profile(payload) != "table_locate_v1":
+        return None
+    if payload.target_kind == "arm_identity" or payload.comparison is not None:
+        return None
+    tables = list(getattr(payload.document, "tables", None) or [])
+    if not tables:
+        return None
+    from react_review.tools.source_table_lookup import (
+        locate_source_table,
+        render_table_prompt,
+    )
+
+    hit = locate_source_table(
+        tables,
+        group=payload.group,
+        cohort_display=payload.cohort_display,
+        cohorts=payload.cohorts or {},
+        raw_field_name=payload.raw_field_name,
+        concept_variants=list(payload.concept_variants or []),
+        field_type=payload.field_type,
+        outcome=payload.outcome,
+    )
+    if not hit.unique or hit.table is None:
+        return None
+    text = render_table_prompt(hit.table)
+    return text or None
 
 
 def _targeted_applies(payload: ExtractSourceValueInput) -> bool:
@@ -1001,6 +1226,9 @@ SELECTION_METHOD_ID = "abstract_plus_target_dense_blocks"
 #: before it. The prompt is byte-identical between the two; only the reporting
 #: changed, which is why this is a selector version and not a prompt version.
 SELECTION_VERSION = "v2"
+#: When a unique captured table is the locate input instead of the 20k excerpt.
+TABLE_SELECTION_METHOD_ID = "unique_captured_table"
+TABLE_SELECTION_VERSION = "table-v1"
 
 
 def select_excerpt(text: str, *, target: str, raw_label: str, field_type: str,
@@ -1269,19 +1497,23 @@ def _label_anchors(label: str, quote: str) -> bool:
     return False
 
 
+_current_claim: ContextVar[object | None] = ContextVar("extract_claim", default=None)
+
+
 def bind_claim_outcome_and_dedup(collector):
     """Fill SourceQuery.outcome from the claim without editing collector.py.
 
     ``collector.py`` is inside the evidence-adequacy hash boundary. Production
     wraps the extract tool here so a claim's outcome travels with the request
-    and same-key questions reuse the first attempt-0 result.
+    and same-key questions reuse the first attempt-0 result. The claim is a
+    ContextVar so overlapping groups (and overlapping papers) do not steal
+    each other's outcome.
     """
     inner = collector._extract
-    current: dict[str, object] = {"claim": None}
 
     class _Bound:
         async def run(self, payload: ExtractSourceValueInput) -> SourceValueResult:
-            claim = current["claim"]
+            claim = _current_claim.get()
             outcome = str(getattr(claim, "outcome", "") or payload.outcome or "")
             if outcome and payload.outcome != outcome:
                 payload = payload.model_copy(update={"outcome": outcome})
@@ -1291,11 +1523,11 @@ def bind_claim_outcome_and_dedup(collector):
     original = collector.collect
 
     async def collect(review_item, *args, **kwargs):
-        current["claim"] = review_item
+        token = _current_claim.set(review_item)
         try:
             return await original(review_item, *args, **kwargs)
         finally:
-            current["claim"] = None
+            _current_claim.reset(token)
 
     collector.collect = collect
     return collector

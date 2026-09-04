@@ -38,7 +38,7 @@ logger = structlog.get_logger(__name__)
 
 
 # Backwards-compatible import for tests/tools that observed the old production
-# constant.  Frozen A/B stays on v1; new runs default to v3.
+# constant.  Frozen A/B stays on v1; new runs default to v4.
 _CAPTURE = PROMPT_TEMPLATES[DEFAULT_TABLE_CAPTURE_PROFILE]
 
 
@@ -65,6 +65,8 @@ class TableCapturer:
         transcribe = backend or self._backend
         while True:
             started = time.monotonic()
+            reporter.progress(
+                "table", 1, 1, caption="transcribing displays", started=started)
             raw = await self._transcribe(transcribe, text, seed, selected=selected)
             tables = _parse_tables(raw)
             context = str(raw.get("research_context") or "").strip()

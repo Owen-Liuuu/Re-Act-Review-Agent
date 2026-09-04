@@ -84,3 +84,15 @@ def test_source_query_copies_claim_outcome():
 
 def test_targeted_v7_version_string():
     assert prompt_version("targeted_v7") == TARGETED_V7
+
+
+def test_lean_v8_version_string():
+    from react_review.tools.extraction_profile import LEAN_V8
+
+    assert prompt_version("lean_v8") == LEAN_V8
+
+
+def test_table_locate_v1_version_string():
+    from react_review.tools.extraction_profile import TABLE_LOCATE_V1
+
+    assert prompt_version("table_locate_v1") == TABLE_LOCATE_V1

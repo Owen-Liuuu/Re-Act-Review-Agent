@@ -67,6 +67,14 @@ DOC05 = Path(__file__).resolve().parents[2] / "eval" / "benchmark_3" / "raw" / "
 def test_forest_ocr_contract_does_not_drift():
     assert ForestOcrPromptContract.load().drifts() == []
     assert ForestOcrPromptContract.load("forest_ocr_v2").drifts() == []
+    assert ForestOcrPromptContract.load("forest_ocr_v3").drifts() == []
+
+
+def test_forest_ocr_defaults_to_deexemplarized_v2():
+    from react_review.tools.forest_ocr import DEFAULT_FOREST_OCR_PROMPT, PROMPT_ID
+    assert PROMPT_ID == "forest_ocr_v1"
+    assert DEFAULT_FOREST_OCR_PROMPT == "forest_ocr_v2"
+    assert ForestOcrTool()._prompt_id == "forest_ocr_v2"
 
 
 def test_forest_ocr_v2_differs_from_v1_only_in_the_example_row():
@@ -85,6 +93,24 @@ def test_forest_ocr_v2_differs_from_v1_only_in_the_example_row():
     assert "Li J 2015" not in new
     assert "<exact header cell>" in new
     assert "<exact cell text>" in new
+
+
+def test_forest_ocr_v3_asks_for_printed_arm_labels():
+    from react_review.tools.forest_ocr import (
+        render_forest_ocr_v2_prompt,
+        render_forest_ocr_v3_prompt,
+    )
+    fixture = ForestOcrPromptContract.load().fixture_inputs
+    v2 = render_forest_ocr_v2_prompt(**fixture).splitlines()
+    v3 = render_forest_ocr_v3_prompt(**fixture).splitlines()
+    changed = [(a, b) for a, b in zip(v2, v3) if a != b]
+    assert len(v2) == len(v3)
+    assert len(changed) == 1
+    old, new = changed[0]
+    assert '"cohort_labels_seen": []' in old
+    assert '"cohort_labels_seen": ["<exact printed arm label>"]' in new
+    example = "\n".join(v3).split("## FIGURE TEXT")[0]
+    assert "Li J 2015" not in example
 
 
 def test_forest_vision_contract_does_not_drift():
@@ -152,6 +178,36 @@ async def test_llm_path_parses_a_text_dump_when_a_backend_is_present(tmp_path):
     assert backend.prompts, "a per-study grid must reach the model"
     assert out.table.rows == [["Li J 2015", "23", "58"]]
     assert "Never invent" in backend.prompts[0]
+    assert '"cohort_labels_seen": []' in backend.prompts[0]
+    assert "<exact printed arm label>" not in backend.prompts[0]
+    assert "Li J 2015" not in backend.prompts[0].split("## FIGURE TEXT")[0]
+    assert "<exact cell text>" in backend.prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_text_path_v3_asks_for_printed_arm_labels(tmp_path):
+    pdf = tmp_path / "review.pdf"
+    _write_pdf(pdf, "Figure 3.3.1 Forest plot\nLi J 2015 23 58 32 54")
+    backend = QueueBackend([{
+        "tables": [{
+            "table_id": "fig_3_3_1",
+            "caption": "Figure 3.3.1",
+            "header_rows": [["Study or Subgroup", "Events", "Total"]],
+            "rows": [["Li J 2015", "23", "58"]],
+            "row_axis_columns": ["Study or Subgroup"],
+            "cohort_labels_seen": ["MIE", "OE"],
+            "difficulties": [],
+        }],
+    }])
+    out = await ForestOcrTool(backend, prompt_id="forest_ocr_v3").run(ForestOcrInput(
+        pdf_path=str(pdf), figure_id="fig_3_3_1",
+        caption="Figure 3.3.1 Forest plot", page_hint="1",
+        outcomes=["overall complications"],
+    ))
+    assert backend.prompts
+    assert '"cohort_labels_seen": ["<exact printed arm label>"]' in backend.prompts[0]
+    assert "Li J 2015" not in backend.prompts[0].split("## FIGURE TEXT")[0]
+    assert out.table.cohort_labels_seen == ["MIE", "OE"]
 
 
 @pytest.mark.asyncio

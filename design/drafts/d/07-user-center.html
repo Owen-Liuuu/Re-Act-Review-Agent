@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>D · User center</title>
+  <link rel="stylesheet" href="theme-lg.css">
+</head>
+<body>
+  <div class="app">
+    <nav class="icons">
+      <a class="on" href="05-upload-models.html" title="New run">N</a>
+      <a href="02-running.html" title="This run">G</a>
+      <a href="04-complete.html" title="Report" style="opacity:.4">R</a>
+    </nav>
+    <div>
+      <header class="top">
+        <a class="wordmark" href="05-upload-models.html">ReAct-Review</a>
+        <span class="chip muted"><span class="dot"></span> Idle · pick models</span>
+        <span class="sp"></span>
+        <a class="account" href="05-upload-models.html">Li Wei · 3 keys</a>
+      </header>
+      <div class="ide">
+        <aside class="tree">
+          <div class="k" style="padding:6px 21px 12px">This run will use</div>
+          <div class="group">Complex · llm</div>
+          <a href="#"><span class="n">01</span><span class="label">Review lens</span></a>
+          <a href="#"><span class="n">02</span><span class="label">Evidence localize</span></a>
+          <a href="#"><span class="n">05+</span><span class="label">Extract · judge</span></a>
+          <div class="group" style="padding-top:14px">Simple · transcribe</div>
+          <a href="#"><span class="n">03</span><span class="label">Displays / tables</span></a>
+          <a href="#"><span class="n">04</span><span class="label">Claim origin · unpivot</span></a>
+          <div class="group" style="padding-top:14px">Visual · vision</div>
+          <a href="#"><span class="n">03b</span><span class="label">Forest OCR image</span></a>
+        </aside>
+        <section class="editor">
+          <div class="k">New run</div>
+          <h1 style="margin:8px 0 10px">Attach the review</h1>
+          <p style="color:var(--muted);margin:0 0 8px">Account is open on the right. Models stay on the desk; keys never sit on the homepage.</p>
+          <form action="02-running.html">
+            <label class="file">
+              <input type="file" accept="application/pdf">
+              <div class="ico">PDF</div>
+              <div>
+                <strong>Review</strong>
+                <div style="color:var(--muted);font-size:0.85em">Required · published systematic review</div>
+              </div>
+              <span class="chip blue">Choose</span>
+            </label>
+            <label class="file">
+              <input type="file" accept="application/pdf" multiple>
+              <div class="ico">SRC</div>
+              <div>
+                <strong>Sources</strong>
+                <div style="color:var(--muted);font-size:0.85em">Optional · local papers skip retrieval</div>
+              </div>
+              <span class="chip muted">Choose</span>
+            </label>
+            <button class="btn" type="submit" style="margin-top:10px">Start run</button>
+          </form>
+        </section>
+        <aside class="problems">
+          <div class="k">Models</div>
+          <h2 style="margin-top:10px">Three gears</h2>
+          <div class="gear">
+            <header>Complex <span class="chip muted">DeepSeek</span></header>
+            <p class="slots mono">deepseek/deepseek-v4-pro</p>
+          </div>
+          <div class="gear">
+            <header>Simple <span class="chip muted">DeepSeek</span></header>
+            <p class="slots mono">deepseek/deepseek-v4-flash</p>
+          </div>
+          <div class="gear">
+            <header>Visual <span class="chip muted">GLM</span></header>
+            <p class="slots mono">z-ai/glm-4.6v</p>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <div class="veil"></div>
+  <aside class="sheet">
+    <div class="k">User center</div>
+    <h1>Account</h1>
+    <p style="color:var(--muted);font-size:0.9em;margin:0 0 16px">Name and email for the run log. Three native keys — one per gear. Not an OpenRouter key.</p>
+    <form action="05-upload-models.html">
+      <div class="row">
+        <label for="who">Display name</label>
+        <input id="who" type="text" value="Li Wei">
+      </div>
+      <div class="row">
+        <label for="mail">Email</label>
+        <input id="mail" type="email" value="li@lab.org">
+      </div>
+      <hr class="rule">
+      <div class="k" style="margin-bottom:10px">API keys</div>
+      <div class="key-field">
+        <label for="key-c">Complex · DeepSeek</label>
+        <input id="key-c" type="password" value="sk-demo-complex" placeholder="sk-…">
+        <p class="hint-k">Native DeepSeek key · platform.deepseek.com</p>
+      </div>
+      <div class="key-field">
+        <label for="key-s">Simple · DeepSeek</label>
+        <input id="key-s" type="password" value="sk-demo-simple" placeholder="sk-…">
+        <p class="hint-k">Native DeepSeek key · platform.deepseek.com</p>
+      </div>
+      <div class="key-field">
+        <label for="key-v">Visual · GLM</label>
+        <input id="key-v" type="password" value="glm-demo-visual" placeholder="…">
+        <p class="hint-k">Native GLM key · open.bigmodel.cn</p>
+      </div>
+      <div class="actions">
+        <button class="btn" type="submit">Save</button>
+        <a class="btn ghost" href="05-upload-models.html" style="display:inline-grid;place-items:center;text-decoration:none">Close</a>
+      </div>
+    </form>
+  </aside>
+</body>
+</html>

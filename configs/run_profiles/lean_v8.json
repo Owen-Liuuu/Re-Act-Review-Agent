@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "profile_id": "lean_v8",
+  "written_on": "2026-08-28",
+  "purpose": "Live default: legacy_v3 body plus v6 placeholder cohort rules and v7's outcome clause, without the enumerate-then-assign targeted sections. Three forest figures asking for events are three different questions. Frozen legacy.json stays at legacy_v3 for Phase 6/7 replay; targeted_v7 stays the full targeted machine.",
+  "extraction_profile": "lean_v8",
+  "semantic_prompt_profile": "semantic_v1",
+  "tolerances": null,
+  "population_contract": null,
+  "context_policy": "cli_only",
+  "scope_policy": "off",
+  "required_scope_axes": {}
+}

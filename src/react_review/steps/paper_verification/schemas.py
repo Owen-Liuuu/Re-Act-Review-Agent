@@ -24,6 +24,8 @@ class ReferenceEntry(BaseModel):
     year: int | None = None
     doi: str | None = None
     pmid: str | None = None
+    doi_origin: str = ""                # "" | printed | resolved
+    pmid_origin: str = ""               # "" | printed | resolved
 
 
 class VerificationFlag(BaseModel):

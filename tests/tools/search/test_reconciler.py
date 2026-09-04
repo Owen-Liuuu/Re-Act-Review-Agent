@@ -124,3 +124,41 @@ async def test_title_search_mismatch_note_is_absent_on_identifier_path():
     assert r.note == ""
     assert "candidates, none matched" not in (r.note or "")
 
+
+@pytest.mark.asyncio
+async def test_eligible_title_search_exposes_pmid_when_confidence_misses():
+    citation = (
+        "Li J, Shen Y, Tan L, et al. Is minimally invasive esophagectomy "
+        "beneficial to elderly patients with esophageal cancer? "
+        "Surg Endosc. 2015;29(4):925-930.")
+    query = ReferenceQuery(
+        title=citation, citation=citation, year=2015, journal="Surg Endosc")
+    eligible = CandidateWork(
+        doi="10.1007/s00464-014-3750-0",
+        title="Minimally invasive esophagectomy for esophageal cancer",
+        year=2015, journal="Surgical Endoscopy", pmid="25249141",
+        source="crossref")
+    r = await ReferenceReconciler([StaticResolver("crossref", [eligible])]).resolve(query)
+    assert r.status == "unresolved_source"
+    assert r.doi == ""
+    assert r.pmid == "25249141"
+    assert r.confidence < 0.72
+
+
+@pytest.mark.asyncio
+async def test_inferred_pmid_still_journal_gates_the_dote_supplement():
+    query = ReferenceQuery(
+        title="Minimally invasive esophagectomy after neoadjuvant therapy",
+        year=2023, journal="Front Oncol", pmid="37555248",
+        pmid_origin="resolved")
+    dote = CandidateWork(
+        doi="10.1093/dote/doad052.248",
+        title="Minimally invasive esophagectomy after neoadjuvant therapy",
+        year=2023, journal="Diseases of the Esophagus", pmid="37555248",
+        source="crossref")
+    r = await ReferenceReconciler([StaticResolver("crossref", [dote])]).resolve(query)
+    assert r.status == "unresolved_source"
+    assert r.doi == ""
+    assert r.doi != "10.1093/dote/doad052.248"
+    assert r.note == "retrieved 1 candidates, none matched the citation"
+

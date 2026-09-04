@@ -50,9 +50,30 @@ async def test_connect_error_gets_one_retry_then_stops(httpx_mock):
 async def test_429_keeps_all_five_retries(httpx_mock):
     for _ in range(6):
         httpx_mock.add_response(status_code=429, text="rate limited")
+    backend = OpenAIBackend(_settings())
     with pytest.raises(LLMError, match=r"after 6 attempts.*HTTP 429"):
-        await OpenAIBackend(_settings()).complete("prompt")
+        await backend.complete("prompt")
     assert len(httpx_mock.get_requests()) == 6
+    assert backend.http_429_count == 6
+
+
+@pytest.mark.asyncio
+async def test_a_recovered_429_is_still_counted(httpx_mock):
+    from react_review.llm.metered import MeteredBackend
+    from react_review.schemas.telemetry import RunTelemetry
+
+    httpx_mock.add_response(status_code=429, text="rate limited")
+    httpx_mock.add_response(json={
+        "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+    })
+    backend = OpenAIBackend(_settings())
+    telemetry = RunTelemetry()
+    text = await MeteredBackend(backend, telemetry).complete("prompt")
+    assert text == "ok"
+    assert backend.http_429_count == 1
+    assert telemetry.http_429 == 1
+    dumped = telemetry.model_dump(mode="json")
+    assert dumped["http_429"] == 1
 
 
 def test_read_timeout_follows_max_tokens_instead_of_a_constant():

@@ -26,6 +26,16 @@ BATCH_V5 = "extract-source-v5-batch"
 #: rather than swapped on the belief that neutral wording must be better.
 TARGETED_V6 = "extract-source-v6-targeted-neutral-examples"
 TARGETED_V7 = "extract-source-v7-targeted-outcome"
+#: ``legacy_v3``'s question with v6's placeholder cohort rules and v7's
+#: outcome clause — without the enumerate-then-assign machinery that
+#: ``_TARGETED_PROFILES`` members render. Three forest figures asking for
+#: events become three different questions; the 2190-character targeted
+#: sections stay off this profile.
+LEAN_V8 = "extract-source-v8-lean-outcome"
+#: ``lean_v8``'s question when a unique source table is known: that table
+#: is the locate input, not a 20k excerpt of the paper. Empty or ambiguous
+#: tables still render the lean_v8 body. targeted_v7 / lean_v8 stay frozen.
+TABLE_LOCATE_V1 = "extract-source-v9-table-locate"
 #: Locate-then-transcribe batch: two calls for the group, not N. The v5
 #: one-shot contract stays frozen; this is a new route.
 BATCH_SPLIT_V1 = "extract-source-batch-split-v1"
@@ -37,6 +47,8 @@ PROMPT_VERSIONS = {
     "targeted_v5_batch": BATCH_V5,
     "targeted_v6": TARGETED_V6,
     "targeted_v7": TARGETED_V7,
+    "lean_v8": LEAN_V8,
+    "table_locate_v1": TABLE_LOCATE_V1,
     "batch_split_v1": BATCH_SPLIT_V1,
 }
 #: The profile name a batch request runs under, so the batch tool need not

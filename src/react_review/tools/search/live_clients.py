@@ -15,7 +15,7 @@ import time
 
 import httpx
 
-from react_review.normalize.doi import normalize_doi
+from react_review.normalize.doi import normalize_doi, normalize_pmid
 from react_review.observe import note
 from react_review.tools.search.models import CandidateWork, ReferenceQuery
 
@@ -24,7 +24,7 @@ def _pmid_of(raw: object) -> str:
     text = str(raw or "").strip()
     if text.lower().startswith("https://pubmed.ncbi.nlm.nih.gov/"):
         text = text.rsplit("/", 1)[-1]
-    return text if text.isdigit() else ""
+    return normalize_pmid(text)
 
 
 def _from_crossref_item(it: dict, source: str) -> CandidateWork | None:

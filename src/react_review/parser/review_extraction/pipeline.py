@@ -11,7 +11,11 @@ from react_review.hitl.gate import Decision, require_alt_backend, retry_offers
 from react_review.hitl.reporter import StepReporter
 from react_review.llm.base import LLMBackend
 from react_review.parser.review_extraction.lens import read_lens
-from react_review.parser.review_extraction.localize import localize, selected
+from react_review.parser.review_extraction.localize import (
+    localize,
+    selected,
+    stamp_display_outcomes,
+)
 from react_review.parser.review_extraction.origin import dropped_notes, label_origins
 from react_review.parser.review_extraction.schemas import (
     DisplayHit,
@@ -20,6 +24,7 @@ from react_review.parser.review_extraction.schemas import (
 )
 from react_review.parser.review_extraction.windows import capture_window, missed_forest_hint
 from react_review.parser.table_capture import TableCapturer
+from react_review.parser.table_capture_contract import DEFAULT_TABLE_CAPTURE_PROFILE
 from react_review.parser.table_render import (
     display_caption,
     render_display_summary,
@@ -42,7 +47,7 @@ class ReviewExtraction:
         *,
         reporter: StepReporter | None = None,
         alt_backend: LLMBackend | None = None,
-        prompt_profile: str = "table_capture_v3",
+        prompt_profile: str = DEFAULT_TABLE_CAPTURE_PROFILE,
         keep_tables: set[str] | None = None,
         drop_tables: set[str] | None = None,
         forest_ocr=None,
@@ -90,8 +95,8 @@ class ReviewExtraction:
         seed = 42
         lens_backend = self._slot("review_lens")
         while True:
-            lens = await read_lens(lens_backend, full_text, seed=seed)
             self._reporter.progress("review_lens", started=started)
+            lens = await read_lens(lens_backend, full_text, seed=seed)
             decision = await self._reporter.step_or_stop(
                 StepStage.REVIEW_LENS,
                 title="Review lens compressed",
@@ -120,9 +125,10 @@ class ReviewExtraction:
 
         started = time.monotonic()
         localize_notes: list[str] = []
+        self._reporter.progress("evidence_localize", started=started)
         hits = await localize(
             self._slot("evidence_localize"), lens, full_text, notes=localize_notes)
-        self._reporter.progress("evidence_localize", started=started)
+        stamp_display_outcomes(hits, lens.outcomes)
         hits = await self._gate_hits(
             hits, subject, kind, full_text, started=started,
             extra_warnings=localize_notes)
@@ -142,11 +148,15 @@ class ReviewExtraction:
                 keep=self._keep, drop=self._drop, selected=tables_sel,
                 defer_gate=True, seed=seed, backend=capture_backend,
             )
+            hit_by_id = {h.display_id: h for h in hits}
             for table in table_set.tables:
                 if not table.display_kind:
                     table.display_kind = "pdf_table"
                 if not table.capture_method:
                     table.capture_method = "table_text"
+                hit = hit_by_id.get(table.table_id)
+                if hit is not None:
+                    table.outcome = hit.outcome
             if forest_tables is None:
                 forest_tables = await self._ocr_forests(
                     selected(hits, kind="forest_plot"), path, lens)
@@ -179,9 +189,9 @@ class ReviewExtraction:
         )
         started = time.monotonic()
         origin_notes: list[str] = []
+        self._reporter.progress("claim_origin", 1, 1, started=started)
         labels = await label_origins(
             self._slot("claim_origin"), lens, combined.tables, notes=origin_notes)
-        self._reporter.progress("claim_origin", 1, 1, started=started)
         combined.origin_labels = labels
         dropped = dropped_notes(labels)
         await self._reporter.step_or_stop(
@@ -260,6 +270,9 @@ class ReviewExtraction:
         tables: list[CapturedTable] = []
         for ordinal, hit in enumerate(hits):
             started = time.monotonic()
+            self._reporter.progress(
+                "figure", ordinal + 1, len(hits),
+                caption=display_caption(hit.caption), started=started)
             try:
                 result = await tool.run(ForestOcrInput(
                     pdf_path=pdf_path,
@@ -284,8 +297,7 @@ class ReviewExtraction:
             table.capture_method = "figure_ocr"
             if not table.caption:
                 table.caption = hit.caption
-            if not table.outcome:
-                table.outcome = hit.caption
+            table.outcome = hit.outcome
             tables.append(table)
             self._reporter.progress(
                 "figure", ordinal + 1, len(hits),
@@ -386,7 +398,7 @@ def _empty_forest(hit: DisplayHit, difficulties: list[str]) -> CapturedTable:
         role="outcomes",
         display_kind="forest_plot",
         capture_method="figure_ocr",
-        outcome=hit.caption,
+        outcome=hit.outcome,
         row_axis_columns=["Study or Subgroup"],
         difficulties=difficulties,
     )

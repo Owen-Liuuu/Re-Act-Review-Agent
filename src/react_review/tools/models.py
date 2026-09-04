@@ -71,9 +71,10 @@ class FetchResult(BaseModel):
     a metadata-only fallback or None).
 
     ``tables`` carries structured PMC ``<table-wrap>`` captures when the
-    retriever produced them. They sit here rather than on ``PaperDocument`` so
-    the evidence-adequacy evaluator hash (which includes that schema) does not
-    have to be re-frozen for a source-side table object.
+    retriever produced them. From evidence_adequacy 1.1.0 they are also
+    copied onto ``PaperDocument.tables`` so extraction can read the grid
+    without a second channel. ``FetchResult.tables`` stays as the
+    retriever-facing copy.
     """
 
     reference: ReferenceEntry

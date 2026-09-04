@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>C 案卷 · Desk</title>
+  <link rel="stylesheet" href="../bar.css">
+  <link rel="stylesheet" href="theme.css">
+</head>
+<body>
+  <div class="draft-bar">
+    <a href="../index.html">思路</a><span class="sep">|</span>
+    <a href="../a/home.html">A 刊体</a>
+    <a href="../b/home.html">B 夜班</a>
+    <a href="../d/home.html">D 白班</a>
+    <b>C 案卷</b>
+    <span class="sep">|</span>
+    <a class="on" href="home.html">Desk</a>
+    <a href="gate.html">Gate</a>
+    <a href="report.html">Report</a>
+  </div>
+  <header class="top">
+    <a class="wordmark" href="home.html">ReAct-Review</a>
+    <span class="k">File a run</span>
+    <nav><a href="gate.html">Open</a><a href="report.html">Exhibit</a></nav>
+  </header>
+  <section class="folio">
+    <div class="k">No. — new</div>
+    <h1>Start a gated audit.</h1>
+    <p>One review PDF. Optional local sources. One run at a time. Artifacts remain on this host.</p>
+    <form action="#" onsubmit="return false">
+      <div class="field">
+        <label>
+          <div class="k">01 Review</div>
+          <strong>Published systematic review (PDF)</strong>
+          <input type="file" accept="application/pdf" required>
+        </label>
+      </div>
+      <div class="field">
+        <label>
+          <div class="k">02 Sources</div>
+          <strong>Included studies, if held locally</strong>
+          <input type="file" accept="application/pdf" multiple>
+        </label>
+      </div>
+      <button class="btn" type="submit">File run</button>
+    </form>
+  </section>
+  <section class="docket">
+    <table>
+      <thead><tr><th>No.</th><th>Run</th><th>Status</th><th>Verdict</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>001</td>
+          <td><a href="gate.html">8f3a91c2b0e1</a></td>
+          <td>Waiting · displays</td>
+          <td>—</td>
+        </tr>
+        <tr>
+          <td>002</td>
+          <td><a href="report.html">contract16-d</a></td>
+          <td>Complete</td>
+          <td><span class="chip warn">Partial</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+</body>
+</html>

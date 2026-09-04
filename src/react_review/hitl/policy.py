@@ -66,3 +66,14 @@ class CheckpointPolicy(BaseModel):
     @classmethod
     def from_name(cls, name: str) -> "CheckpointPolicy":
         return {"key": cls.key_stages, "all": cls.all_stages, "none": cls.none}[name]()
+
+    def is_none(self) -> bool:
+        """True only for ``--checkpoints none``: every stage is SILENT.
+
+        Papers may overlap only in this mode. ``key`` (show) and ``all`` (gate)
+        stay serial so HITL still presents one study block at a time.
+        """
+        return (
+            self.default is Mode.SILENT
+            and all(self.mode_for(stage) is Mode.SILENT for stage in _ALL_STAGES)
+        )

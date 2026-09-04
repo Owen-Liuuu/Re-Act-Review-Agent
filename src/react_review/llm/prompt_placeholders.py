@@ -27,6 +27,7 @@ _PROMPT_MODULES = (
     "react_review.parser.review_parser",
     "react_review.tools.forest_ocr",
     "react_review.tools.extract_source",
+    "react_review.tools.source_table_capture",
     "react_review.tools.batch_prompt",
     "react_review.tools.semantic_compare",
     "react_review.dkb.agent",

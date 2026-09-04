@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>D · 开跑前设置方案</title>
+  <link rel="stylesheet" href="../bar.css">
+  <style>
+    body { margin: 0; background: #e8edf2; color: #0f172a; font: 16px/1.55 "Segoe UI", system-ui, sans-serif; }
+    .wrap { max-width: 880px; margin: 0 auto; padding: 28px 24px 72px; }
+    h1 { font-size: 1.7rem; letter-spacing: -.03em; margin: 8px 0 10px; }
+    h2 { font-size: 1.1rem; margin: 28px 0 8px; }
+    p, li { color: #334155; }
+    .k { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: #64748b; }
+    table { width: 100%; border-collapse: collapse; background: #fff; font-size: 14px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #d5dee8; vertical-align: top; }
+    th { font-size: 11px; color: #94a3b8; font-weight: 600; background: #f8fafc; }
+    .mono { font-family: ui-monospace, monospace; font-size: 12.5px; }
+    .go { display: inline-block; margin: 6px 12px 0 0; font-weight: 700; color: #155eef; }
+    .box { background: #fff; border: 1px solid #d5dee8; border-radius: 10px; padding: 16px 18px; }
+  </style>
+</head>
+<body>
+  <div class="draft-bar">
+    <a href="../index.html">思路</a><span class="sep">|</span>
+    <b>D 白班</b>
+    <a href="01-upload.html">1–4 原稿</a>
+    <a class="on" href="plan-setup.html">方案</a>
+    <a href="05-upload-models.html">5 模型</a>
+    <a href="06-upload-missing.html">6 缺文件</a>
+    <a href="07-user-center.html">7 用户中心</a>
+    <a href="08-missing-keys.html">8 缺 key</a>
+  </div>
+  <main class="wrap">
+    <div class="k">Draft only · src/ untouched · 产品页已去掉黑条</div>
+    <h1>开跑前：三档模型 + 用户中心三把 Key</h1>
+    <p>黑条（思路 / A B D C / 1上传 2在跑…）是设计评审导航，不是产品。客户看到的工位从左轨开始。方案页仍留黑条方便作者跳转。</p>
+    <p>OpenRouter 只当<strong>模型目录</strong>（slug）。客户填的是三家厂商自己的 API key，不是 <span class="mono">sk-or-v1-…</span>。</p>
+    <p>
+      <a class="go" href="05-upload-models.html">草稿 · 选模型</a>
+      <a class="go" href="07-user-center.html">草稿 · 用户中心</a>
+      <a class="go" href="06-upload-missing.html">草稿 · 没识别到文件</a>
+      <a class="go" href="08-missing-keys.html">草稿 · 缺 Key</a>
+    </p>
+
+    <h2>1. 三档怎么切（跟代码，不是跟 HITL 九步表）</h2>
+    <p>运行时只有 <span class="mono">BACKEND_STEPS</span> 十二条 slot。未写进 <span class="mono">routing</span> 的走默认 <span class="mono">llm</span>；<span class="mono">config.local.yaml</span> 把转录类指到 <span class="mono">backend_profiles.transcribe</span>；森林图走 <span class="mono">vision</span>。</p>
+    <div class="box">
+      <table>
+        <thead>
+          <tr><th>客户档</th><th>写入哪块配置</th><th>覆盖的 slot</th><th>本机默认</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>复杂</strong></td>
+            <td class="mono">llm</td>
+            <td>review_lens · evidence_localize · field_resolution · extract_locate · extract_transcribe · semantic_compare</td>
+            <td>DeepSeek / deepseek-v4-pro</td>
+          </tr>
+          <tr>
+            <td><strong>简单</strong></td>
+            <td class="mono">backend_profiles.transcribe + routing</td>
+            <td>table_capture · forest_ocr_text · claim_origin · unpivot · references</td>
+            <td>DeepSeek / deepseek-v4-flash</td>
+          </tr>
+          <tr>
+            <td><strong>视觉</strong></td>
+            <td class="mono">vision · routing.forest_ocr_vision</td>
+            <td>forest_ocr_vision</td>
+            <td>GLM / glm-4.6v</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>HITL 九步是给人看的闸口，不是模型档。例如 Claim origin 在闸口表里像「判断」，但当前 routing 把它放在简单/转录档。草稿按 routing，不按闸口表改档。</p>
+
+    <h2>2. 用户中心：三把厂商 Key（不是 OpenRouter Key）</h2>
+    <p>右上角 <strong>Account</strong>。点进去填显示名、邮箱，以及三档各一把<strong>原生</strong> key：复杂 / 简单 / 视觉。首页右栏只选模型，不放密码框。</p>
+    <p>模型下拉里的 ID 仍用 OpenRouter slug（方便对照现网目录），落地时按所选厂商走各自 base_url：DeepSeek / OpenAI / Anthropic / 智谱 / DashScope / Moonshot。不要让客户贴 <span class="mono">sk-or-v1-…</span>。</p>
+    <table>
+      <thead><tr><th>位置</th><th>现在</th><th>草稿约定</th></tr></thead>
+      <tbody>
+        <tr><td>本机开发</td><td class="mono">config.local.yaml</td><td>可继续用环境变量；用户中心可空</td></tr>
+        <tr><td>客户浏览器</td><td>没有入口</td><td>Account 面板三把 password，随这次 run 进内存</td></tr>
+        <tr><td>容器 / 云</td><td>三档环境变量</td><td>只作平台兜底；客户 key 优先，不写进镜像</td></tr>
+      </tbody>
+    </table>
+    <p>Key 用 <span class="mono">type=password</span>，不进 journal / checkpoints.log / 前端 localStorage。占位符随右栏所选厂商变（DeepSeek <span class="mono">sk-…</span>，Claude <span class="mono">sk-ant-…</span>）。香港盘上的 PDF 产物仍不外传。</p>
+    <p>点 Start 而三把 key 未齐：中间红条，并自动打开 Account。</p>
+
+    <h2>3. 每厂模型（OpenRouter 现网 ID，2026-08-30）</h2>
+    <table>
+      <thead><tr><th>厂商</th><th>复杂 / 简单</th><th>视觉</th></tr></thead>
+      <tbody>
+        <tr><td>DeepSeek</td><td class="mono">deepseek/deepseek-v4-pro · v4-flash · v3.2 · r1-0528</td><td class="mono">deepseek/deepseek-v4-flash-vision-exp</td></tr>
+        <tr><td>GPT</td><td class="mono">openai/gpt-5.4 · gpt-5.5 · gpt-5.4-mini · gpt-5.4-nano</td><td>同上（均带 image）</td></tr>
+        <tr><td>Claude</td><td class="mono">anthropic/claude-opus-5 · sonnet-5 · opus-4.8 · sonnet-4.6</td><td>同上</td></tr>
+        <tr><td>GLM</td><td class="mono">z-ai/glm-5.3 · glm-5.2 · glm-5 · glm-4.7</td><td class="mono">z-ai/glm-5.3-flash · glm-5v-turbo · glm-4.6v</td></tr>
+        <tr><td>Qwen</td><td class="mono">qwen/qwen3.8-max · qwen3.7-max · qwen3.8-flash · qwen3.7-plus</td><td class="mono">qwen3.8-max / flash / 3.7-plus</td></tr>
+        <tr><td>Kimi</td><td class="mono">moonshotai/kimi-k2.6 · k2.5 · k2 · k2-thinking</td><td class="mono">kimi-k3 · k2.6 · k2.5</td></tr>
+      </tbody>
+    </table>
+    <p>默认：复杂 <span class="mono">deepseek/deepseek-v4-pro</span>，简单 <span class="mono">deepseek/deepseek-v4-flash</span>，视觉 <span class="mono">z-ai/glm-4.6v</span>。目录可按 OpenRouter <span class="mono">GET /api/v1/models</span> 刷新，不要写死过期的 gpt-4o / glm-4.6v-flashx。</p>
+
+    <h2>4. 没识别到文件</h2>
+    <p>隐藏的 <span class="mono">input[type=file]</span> 加上 <span class="mono">required</span> 往往不会弹出浏览器原生提示。草稿约定：点 Start 时若 review 没有文件名（取消选择、空提交、非 PDF），阻止跳转，中间栏出现红条，并描红 Review 行。</p>
+    <p>文案（产品英、方案说明用中）：<strong>No review PDF detected.</strong> Choose a published systematic review (.pdf), then Start run. 可选源 PDF 仍可不传。</p>
+    <p>与现网 <span class="mono">a review PDF is required</span>（400）对齐，只是提前在客户端说清「系统没拿到文件」。</p>
+
+    <h2>5. 放大 50%</h2>
+    <p>原稿 body 14.5px、轨 52px、顶栏 52px、三栏 200 / 1fr / 260。新稿 ×1.5：21.75px、78px、78px、300 / 1fr / 390。原 01–04 仍用 <span class="mono">theme.css</span>。</p>
+
+    <h2>6. 布局</h2>
+    <ul>
+      <li>中间：上传，主操作不变。</li>
+      <li>右侧：三张齿轮卡（复杂 / 简单 / 视觉），开跑后仍还给 Decision。</li>
+      <li>左侧：按三档把 checkpoint 分组，不新增第四栏。</li>
+    </ul>
+    <p>落地时 POST <span class="mono">/runs</span> 增加：三对 vendor/model slug + 三把原生 key（从 Account 带来）。服务端按厂商选 base_url，模型名可用 OpenRouter slug 对照，调用走厂商自己的 chat/completions。不改审计判定。</p>
+  </main>
+</body>
+</html>

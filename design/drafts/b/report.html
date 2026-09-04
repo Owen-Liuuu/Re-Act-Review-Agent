@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>B 夜班 · Report</title>
+  <link rel="stylesheet" href="../bar.css">
+  <link rel="stylesheet" href="theme.css">
+</head>
+<body>
+  <div class="draft-bar">
+    <a href="../index.html">思路</a><span class="sep">|</span>
+    <a href="../a/report.html">A 刊体</a>
+    <b>B 夜班</b>
+    <a href="../d/report.html">D 白班</a>
+    <a href="../c/report.html">C 案卷</a>
+    <span class="sep">|</span>
+    <a href="home.html">Desk</a>
+    <a href="gate.html">Gate</a>
+    <a class="on" href="report.html">Report</a>
+  </div>
+  <header class="top">
+    <a class="wordmark" href="home.html">ReAct-Review</a>
+    <span class="statline">SDV · contract16-d · 56 CLAIMS · 3 PAPERS</span>
+    <nav><a href="home.html">DESK</a><a href="#">PACKAGE</a></nav>
+  </header>
+  <article class="rpt">
+    <div class="head">
+      <div class="partial">PARTIAL</div>
+      <div>
+        <h1>Review not fully supported</h1>
+        <p class="statline">2 match · 0 mismatch · 54 not comparable · 62 flags · recall-first</p>
+      </div>
+    </div>
+    <div class="kpis">
+      <div class="kpi ok"><div class="n">2</div><div class="l">match</div></div>
+      <div class="kpi bad"><div class="n">0</div><div class="l">mismatch</div></div>
+      <div class="kpi warn"><div class="n">0</div><div class="l">unit mismatch</div></div>
+      <div class="kpi"><div class="n">54</div><div class="l">not comparable</div></div>
+      <div class="kpi"><div class="n">62</div><div class="l">flagged</div></div>
+    </div>
+    <h2>Human review queue</h2>
+    <details><summary><span class="chip bad">missing in source</span><span class="c">33</span></summary>
+      <p class="statline">B_02 capovilla age · C_03 li_2025 subgroup_n · +31</p></details>
+    <details><summary><span class="chip">source not identified</span><span class="c">20</span></summary>
+      <p class="statline">A_01–A_20 li_2015 — no DOI</p></details>
+    <details><summary><span class="chip warn">partially verified</span><span class="c">2</span></summary>
+      <p class="statline">B_01 review broader · C_01 review adds PSM</p></details>
+    <h2 style="margin-top:28px">Evidence / by paper</h2>
+    <div class="filters">
+      <button class="on" type="button">ALL 56</button>
+      <button type="button">FLAG 62</button>
+      <button type="button">MATCH 2</button>
+    </div>
+    <p class="statline">capovilla_2023 · 16 claims · 16 flagged</p>
+    <table class="ev">
+      <thead><tr><th>id</th><th>group</th><th>field</th><th>review</th><th>source</th><th>verdict</th><th></th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="mono">B_01</td><td>—</td><td>study_design</td>
+          <td>Multicenter retrospective matched</td>
+          <td>matched-cohort study</td>
+          <td><span class="chip ok">MATCH</span></td>
+          <td><button class="toggle" type="button" data-open="d1">EVIDENCE</button></td>
+        </tr>
+        <tr class="ev-detail" id="d1">
+          <td colspan="7">quote · Title · pmc 10213659 · semantic review_broader 0.90 · numeric/polarity/confidence/anchor pass</td>
+        </tr>
+        <tr>
+          <td class="mono">B_02</td><td>all</td><td>age</td>
+          <td>≥75 years</td><td>None</td>
+          <td><span class="chip">N/C</span></td>
+          <td><button class="toggle" type="button" data-open="d2">EVIDENCE</button></td>
+        </tr>
+        <tr class="ev-detail" id="d2" hidden>
+          <td colspan="7">median age only for subgroups — no whole-cohort age · flag missing in source</td>
+        </tr>
+      </tbody>
+    </table>
+  </article>
+  <script>
+    document.querySelectorAll(".toggle").forEach(function (btn) {
+      btn.onclick = function () {
+        var row = document.getElementById(btn.getAttribute("data-open"));
+        row.hidden = !row.hidden;
+      };
+    });
+  </script>
+</body>
+</html>

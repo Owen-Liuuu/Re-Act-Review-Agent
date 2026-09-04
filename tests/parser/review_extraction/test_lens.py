@@ -72,3 +72,19 @@ async def test_read_lens_clips_fields_and_keeps_stated_terms():
     assert "overall complications" in lens.outcomes
     assert "FRONT MATTER" in backend.prompts[0]
     assert "Do not invent" in backend.prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_read_lens_raises_on_http_402():
+    from react_review.core.exceptions import LLMError, PermanentProviderError
+
+    class Paywall(LLMBackend):
+        @property
+        def model_id(self) -> str:
+            return "paywall"
+
+        async def complete(self, prompt: str, *, seed: int = 42) -> str:
+            raise LLMError("OpenAI API error (HTTP 402): Insufficient Balance")
+
+    with pytest.raises(PermanentProviderError, match="HTTP 402"):
+        await read_lens(Paywall(), DOC05_FRONT)
