@@ -71,7 +71,8 @@ def create_app(
         host = _host()
         return HTMLResponse(pages.home_page(
             list_run_ids(runs_dir), busy=runner.current, error=error,
-            require_keys=keys_required(host)), status_code=status_code)
+            require_keys=keys_required(host), routing=host.routing),
+            status_code=status_code)
 
     async def home(request: Request) -> Response:
         return _home()

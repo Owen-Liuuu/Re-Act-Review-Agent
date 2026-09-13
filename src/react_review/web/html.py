@@ -6,14 +6,64 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
-from react_review.llm.catalog import DEFAULTS, TEXT_MODELS, VENDORS, VISION_MODELS, catalog_payload
+from react_review.core.config import BACKEND_STEPS
+from react_review.llm.catalog import (
+    DEFAULTS, SIMPLE_STEPS, TEXT_MODELS, VENDORS, VISION_MODELS, catalog_payload,
+)
 from react_review.web.eta import format_range
 
 _DIR = Path(__file__).resolve().parent
 _NOTE = (
-    "Artifacts stay on this host (Hong Kong volume). "
-    "Nothing is sent to a third-party SaaS."
+    "PDFs and artifacts stay on this host (Hong Kong volume). "
+    "Only the text a step reads is sent, to that step's model vendor."
 )
+
+# Plain names for the 13 routable model tasks, as the homepage shows them.
+_TASK_LABELS = {
+    "review_lens": "Review lens",
+    "evidence_localize": "Evidence located",
+    "table_capture": "Tables captured",
+    "forest_ocr_vision": "Forest plot images",
+    "forest_ocr_text": "Forest plot text",
+    "claim_origin": "Claim origin",
+    "unpivot": "Long format",
+    "references": "Source papers matched",
+    "field_resolution": "Field concepts",
+    "extract_locate": "Extract: locate",
+    "extract_transcribe": "Extract: transcribe",
+    "source_row_map": "Source row map",
+    "semantic_compare": "Semantic compare",
+}
+
+
+def gear_tasks(routing: dict[str, str] | None) -> dict[str, list[str]]:
+    """Which model tasks each homepage gear will serve in a web run.
+
+    Mirrors ``apply_run_gears``: the host routing, with SIMPLE_STEPS always on
+    the transcribe gear. The labels used to be fixed text and could name a task
+    under Complex that the host config had already moved to transcribe. A task
+    routed to some other host profile is listed as ``other`` instead of being
+    shown under a gear it does not use.
+    """
+    effective = dict(routing or {})
+    for step in SIMPLE_STEPS:
+        effective[step] = "transcribe"
+    tasks: dict[str, list[str]] = {"complex": [], "simple": [], "visual": [], "other": []}
+    for step in BACKEND_STEPS:
+        profile = effective.get(step)
+        if step == "forest_ocr_vision" and not profile:
+            tasks["visual"].append(step)
+        elif profile == "transcribe":
+            tasks["simple"].append(step)
+        elif profile:
+            tasks["other"].append(step)
+        else:
+            tasks["complex"].append(step)
+    return tasks
+
+
+def _task_list(steps: list[str]) -> str:
+    return ", ".join(_TASK_LABELS.get(step, step) for step in steps) or "No tasks"
 
 
 def _css() -> str:
@@ -69,8 +119,18 @@ def _pad_n(index: Any) -> str:
         return str(index or "")
 
 
+def _tree_group(title: str, steps: list[str], *, first: bool = False) -> str:
+    pad = "" if first else ' style="padding-top:14px"'
+    items = "".join(
+        f'<a href="#"><span class="n"></span><span class="label">'
+        f'{escape(_TASK_LABELS.get(step, step))}</span></a>'
+        for step in steps)
+    return f'<div class="group"{pad}>{escape(title)}</div>{items}'
+
+
 def home_page(run_ids: list[str], *, busy: str | None = None,
-              error: str = "", require_keys: bool = False) -> str:
+              error: str = "", require_keys: bool = False,
+              routing: dict[str, str] | None = None) -> str:
     if busy:
         chip = (
             f'<span class="chip blue"><span class="pulse"></span> Running · '
@@ -78,17 +138,15 @@ def home_page(run_ids: list[str], *, busy: str | None = None,
         )
     else:
         chip = '<span class="chip muted"><span class="dot"></span> Idle · pick models</span>'
+    tasks = gear_tasks(routing)
+    other = (_tree_group("Other host profiles", tasks["other"])
+             if tasks["other"] else "")
     tree = (
         '<div class="k" style="padding:6px 21px 12px">This run will use</div>'
-        '<div class="group">Complex · llm</div>'
-        '<a href="#"><span class="n">01</span><span class="label">Review lens</span></a>'
-        '<a href="#"><span class="n">02</span><span class="label">Evidence localize</span></a>'
-        '<a href="#"><span class="n">05+</span><span class="label">Extract · judge</span></a>'
-        '<div class="group" style="padding-top:14px">Simple · transcribe</div>'
-        '<a href="#"><span class="n">03</span><span class="label">Displays / tables</span></a>'
-        '<a href="#"><span class="n">04</span><span class="label">Claim origin · unpivot</span></a>'
-        '<div class="group" style="padding-top:14px">Visual · vision</div>'
-        '<a href="#"><span class="n">03b</span><span class="label">Forest OCR image</span></a>'
+        + _tree_group("Complex · llm", tasks["complex"], first=True)
+        + _tree_group("Simple · transcribe", tasks["simple"])
+        + _tree_group("Visual · vision", tasks["visual"])
+        + other +
         '<p class="hint" style="margin-top:18px">Start a run. Steps land here one by one.</p>'
         f"{_recent_runs(run_ids)}"
         f'<p class="desk-note">{escape(_NOTE)}</p>'
@@ -126,7 +184,7 @@ def home_page(run_ids: list[str], *, busy: str | None = None,
   <button class="btn" type="submit" style="margin-top:10px">Start run</button>
 </form>
 """
-    problems = _home_gears()
+    problems = _home_gears(tasks)
     return _shell(
         "ReAct-Review",
         status="idle",
@@ -148,7 +206,8 @@ def _select_options(values: tuple[str, ...] | list[str], selected: str) -> str:
         for v in values)
 
 
-def _home_gears() -> str:
+def _home_gears(tasks: dict[str, list[str]] | None = None) -> str:
+    tasks = tasks if tasks is not None else gear_tasks(None)
     cv, cm = DEFAULTS["complex"]
     sv, sm = DEFAULTS["simple"]
     vv, vm = DEFAULTS["visual"]
@@ -165,7 +224,7 @@ def _home_gears() -> str:
     <select id="c-vendor" form="start" name="complex_vendor" aria-label="Complex vendor">{vendors}</select>
     <select id="c-model" form="start" name="complex_model" aria-label="Complex model">{_select_options(TEXT_MODELS[cv], cm)}</select>
   </div>
-  <p class="slots">Lens, localize, field map, extract, semantic compare</p>
+  <p class="slots">{escape(_task_list(tasks["complex"]))}</p>
 </div>
 <div class="gear">
   <header>Simple <span class="chip muted">transcribe</span></header>
@@ -173,7 +232,7 @@ def _home_gears() -> str:
     <select id="s-vendor" form="start" name="simple_vendor" aria-label="Simple vendor">{vendors_s}</select>
     <select id="s-model" form="start" name="simple_model" aria-label="Simple model">{_select_options(TEXT_MODELS[sv], sm)}</select>
   </div>
-  <p class="slots">Tables, forest text, claim origin, unpivot, references</p>
+  <p class="slots">{escape(_task_list(tasks["simple"]))}</p>
 </div>
 <div class="gear">
   <header>Visual <span class="chip blue">vision</span></header>
@@ -181,7 +240,7 @@ def _home_gears() -> str:
     <select id="v-vendor" form="start" name="visual_vendor" aria-label="Visual vendor">{vendors_v}</select>
     <select id="v-model" form="start" name="visual_model" aria-label="Visual model">{_select_options(VISION_MODELS[vv], vm)}</select>
   </div>
-  <p class="slots">Forest plot image only</p>
+  <p class="slots">{escape(_task_list(tasks["visual"]))}</p>
 </div>
 """
 

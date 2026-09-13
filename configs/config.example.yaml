@@ -105,6 +105,9 @@ routing:
   #   forest_ocr_vision — this gear has no vision.
   #   semantic_compare  — no evidence either way: it was never called in the
   #                       run that cleared the others, so it stays on `llm`.
+  #                       The local config used for the September 2026
+  #                       evaluation runs routed it to transcribe too;
+  #                       neither choice has a controlled comparison.
 
 paths:
   data_dir: ./data
