@@ -64,10 +64,21 @@ thresholds:
   title_similarity: 0.85
   author_match_ratio: 0.8
 
-# Transcription gear: copy the same api_key as `llm`. These steps copy text
-# rather than judge. Leave evidence_localize / field_resolution /
-# semantic_compare / extract_* (except source_row_map) on the default
-# (reasoning) model.
+# Transcription gear: copy the same api_key as `llm`.
+#
+# A step listed under `routing` runs on this gear, which sends
+# `thinking: {type: disabled}`. A step NOT listed runs on `llm`, where no
+# reasoning key is sent at all and DeepSeek therefore reasons by default —
+# the model name alone does not turn it off, only a profile can.
+#
+# Measured on doc05 (2026-09-08, run flash-routed): moving extraction here
+# left accuracy unchanged (20/56 -> 16/47 compared, both ~35%) while calls
+# fell from 6062s to 244s and failures from 13% to 2%.
+#
+# evidence_localize stays OFF this gear. It decides which figures are on the
+# evidence chain, which is judgement, not transcription: without reasoning it
+# found none of the four forest plots and the claim set collapsed from 56 to
+# 12. forest_ocr_vision stays off it too — this gear has no vision.
 backend_profiles:
   transcribe:
     provider: openai
@@ -78,12 +89,22 @@ backend_profiles:
     max_tokens: 8192              # explicit transport cap; do not inherit implicitly
 
 routing:
-  table_capture:   transcribe
-  forest_ocr_text: transcribe
-  claim_origin:    transcribe
-  unpivot:         transcribe
-  references:      transcribe
-  source_row_map:  transcribe
+  table_capture:      transcribe
+  forest_ocr_text:    transcribe
+  claim_origin:       transcribe
+  unpivot:            transcribe
+  references:         transcribe
+  source_row_map:     transcribe
+  review_lens:        transcribe
+  field_resolution:   transcribe
+  extract_locate:     transcribe
+  extract_transcribe: transcribe
+  # Deliberately absent:
+  #   evidence_localize — judgement; without reasoning it found none of the
+  #                       four forest plots (56 claims -> 12).
+  #   forest_ocr_vision — this gear has no vision.
+  #   semantic_compare  — no evidence either way: it was never called in the
+  #                       run that cleared the others, so it stays on `llm`.
 
 paths:
   data_dir: ./data

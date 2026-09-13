@@ -35,13 +35,28 @@ def test_unconfigured_profiles_are_empty():
     assert config.routing == {}
 
 
-def test_example_config_routes_only_the_transcribe_steps():
+def test_example_config_keeps_three_steps_off_the_transcribe_gear():
+    """The exclusions are the invariant, not the inclusions.
+
+    Which steps tolerate a non-reasoning gear is a measured question and the
+    answer has already moved once: judgement steps like ``claim_origin`` and
+    ``field_resolution`` turned out to be fine there. Three did not, each for
+    its own reason, and those are what this pins:
+
+      evidence_localize — routed once (run flash-routed, 2026-09-08); without
+        reasoning it identified none of the review's four forest plots and the
+        claim set collapsed from 56 to 12.
+      forest_ocr_vision — the gear is text-only.
+      semantic_compare  — no evidence either way. It was never called in the
+        run that cleared the others, so it must not be shipped as routed on
+        the strength of that run.
+    """
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
     config = load_config(root / "configs" / "config.example.yaml")
-    assert set(config.routing) == {
-        "table_capture", "forest_ocr_text", "claim_origin", "unpivot",
-        "references", "source_row_map"}
+    assert {"evidence_localize", "forest_ocr_vision",
+            "semantic_compare"}.isdisjoint(config.routing)
+    assert "extract_transcribe" in config.routing
     assert set(config.routing.values()) == {"transcribe"}
     assert config.backend_profiles["transcribe"].model == "deepseek-v4-flash"
     assert config.backend_profiles["transcribe"].reasoning == "off"
