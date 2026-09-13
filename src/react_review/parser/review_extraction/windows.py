@@ -4,13 +4,16 @@ from __future__ import annotations
 import re
 
 _INTRO = re.compile(
-    r"(?m)^\s*(?:\d+(?:\.\d+)*\s+)?introduction\b", re.I)
+    r"(?m)^\s*(?:\d+(?:\.\d+)*\.?[ \t]*)?introduction\b", re.I)
 _METHODS = re.compile(
-    r"(?m)^\s*(?:\d+(?:\.\d+)*\s+)?methods?\b", re.I)
+    r"(?m)^\s*(?:\d+(?:\.\d+)*\.?[ \t]*)?methods?\b", re.I)
+# Abstract labels are "Results:"; body sentences are "results. Where…".
+# A heading is the whole line, optionally numbered, with no colon.
 _RESULTS = re.compile(
-    r"(?m)^\s*(?:\d+(?:\.\d+)*\s+)?results?\b", re.I)
+    r"(?m)^[ \t]*(?:\d+(?:\.\d+)*\.?[ \t]*)?results?\b(?!\s*:)[ \t]*(?=\r?\n|$)",
+    re.I)
 _AFTER_RESULTS = re.compile(
-    r"(?m)^\s*(?:\d+(?:\.\d+)*\s+)?(?:discussion|references|bibliography)\b",
+    r"(?m)^\s*(?:\d+(?:\.\d+)*\.?[ \t]*)?(?:discussion|references|bibliography)\b",
     re.I)
 _REFS = re.compile(r"(?im)^\s*(references|bibliography|reference list)\b")
 
@@ -38,11 +41,12 @@ def _strip_refs(text: str) -> str:
     return text
 
 
-def results_window(text: str, *, limit: int = 15000) -> str:
+def results_window(text: str, *, limit: int = 45000) -> str:
     """Results (or equivalent) through the start of Discussion / References.
 
     Localize sees this window plus the lens — not the abstract, not the
-    reference list, not a 50k-character dump of the PDF.
+    reference list. 45k characters covers a typical Results section
+    (doc05 is ~4k; longer reviews sit in the 20–43k range).
     """
     body = text or ""
     start_match = _RESULTS.search(body)

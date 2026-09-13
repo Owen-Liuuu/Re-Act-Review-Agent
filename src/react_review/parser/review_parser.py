@@ -238,7 +238,13 @@ class ReviewParser:
         backend: LLMBackend,
         resolver: FieldResolver,
         *,
-        max_chars: int = 50000,
+        # Bound on the legacy body window only. The v3+ path reads the whole
+        # document: the lens and evidence_localize take ``full_text``, capture
+        # takes ``capture_window(full_text)``, and the DOI pass takes
+        # ``_refs_window(full_text)`` precisely so the reference list survives.
+        # This still bounds LEGACY_TABLE_CAPTURE_PROFILES (v1/v2) and decides
+        # whether the loaded-PDF step gates for a human.
+        max_chars: int = 100000,
         reporter: StepReporter | None = None,
         chunk_rows: int = 8,
         keep_tables: set[str] | None = None,
