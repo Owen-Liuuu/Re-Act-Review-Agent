@@ -161,6 +161,50 @@ docker compose logs -f          # follow the server log
   model vendor of its gear.
 - To update: pull, then `docker compose up -d --build` again.
 
+## What a run writes
+
+Every run writes `output/runs/<run-id>/` (in the container, `/data/runs/<run-id>/`):
+
+| File | Content |
+|---|---|
+| `journal.ndjson` | one line per step: step name, title, warning count, artefact pointers |
+| `steps/NNN_<step>.json` | the full state of each step: rendered text, options, warnings, decision, interaction mode, and the model that ran |
+| `checkpoints.log` | a readable transcript of the whole run with volatile fields suppressed, so two runs can be diffed |
+| `report.html` | the final audit report |
+| `package.json` | summary and telemetry once the run completes; `package.partial.json` while it has not |
+| `semantic_cache.json` | recorded semantic comparisons, reused on replay |
+| `proposals.json` | candidate knowledge-base concepts for `react-review learn` (only when the run collected any) |
+| `gears.json` | web runs only: vendor and model of each gear, never keys |
+
+Use a different `--run-id` for every run: two runs writing into one directory
+overwrite each other's step files by index.
+
+## Reproducing the dissertation experiments
+
+**Full-text accessibility (dissertation Section 4.5).** The two runs differ only
+in `--studies` and `--pdf-dir`:
+
+```bash
+react-review run --pdf eval/benchmark_1/raw/EAT_T1DM_SRMA.pdf \
+  --studies eval/benchmark_1/included_studies.csv --pdf-dir eval/benchmark_1 \
+  --config configs/config.local.yaml --checkpoints none --non-interactive \
+  --run-id access-local
+
+react-review run --pdf eval/benchmark_1/raw/EAT_T1DM_SRMA.pdf \
+  --config configs/config.local.yaml --checkpoints none --non-interactive \
+  --run-id access-online
+```
+
+**Deterministic replay (Sections 4.2 and 4.6).** Record a live run with
+`--extraction record`, then replay it offline with `--extraction replay`.
+Replay makes no model calls, so differences between control layers come from
+deterministic code alone.
+
+**Benchmark scoring.** The scripts under `eval/` score runs against the
+hand-built answer keys of `benchmark_1` (EAT/T1DM) and `benchmark_2`
+(melanoma). Answer keys, checklists and source PDFs are frozen; their hashes
+are recorded under `docs/baselines/`.
+
 ## Uploads, caches, and retention
 
 Full-text PDFs are stored locally only; they are never redistributed.
