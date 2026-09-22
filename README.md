@@ -1,224 +1,140 @@
 # ReAct-Review
 
-A step-gated, human-in-the-loop pipeline for auditing systematic reviews against
-their source papers — every step shows what it read and asks before continuing.
+Audits a published systematic review against the papers it cites — and stops to
+show its work at every step where a person should be the one deciding.
 
-ReAct-Review cross-validates an already-published systematic review against the
-papers it cites. It stops at each structural decision — the captured review table,
-the cohorts it found, how it mapped columns to concepts, which references it could
-resolve — and prints that step in full before asking whether to go on. A run can be
-halted at any checkpoint, and the artefacts written up to that point are kept.
+<!-- TODO: screenshot of a gated checkpoint in the web UI -->
+<!-- ![A checkpoint waiting for a decision](docs/screenshots/gate.png) -->
 
-The language model only reads and proposes. Every judgement — whether two values
-agree, whether a cohort matches, whether a total may be derived from its parts — is
-made by deterministic code, and anything the code cannot settle is surfaced for a
-human rather than resolved quietly. A deterministic orchestrator sequences the
-stages; bounded ReAct agents (Evidence Collector, Evidence Auditor, Judge/Arbiter)
-operate over a shared, typed tool catalogue.
+![tests](https://img.shields.io/badge/tests-2009%20passing-brightgreen)
+![python](https://img.shields.io/badge/python-3.11%2B-blue)
+![docker](https://img.shields.io/badge/deploy-docker%20compose-blue)
 
-## Status
+## The problem
 
-**Phase 7 complete; Phase 8 in progress.** The review-to-source pipeline
-includes review-derived cohort identities, structured numeric comparison,
-controlled semantic escalation, governed DKB/checklist checkpoints, auditable
-source-extraction replay, and HTML rendering from a previously saved Evidence
-Package. Phase 7 added directed multi-arm extraction, typed value components,
-confidence-level comparison and a self-consistency control over semantic
-verdicts.
+A systematic review pools numbers from dozens of primary papers. When one of
+those numbers is copied wrong, nothing downstream notices: the meta-analysis,
+the forest plot and the clinical recommendation all inherit the error silently.
+Checking by hand means re-reading every source paper.
 
-Every number below comes from a deterministic replay of a recorded run, and
-each one names the artifact it comes from — see `docs/baselines/README.md` for
-which file publishes which figure.
+This tool reads the review's own tables and forest plots, fetches the source
+papers, and reports — cell by cell — whether the source actually says what the
+review attributed to it.
 
-| Benchmark | Contract | Label accuracy | Discrepancy P/R/F1 | Silent releases |
-| --- | --- | --- | --- | --- |
-| EAT/T1DM (57 rows) | legacy | 89.47% | 80% / 80% / 80% | 0 |
-| melanoma (15 rows) | Phase 7 | 80.0% | 100% / 100% / 100% | 0 |
-| melanoma (15 rows) | Phase 8 (scope + exact counts) | 66.7% | 100% / 100% / 100% | 0 |
+## The constraint that shaped everything
 
-The Phase 8 figure is **lower on purpose**. It refuses two rows whose numbers
-looked right while the evidence never said which population it counted — a
-scope error that a relative tolerance had been reading as agreement. Refusing
-is measured too: half the rows that require a population could not be assessed
-at all, which is the capability cost of the fix and the reason it is reported
-beside the safety numbers rather than instead of them.
+**The language model reads and proposes. It never decides.**
 
-**The cross-domain accuracy gate has not been passed, and passing it is not a
-Phase 7 or Phase 8 acceptance target.** Fifteen rows cannot establish
-cross-domain accuracy: one row moves label accuracy by 6.7 points. What the
-melanoma checkpoint establishes is categorical — every route is reached,
-failures are visible and reproducible, and three of the four archived defects
-are now closed.
+Whether two values agree, whether a cohort matches, whether a total may be
+derived from its parts — each is settled by deterministic code. Anything the
+code cannot settle is escalated to a human instead of resolved quietly. The
+pipeline stops at nine structural decisions and prints what it read before
+asking to continue.
 
-## Layout
+That constraint is what makes the output auditable. It is also what made the
+engineering interesting.
+
+## Three decisions worth a look
+
+### Prompts are frozen by the bytes they render to
+
+Every prompt ships as a contract pinning the SHA-256 of its *rendered* output:
+
+```json
+{
+  "contract_id": "table_locate_v1",
+  "rendered_prompt_sha256": "BA7B328B503D7DE3B9AB6DEA060AFD147B49816392FCB791BE6F637C7FE8889A",
+  "governance": "A rendered prompt that changes is a NEW PROMPT VERSION. Do not
+                 edit this file to make an edited prompt pass."
+}
+```
+
+Twenty such contracts are in the repo. Editing a prompt in place fails the
+build; a change means publishing a new version beside the old one, which keeps
+every recorded run replayable. Extraction caches key on the prompt hash, so a
+reworded prompt is a clean cache miss rather than a silent mix of two prompts'
+answers.
+
+### Human-in-the-loop is a protocol, not an `input()` call
+
+```python
+class CheckpointGate(Protocol):
+    async def check(self, event: StepEvent, *, force_gate: bool = False,
+                    hold_display: bool = False) -> Decision: ...
+```
+
+One method, four implementations: a terminal gate, a scripted one for tests, an
+auto-continue for CI, and a web gate that awaits a decision over HTTP. The same
+nine checkpoints run unchanged in the CLI, in the test suite, and in the
+browser. Each step records *how* it was cleared — `gate`, `show`, `silent` or
+`auto` — so "a person reviewed this" is provable after the fact rather than
+assumed.
+
+### Failures have to say their own name
+
+The recurring bug class in this project is the one where a failure returns the
+same value as a legitimate answer, so nothing can see it. A retrieval helper
+that swallowed its exception and returned `[]` is indistinguishable from a
+paper that genuinely has no tables.
+
+Concretely: an LLM whose reasoning consumed the entire token budget returned
+empty content, which surfaced downstream as `Failed to parse JSON`. Three
+debugging rounds chased the wrong cause. It now reports:
+
+```
+truncated: reasoning used the whole budget
+(reasoning_tokens=16384 of max_tokens=16384)
+```
+
+The same rule was applied to read timeouts, rate limits and permanent provider
+errors — each is now distinguishable from "no result", and each is retried
+according to whether retrying can actually help.
+
+## Architecture
 
 ```
 src/react_review/
-  core/          config, logging, exceptions, enums (+ AuditLabel)
-  schemas/       review/source evidence, match results, reasons, and reports
-  normalize/     review-derived cohorts, units, and structured numeric values
-  audit/         component comparison, semantic controls, caches, aggregation
-  dkb/           governed field resolution and provisional knowledge lifecycle
-  tools/         typed Search/Verify/Extract/Compare catalogue and replay hooks
-  orchestrator/  matching, collection, judging, checkpoints, and pipeline
-  agents/        bounded collector/auditor/judge workflows
-  llm/           backend ABC + retry engine + provider adapters + factory
-eval/            frozen EAT and melanoma benchmarks + accuracy runners
-docs/            architecture, limitations, sanitized baselines, deferred issues
-                 version_numbering_zh.md maps the six independent v-number
-                 namespaces and says which one production runs
-tests/           unit + integration (mock-mode) tests
+  parser/        read the review: tables, forest plots, cohorts, claims
+  retrieval/     find and fetch source papers (PMC, Unpaywall, OpenAlex, PDF)
+  agents/        bounded ReAct workers — collector, auditor, judge
+  tools/         typed search / extract / compare catalogue with replay hooks
+  audit/         deterministic comparison, semantic escalation, aggregation
+  normalize/     cohorts and units discovered from the review, not hardcoded
+  orchestrator/  stage sequencing, checkpoints, the pipeline itself
+  hitl/          the checkpoint protocol, its gates, and the run journal
+  llm/           provider adapters, retry policy, reasoning control
+  web/           upload, run, and answer checkpoints in a browser
+configs/         prompt contracts, evaluator versions, model routing
+eval/            frozen benchmarks and accuracy scoring
 ```
+
+The language model is reachable only through `tools/`. Nothing in `audit/`
+calls one.
 
 ## Quick start
 
 ```bash
+docker compose up -d --build     # web UI on http://localhost:8080
+```
+
+Or from the CLI:
+
+```bash
 pip install -e ".[dev]"
-pytest                          # full test suite
-python eval/run_benchmark.py    # score the audit core vs the answer key
-python eval/run_pipeline.py     # end-to-end audit over the benchmark tables
-
-# Deterministic audit from the CLI (no LLM): match review vs source, compare,
-# print the report, and persist the run's evidence package under --out.
-react-review audit review.csv source.csv --out output/runs
-
-# Full review-to-source run. The final Evidence Package is saved atomically
-# first; report.html is then rendered by reloading that saved package.
-react-review run --pdf review.pdf --studies included_studies.csv \
-  --config configs/config.local.yaml --out output/runs --run-id example
-
-# Re-render the same deterministic HTML later from package.json only.
-react-review report example --runs output/runs
+react-review run --pdf review.pdf --config configs/config.local.yaml
 ```
 
-A successful full run writes `output/runs/<run-id>/package.json` followed by
-`output/runs/<run-id>/report.html`. Use `run --html another/path.html` to choose
-a different report location. The HTML includes the source file/URI, verbatim
-quote, deterministic derivation, semantic relation and controls, and every
-human-review flag carried by the saved Evidence Package.
+Copy `.env.example` to `.env` and add one API key per model gear. Keys are read
+from the environment and never written to the image or the repo.
 
-## Choosing and changing models
+## Digging deeper
 
-Three gears carry the models. Each of the 13 model tasks is routed to one:
+| | |
+| --- | --- |
+| [Running it](docs/operations.md) | model gears and routing, Docker, and what each run writes to disk |
+| [Benchmarks and reproduction](docs/dissertation.md) | frozen answer keys, accuracy figures, and the replay procedure |
+| [Known limitations](docs/known-limitations.md) | what it cannot do yet, and why |
+| [Baselines](docs/baselines/README.md) | what is published, what is withheld, and the hashes to verify a local copy |
 
-| Gear | Web-page default | Tasks |
-|---|---|---|
-| reasoning (`llm`) | `deepseek-v4-pro` | judgement: `evidence_localize`, and any task not listed under `routing` |
-| transcribe (`backend_profiles.transcribe`) | `deepseek-v4-flash`, reasoning off | copying and simple labelling, as listed under `routing` |
-| vision (`vision`) | `glm-4.6v` | `forest_ocr_vision` |
-
-`configs/config.example.yaml` ships `llm` as a `mock` placeholder so the test
-suite runs without keys; put real providers in `configs/config.local.yaml`.
-
-There are three ways to change them.
-
-1. **Web page.** Open *Account* (top right) and paste one native vendor key per
-   gear (not an OpenRouter key). On the home page, under *Three gears*, pick a
-   vendor and model for Complex, Simple and Visual. The page lists, under each
-   gear, the tasks it will serve in that run; the routing itself still comes
-   from the host config, with `table_capture`, `forest_ocr_text`,
-   `claim_origin`, `unpivot` and `references` always on Simple. With no keys in
-   Account the run uses the host config, but only if the host has its own
-   model key; otherwise the page asks for the three keys.
-2. **Config file.** Edit `llm`, `backend_profiles.transcribe`, `vision` and
-   `routing` in `configs/config.local.yaml`. Unknown task names under
-   `routing` are a hard error.
-3. **One run.** `react-review run ... --profile-all transcribe` sends all 13
-   tasks to one named gear, which is useful for comparisons.
-
-To see what actually ran, read `backend_model_id` and `backend_reasoning` in
-`output/runs/<run-id>/steps/NNN_<step>.json`; web runs also write `gears.json`
-(vendors and models, never keys).
-
-**Pitfall:** reasoning belongs to the gear, not to the model name. A task left
-on `llm` keeps reasoning after you change the model name to a lighter model;
-route it to a gear that sets `reasoning: off` instead.
-
-## Deploying with Docker
-
-One container serves the web UI on port 8080.
-
-```bash
-cp .env.example .env            # fill in keys and the Basic Auth login
-docker compose up -d --build    # build and start; restarts unless stopped
-docker compose logs -f          # follow the server log
-```
-
-- `serve` refuses to start without `REACT_REVIEW_BASIC_USER` and
-  `REACT_REVIEW_BASIC_PASSWORD` (use `--auth-off` only for local tests). Put
-  the container behind a reverse proxy with HTTPS: Basic Auth sends the
-  password with every request.
-- Keys come only from `.env`; they are never baked into the image.
-  `REACT_REVIEW_TRANSCRIBE_API_KEY` falls back to `REACT_REVIEW_LLM_API_KEY`.
-- The image runs as a non-root user and reads `configs/config.example.yaml`,
-  whose model entries are placeholders: in the container the models come from
-  the three gears on the page, and a run needs three vendor keys in *Account*
-  unless `REACT_REVIEW_LLM_API_KEY` is set. Routing comes from that file; edit
-  it before building to change routing.
-- Runs and uploads live on the `react-review-data` volume at `/data`
-  (`/data/runs`, `/data/uploads`) and survive rebuilds.
-- PDFs and artifacts stay on the host. The text each step reads is sent to the
-  model vendor of its gear.
-- To update: pull, then `docker compose up -d --build` again.
-
-## What a run writes
-
-Every run writes `output/runs/<run-id>/` (in the container, `/data/runs/<run-id>/`):
-
-| File | Content |
-|---|---|
-| `journal.ndjson` | one line per step: step name, title, warning count, artefact pointers |
-| `steps/NNN_<step>.json` | the full state of each step: rendered text, options, warnings, decision, interaction mode, and the model that ran |
-| `checkpoints.log` | a readable transcript of the whole run with volatile fields suppressed, so two runs can be diffed |
-| `report.html` | the final audit report |
-| `package.json` | summary and telemetry once the run completes; `package.partial.json` while it has not |
-| `semantic_cache.json` | recorded semantic comparisons, reused on replay |
-| `proposals.json` | candidate knowledge-base concepts for `react-review learn` (only when the run collected any) |
-| `gears.json` | web runs only: vendor and model of each gear, never keys |
-
-Use a different `--run-id` for every run: two runs writing into one directory
-overwrite each other's step files by index.
-
-## Reproducing the dissertation experiments
-
-**Full-text accessibility (dissertation Section 4.5).** The two runs differ only
-in `--studies` and `--pdf-dir`:
-
-```bash
-react-review run --pdf eval/benchmark_1/raw/EAT_T1DM_SRMA.pdf \
-  --studies eval/benchmark_1/included_studies.csv --pdf-dir eval/benchmark_1 \
-  --config configs/config.local.yaml --checkpoints none --non-interactive \
-  --run-id access-local
-
-react-review run --pdf eval/benchmark_1/raw/EAT_T1DM_SRMA.pdf \
-  --config configs/config.local.yaml --checkpoints none --non-interactive \
-  --run-id access-online
-```
-
-**Deterministic replay (Sections 4.2 and 4.6).** Record a live run with
-`--extraction record`, then replay it offline with `--extraction replay`.
-Replay makes no model calls, so differences between control layers come from
-deterministic code alone.
-
-**Benchmark scoring.** The scripts under `eval/` score runs against the
-hand-built answer keys of `benchmark_1` (EAT/T1DM) and `benchmark_2`
-(melanoma). Answer keys, checklists and source PDFs are frozen; their hashes
-are recorded under `docs/baselines/`.
-
-## Uploads, caches, and retention
-
-Full-text PDFs are stored locally only; they are never redistributed.
-
-- Web uploads land in `output/uploads/<run-id>/` (review PDF, source PDFs,
-  `included_studies.csv`). Each folder contains `RETENTION.txt`.
-- Extraction and semantic caches live in `output/runs/<run-id>/`. A run that
-  used `--studies` / uploaded sources marks those caches `shareable: false`.
-- There is no automatic cleanup. Delete both `output/uploads/<run-id>/` and
-  `output/runs/<run-id>/` when the audit should leave the disk.
-
-## Reuse provenance
-
-The following prototype modules carried over as high-value reusable assets:
-four-tier full-text retrieval, CrossRef verification + confidence scoring,
-field-level comparison primitives + per-concept tolerance table, and the LLM
-retry engine.
+Built as an MSc dissertation project. 38,500 lines across 186 modules, covered
+by 2,009 tests.

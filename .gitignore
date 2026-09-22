@@ -45,3 +45,4 @@ Thumbs.db
 !eval/benchmark_1/raw/*.pdf
 !eval/benchmark_2/raw/review_karlsson_saleh_2017.pdf
 !eval/benchmark_3/raw/*.pdf
+eval_report.html
