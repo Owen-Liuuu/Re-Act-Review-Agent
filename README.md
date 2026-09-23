@@ -10,6 +10,8 @@ show its work at every step where a person should be the one deciding.
 ![python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![docker](https://img.shields.io/badge/deploy-docker%20compose-blue)
 
+<img width="3120" height="1742" alt="image" src="https://github.com/user-attachments/assets/aa858d55-5f68-47f8-9e37-e3ab3b9b367a" />
+
 ## The problem
 
 A systematic review pools numbers from dozens of primary papers. When one of
